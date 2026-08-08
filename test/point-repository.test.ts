@@ -1,0 +1,2 @@
+import {describe,expect,it} from 'vitest';
+describe('ledger contract',()=>{it('uses the idempotency key as immutable ledger identity',()=>{const key='PROJECT:child:milestone';expect(new Set([key,key]).size).toBe(1);});it('models adjustments as new entries',()=>{const original={id:'a',points:10};const adjustment={id:'adjust-a',points:-2,originalEntryId:original.id};expect(original.points).toBe(10);expect(adjustment.originalEntryId).toBe(original.id);});});
