@@ -19,9 +19,8 @@ app.use(
   helmet({ contentSecurityPolicy: false }),
   express.json({ limit: "64kb" }),
   rateLimit(60_000, 120),
-  authenticate,
 );
-const healthResponse = { status: "ok" } as const;
+const healthResponse = { status: "ok", environment: env.APP_ENV } as const;
 
 app.get("/", (_req, res) => res.json(healthResponse));
 app.head("/", (_req, res) => res.sendStatus(200));
@@ -38,7 +37,9 @@ if (env.NODE_ENV !== "production")
 app.get("/openapi.yaml", (_req, res) =>
   res.sendFile("openapi.yaml", { root: process.cwd() }),
 );
+app.use("/api/auth", authRoutes);
 app.use("/api/v1/auth", authRoutes);
+app.use(authenticate);
 app.use("/api/v1/participants", participantRoutes);
 app.use("/api/v1/points", pointRoutes);
 app.use((_req, _res, next) => next(new NotFoundError()));

@@ -22,8 +22,12 @@ export async function resolvePrincipalRole(
   token: DecodedIdToken,
 ): Promise<Role> {
   if (isRole(token.role)) return token.role;
+  if (Array.isArray(token.roles) && isRole(token.roles[0]))
+    return token.roles[0];
 
   const user = await firestore.doc(`users/${token.uid}`).get();
+  const roles = user.get("roles");
+  if (Array.isArray(roles) && isRole(roles[0])) return roles[0];
   const role = user.get("role");
   if (isRole(role)) return role;
 

@@ -23,6 +23,29 @@ paths:
                 },
             },
         }
+  /auth/session:
+    post:
+      tags: [Auth]
+      operationId: createAuthSession
+      description: Verifies a Firebase ID token, provisions users/{uid} when missing, and returns the normalized session user.
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200":
+          {
+            description: Session restored,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/AuthSessionResponse" },
+                  },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
   /auth/child-login:
     post:
       tags: [Auth]
@@ -145,12 +168,25 @@ components:
               { schema: { $ref: "#/components/schemas/Error" } },
           },
       }
+    Internal:
+      {
+        description: Unexpected server error,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
   schemas:
     Health:
       {
         type: object,
-        required: [status],
-        properties: { status: { type: string, const: ok } },
+        required: [status, environment],
+        properties:
+          {
+            status: { type: string, const: ok },
+            environment: { type: string },
+          },
       }
     Error:
       {
@@ -167,6 +203,43 @@ components:
                     code: { type: string },
                     message: { type: string },
                     requestId: { type: string },
+                  },
+              },
+          },
+      }
+    AuthSessionResponse:
+      {
+        type: object,
+        required: [data],
+        properties:
+          {
+            data:
+              {
+                type: object,
+                required: [uid, email, displayName, roles, disabled],
+                properties:
+                  {
+                    uid: { type: string },
+                    email: { type: [string, "null"] },
+                    displayName: { type: string },
+                    roles:
+                      {
+                        type: array,
+                        items:
+                          {
+                            type: string,
+                            enum:
+                              [
+                                child,
+                                parent,
+                                mentor,
+                                observer,
+                                admin,
+                                super_admin,
+                              ],
+                          },
+                      },
+                    disabled: { type: boolean },
                   },
               },
           },

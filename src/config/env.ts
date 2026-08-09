@@ -13,7 +13,7 @@ const schema = z.object({
   APP_ENV: optionalWithDefault(
     z.enum(["development", "staging", "production"]).default("development"),
   ),
-  PORT: optionalWithDefault(z.coerce.number().int().positive().default(8080)),
+  PORT: optionalWithDefault(z.coerce.number().int().positive().default(10000)),
   HOST: optionalWithDefault(z.string().default("0.0.0.0")),
   FIREBASE_PROJECT_ID: z.string().min(1).default("grounded-fruitful-local"),
   ALLOWED_ORIGINS: z.string().default("http://localhost:4200"),

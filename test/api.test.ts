@@ -26,13 +26,19 @@ describe("HTTP safety contract", () => {
   it("provides a minimal root health response for platform probes", async () => {
     const response = await fetch(`${base}/`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok" });
+    expect(await response.json()).toMatchObject({
+      status: "ok",
+      environment: "development",
+    });
   });
 
   it("provides a minimal health response and request ID", async () => {
     const response = await fetch(`${base}/health`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok" });
+    expect(await response.json()).toMatchObject({
+      status: "ok",
+      environment: "development",
+    });
     expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(response.headers.get("x-powered-by")).toBeNull();
   });
@@ -43,6 +49,21 @@ describe("HTTP safety contract", () => {
       error: { code: "AUTHENTICATION_REQUIRED", requestId: expect.any(String) },
     });
   });
+  it("requires a token for auth session provisioning", async () => {
+    const response = await fetch(`${base}/api/auth/session`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects malformed auth session bearer headers", async () => {
+    const response = await fetch(`${base}/api/v1/auth/session`, {
+      method: "POST",
+      headers: { authorization: "Bearer token with spaces" },
+    });
+    expect(response.status).toBe(401);
+  });
+
   it("rejects unlisted CORS origins", async () => {
     const response = await fetch(`${base}/health`, {
       headers: { origin: "https://evil.example" },
