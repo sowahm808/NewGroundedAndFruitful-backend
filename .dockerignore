@@ -1,0 +1,8 @@
+.git
+.github
+node_modules
+lib
+.env
+*.log
+coverage
+service-account*.json

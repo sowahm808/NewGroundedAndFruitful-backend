@@ -6,23 +6,24 @@
   "engines": {
     "node": "22"
   },
-  "main": "lib/index.js",
+  "main": "lib/src/server.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit",
+    "dev": "tsx watch src/server.ts",
     "lint": "eslint .",
-    "test": "vitest run --exclude test/integration/**",
-    "test:integration": "vitest run test/integration --passWithNoTests",
-    "emulators": "firebase emulators:start",
-    "seed": "tsx scripts/seed.ts",
-    "deploy:staging": "firebase use staging && firebase deploy",
-    "deploy:production": "node scripts/guard-production.mjs && firebase use production && firebase deploy"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude 'lib/**' --exclude 'test/integration/**'",
+    "test:integration": "FIREBASE_PROJECT_ID=demo-grounded-fruitful vitest run test/integration --passWithNoTests",
+    "build": "tsc -p tsconfig.json",
+    "start": "node lib/src/server.js",
+    "emulators": "npx firebase-tools emulators:start",
+    "seed": "node scripts/guard-production.mjs --require-emulator && tsx scripts/seed.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
     "express": "^5.1.0",
     "firebase-admin": "^13.4.0",
-    "firebase-functions": "^6.4.0",
     "helmet": "^8.1.0",
     "zod": "^3.25.67"
   },
@@ -32,7 +33,6 @@
     "@types/express": "^5.0.3",
     "@types/node": "^22.15.32",
     "eslint": "^9.29.0",
-    "firebase-tools": "^14.7.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.34.1",
