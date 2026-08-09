@@ -1,14 +1,200 @@
 openapi: 3.1.0
-info: {title: Grounded & Fruitful API, version: 1.0.0}
-servers: [{url: /api/v1}]
+info:
+  title: Grounded & Fruitful API
+  version: 1.0.0
+  description: Render-hosted API. Authoritative writes require a verified Firebase ID token.
+servers: [{ url: /api/v1 }]
+tags:
+  [{ name: Health }, { name: Auth }, { name: Participants }, { name: Points }]
 paths:
   /health:
     get:
-      operationId: health
+      tags: [Health]
+      operationId: apiHealth
       responses:
-        '200': {description: Healthy}
+        {
+          "200":
+            {
+              description: Healthy,
+              content:
+                {
+                  application/json:
+                    { schema: { $ref: "#/components/schemas/Health" } },
+                },
+            },
+        }
+  /auth/child-login:
+    post:
+      tags: [Auth]
+      operationId: childLogin
+      description: Exchanges family code, child handle and password for a short-lived Firebase custom token. Rate limited and generically fails.
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ChildLogin" } },
+            },
+        }
+      responses:
+        "200": { description: Login accepted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /participants/{id}:
+    get:
+      tags: [Participants]
+      operationId: getParticipant
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Authorized participant summary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /points/completions:
+    post:
+      tags: [Points]
+      operationId: recordCompletion
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        [
+          {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema: { type: string, maxLength: 200 },
+          },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/Completion" } },
+            },
+        }
+      responses:
+        "201": { description: Immutable ledger entry created }
+        "200": { description: Existing entry returned for duplicate key }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
 components:
   securitySchemes:
-    firebaseBearer: {type: http, scheme: bearer, bearerFormat: Firebase ID token}
+    {
+      firebaseBearer:
+        { type: http, scheme: bearer, bearerFormat: Firebase ID token },
+    }
+  responses:
+    Unauthorized:
+      {
+        description: Authentication required,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
+    Forbidden:
+      {
+        description: Resource access denied,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
+    NotFound:
+      {
+        description: Not found,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
+    Validation:
+      {
+        description: Validation failed,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
+    RateLimited:
+      {
+        description: Too many attempts,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
   schemas:
-    Error: {type: object, required: [error], properties: {error: {type: object, required: [code, message], properties: {code: {type: string}, message: {type: string}}}}}
+    Health:
+      {
+        type: object,
+        required: [status],
+        properties: { status: { type: string, const: ok } },
+      }
+    Error:
+      {
+        type: object,
+        required: [error],
+        properties:
+          {
+            error:
+              {
+                type: object,
+                required: [code, message, requestId],
+                properties:
+                  {
+                    code: { type: string },
+                    message: { type: string },
+                    requestId: { type: string },
+                  },
+              },
+          },
+      }
+    ChildLogin:
+      {
+        type: object,
+        additionalProperties: false,
+        required: [familyCode, handle, password],
+        properties:
+          {
+            familyCode: { type: string },
+            handle: { type: string },
+            password: { type: string, format: password },
+          },
+      }
+    Completion:
+      {
+        type: object,
+        additionalProperties: false,
+        required:
+          [
+            participantId,
+            teamId,
+            quarterId,
+            sourceType,
+            sourceId,
+            reason,
+            occurredAt,
+          ],
+        properties:
+          {
+            participantId: { type: string },
+            teamId: { type: string },
+            quarterId: { type: string },
+            sourceType: { type: string },
+            sourceId: { type: string },
+            reason: { type: string },
+            occurredAt: { type: string, format: date-time },
+          },
+      }
