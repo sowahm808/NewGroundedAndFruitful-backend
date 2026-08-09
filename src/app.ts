@@ -21,8 +21,12 @@ app.use(
   rateLimit(60_000, 120),
   authenticate,
 );
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
-app.get("/api/v1/health", (_req, res) => res.json({ status: "ok" }));
+const healthResponse = { status: "ok" } as const;
+
+app.get("/", (_req, res) => res.json(healthResponse));
+app.head("/", (_req, res) => res.sendStatus(200));
+app.get("/health", (_req, res) => res.json(healthResponse));
+app.get("/api/v1/health", (_req, res) => res.json(healthResponse));
 if (env.NODE_ENV !== "production")
   app.get("/docs", (_req, res) =>
     res
