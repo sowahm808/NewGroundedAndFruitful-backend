@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { DecodedIdToken } from "firebase-admin/auth";
-import { auth } from "../config/firebase.js";
+import type { Firestore } from "firebase-admin/firestore";
+import { auth, db } from "../config/firebase.js";
 import { AuthenticationError, AuthorizationError } from "../shared/errors.js";
 import { type Role } from "../auth/authorization.js";
 const roles = new Set<Role>([
@@ -11,6 +12,24 @@ const roles = new Set<Role>([
   "admin",
   "super_admin",
 ]);
+
+export function isRole(value: unknown): value is Role {
+  return typeof value === "string" && roles.has(value as Role);
+}
+
+export async function resolvePrincipalRole(
+  firestore: Firestore,
+  token: DecodedIdToken,
+): Promise<Role> {
+  if (isRole(token.role)) return token.role;
+
+  const user = await firestore.doc(`users/${token.uid}`).get();
+  const role = user.get("role");
+  if (isRole(role)) return role;
+
+  throw new AuthorizationError();
+}
+
 export async function authenticate(
   req: Request,
   _res: Response,
@@ -22,10 +41,8 @@ export async function authenticate(
     const match = /^Bearer ([^ ]+)$/.exec(header);
     if (!match?.[1]) throw new AuthenticationError();
     const token: DecodedIdToken = await auth.verifyIdToken(match[1], true);
-    const role = token.role;
-    if (typeof role !== "string" || !roles.has(role as Role))
-      throw new AuthorizationError();
-    req.principal = { uid: token.uid, role: role as Role, token };
+    const role = await resolvePrincipalRole(db, token);
+    req.principal = { uid: token.uid, role, token };
     next();
   } catch (error) {
     next(
