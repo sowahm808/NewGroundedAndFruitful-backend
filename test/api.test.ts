@@ -23,6 +23,12 @@ afterAll(
     ),
 );
 describe("HTTP safety contract", () => {
+  it("provides a minimal root health response for platform probes", async () => {
+    const response = await fetch(`${base}/`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok" });
+  });
+
   it("provides a minimal health response and request ID", async () => {
     const response = await fetch(`${base}/health`);
     expect(response.status).toBe(200);
