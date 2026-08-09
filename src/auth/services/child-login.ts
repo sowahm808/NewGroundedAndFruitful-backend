@@ -45,6 +45,6 @@ export class ChildLoginService {
       requestId,
       actorId: credential.firebaseUid,
     });
-    return { customToken };
+    return { customToken, tokenType: "firebaseCustomToken" as const };
   }
 }

@@ -38,7 +38,17 @@ paths:
             },
         }
       responses:
-        "200": { description: Login accepted }
+        "200":
+          {
+            description: Login accepted,
+            content:
+              {
+                application/json:
+                  {
+                    schema: { $ref: "#/components/schemas/ChildLoginResponse" },
+                  },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
@@ -171,6 +181,24 @@ components:
             familyCode: { type: string },
             handle: { type: string },
             password: { type: string, format: password },
+          },
+      }
+    ChildLoginResponse:
+      {
+        type: object,
+        required: [data],
+        properties:
+          {
+            data:
+              {
+                type: object,
+                required: [customToken, tokenType],
+                properties:
+                  {
+                    customToken: { type: string },
+                    tokenType: { type: string, const: firebaseCustomToken },
+                  },
+              },
           },
       }
     Completion:

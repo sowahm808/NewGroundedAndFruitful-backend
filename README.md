@@ -18,6 +18,19 @@ The point ledger uses the idempotency key as its immutable document identity. A 
 
 The complete request/response contract is in [openapi.yaml](openapi.yaml).
 
+## Client authentication flow
+
+Child users do not sign in through Firebase email/password. A browser call to Firebase Auth's `accounts:signInWithPassword` REST endpoint will return a Firebase `400 Bad Request` whenever the supplied value is not an enabled Firebase email/password account, the password is wrong, or the API key/project does not match the account. For child access, call this backend instead:
+
+```http
+POST /api/v1/auth/child-login
+Content-Type: application/json
+
+{ "familyCode": "...", "handle": "...", "password": "..." }
+```
+
+The response is `{ "data": { "customToken": "...", "tokenType": "firebaseCustomToken" } }`. The web client must exchange that custom token with Firebase Auth using `signInWithCustomToken`, then send the resulting Firebase ID token as `Authorization: Bearer <idToken>` to protected API routes.
+
 ## Firestore collections
 
 `users`, `participants`, `childCredentials`, `parentChildLinks`, `teams`, `teamMembers`, `pointRules`, `pointLedger`, `participantQuarterStats`, `teamQuarterStats`, `teamWeeklyStats`, and `auditLogs`. Browser rules default deny and forbid client writes to all authoritative collections.
