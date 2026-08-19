@@ -113,6 +113,15 @@ product. The order reflects dependencies and risk.
 - [ ] Decide whether a versioned response-envelope migration should add
       `success: true`; do not silently break current clients.
 
+## Child journey integration audit (2026-08-19)
+
+- [x] Authenticated, tenant- and participant-scoped dashboard/today summary, private check-in drafts and finalization, character cycles, Bible activities, reading reflections, projects, and sanitized team progress routes are implemented.
+- [x] Private daily gratitude creation and cursor history are implemented without placing response text in URLs or queries.
+- [x] Assigned special activities and surveys support server-scoped listing and idempotent final submissions; survey answers are validated against the published question IDs.
+- [x] Child point-ledger history includes an authoritative calculation timestamp, and issued awards are participant scoped.
+- [~] Private reading media upload remains intentionally disabled until the signed upload-target, scanning, finalization, cancellation, and private playback contract is approved.
+- [~] Authenticated emulator E2E and deployment verification remain launch blockers; these checks do not assert that an external Render deployment matches this repository.
+
 ## Product feature roadmap
 
 ### Organizations, people, and consent
