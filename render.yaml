@@ -26,3 +26,5 @@ services:
         sync: false
       - key: CHILD_LOGIN_PEPPER
         sync: false
+      - key: CHILD_LOGIN_LOOKUP_SECRET
+        sync: false

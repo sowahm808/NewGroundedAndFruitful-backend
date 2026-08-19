@@ -39,6 +39,10 @@ by `GOOGLE_APPLICATION_CREDENTIALS`. Never commit private keys to an env example
 or any other repository file. If a key has ever been committed, disable/delete
 it in Google Cloud IAM, create a replacement, and update the Render secret.
 
+The Blueprint prompts for both `CHILD_LOGIN_PEPPER` and
+`CHILD_LOGIN_LOOKUP_SECRET`. Configure each as an independent, high-entropy
+secret before deploying; applying the Blueprint does not generate either value.
+
 ## Authorization rollout and rollback
 
 1. Back up the current rules and export the authorization collections. Validate every participant has `firebaseUid` and `organizationId`, and every relationship/membership has the documented deterministic ID and fields.
