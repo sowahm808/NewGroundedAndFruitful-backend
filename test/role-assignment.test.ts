@@ -33,6 +33,7 @@ describe("operational role assignment", () => {
         uid: "uid-1",
         role: "super_admin",
         updatedBy: "admin-role-cli",
+        actorRoles: ["super_admin"],
       }),
     ).resolves.toEqual({
       roles: ["parent", "super_admin"],
@@ -56,7 +57,6 @@ describe("operational role assignment", () => {
     expect(auth.setCustomUserClaims).toHaveBeenCalledWith("uid-1", {
       theme: "dark",
       roles: ["parent", "super_admin"],
-      role: "parent",
     });
   });
 
@@ -67,6 +67,7 @@ describe("operational role assignment", () => {
         uid: "uid-1",
         role: "super_admin",
         updatedBy: "admin-role-cli",
+        actorRoles: ["super_admin"],
       }),
     ).resolves.toMatchObject({ changed: false, roles: ["super_admin"] });
     expect(transaction.update).not.toHaveBeenCalled();
@@ -90,6 +91,7 @@ describe("operational role assignment", () => {
         uid: "uid-1",
         role: "admin",
         updatedBy: "admin-role-cli",
+        actorRoles: ["super_admin"],
       }),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
@@ -110,5 +112,31 @@ describe("operational role assignment", () => {
         retryable: true,
       }),
     );
+  });
+
+  it("requires super_admin for elevated assignment", async () => {
+    const { auth, db } = fixture([]);
+    await expect(
+      assignRole(auth as never, db as never, {
+        uid: "uid-1",
+        role: "admin",
+        updatedBy: "admin-1",
+        actorRoles: ["admin"],
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(auth.getUser).not.toHaveBeenCalled();
+  });
+
+  it("prevents generic replacement from removing a super_admin", async () => {
+    const { auth, db } = fixture(["super_admin"]);
+    await expect(
+      assignRole(auth as never, db as never, {
+        uid: "uid-1",
+        role: "parent",
+        replace: true,
+        updatedBy: "root",
+        actorRoles: ["super_admin"],
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });

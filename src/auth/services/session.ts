@@ -95,6 +95,12 @@ export class AuthSessionService {
         uid: decodedToken.uid,
       });
 
+    const claimSynchronization = await this.syncRoleClaims(
+      authUser,
+      decodedToken,
+      roles,
+      context,
+    );
     const session: SessionUser = {
       uid: profile.uid,
       email: profile.email ?? null,
@@ -108,6 +114,7 @@ export class AuthSessionService {
           : pending
             ? "pending_approval"
             : "role_required",
+      claimSynchronization,
       memberships,
     };
     logger.info("session_resolved", {
@@ -121,7 +128,6 @@ export class AuthSessionService {
       onboardingStatus: session.onboardingStatus,
       disabled,
     });
-    await this.syncRoleClaims(authUser, decodedToken, roles, context);
     return session;
   }
 
@@ -177,7 +183,7 @@ export class AuthSessionService {
     decodedToken: DecodedIdToken,
     roles: Role[],
     context: SessionContext,
-  ): Promise<void> {
+  ): Promise<SessionUser["claimSynchronization"]> {
     const currentClaims = authUser.customClaims ?? {};
     const current = normalizeRoles(
       currentClaims.roles ?? decodedToken.roles,
@@ -186,7 +192,7 @@ export class AuthSessionService {
       current.length === roles.length &&
       roles.every((role) => current.includes(role))
     )
-      return;
+      return { status: "synchronized", tokenRefreshRequired: false };
     logger.info("session_claim_roles_out_of_sync", {
       requestId: context.requestId,
       uid: authUser.uid,
@@ -195,10 +201,16 @@ export class AuthSessionService {
       await this.firebaseAuth.setCustomUserClaims(authUser.uid, {
         ...currentClaims,
         roles,
-        role: roles[0] ?? null,
       });
+      return { status: "refresh_required", tokenRefreshRequired: true };
     } catch {
-      throw new InternalError();
+      // Authoritative session authorization must remain available if the
+      // claims cache is temporarily unavailable. Do not expose provider data.
+      logger.warn("session_claim_sync_failed", {
+        requestId: context.requestId,
+        uid: authUser.uid,
+      });
+      return { status: "retry_required", tokenRefreshRequired: false };
     }
   }
 }

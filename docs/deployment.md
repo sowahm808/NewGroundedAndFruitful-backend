@@ -32,3 +32,13 @@ Service-account JSON must be injected as a Render secret file and referenced
 by `GOOGLE_APPLICATION_CREDENTIALS`. Never commit private keys to an env example
 or any other repository file. If a key has ever been committed, disable/delete
 it in Google Cloud IAM, create a replacement, and update the Render secret.
+
+## Authorization rollout and rollback
+
+1. Back up the current rules and export the authorization collections. Validate every participant has `firebaseUid` and `organizationId`, and every relationship/membership has the documented deterministic ID and fields.
+2. Deploy required indexes, then the backend/session and role-synchronization code. Do not deploy rules first.
+3. With the intended production service account and `APP_ENV=production`, bootstrap the initial owner using explicit arguments: `npm run admin:assign-role -- --uid <firebase-uid> --role super_admin --environment production --confirm`. Never use emulator variables for this command.
+4. Inspect the authoritative user record and audit event, then inspect Auth custom claims. Have the account force-refresh its ID token or sign out/in; verify the refreshed token, session response, allowed resources, and cross-user/cross-organization denials.
+5. Run `npm run test:rules` and `firebase deploy --only firestore:indexes,firestore:rules --project <staging-project> --dry-run` before the reviewed production rules deployment. Deploy indexes before code that queries them.
+
+Rollback by redeploying the versioned previous rules file and previous backend release, without changing user or membership documents. If Firestore was updated but claims failed, do not revert the authoritative record: rerun the idempotent command to recover the claim cache. If claims were updated but the Firestore transaction did not commit, rerun the command; session authorization continues to use Firestore and will not trust the stale claim. Never manually broaden rules as an incident workaround.

@@ -26,6 +26,10 @@ export interface SessionUser {
   roles: readonly Role[];
   disabled: boolean;
   onboardingStatus: OnboardingStatus;
+  claimSynchronization: {
+    status: "synchronized" | "refresh_required" | "retry_required";
+    tokenRefreshRequired: boolean;
+  };
   memberships: Array<{
     organizationId: string;
     roles: readonly Role[];

@@ -39,7 +39,7 @@ export class ChildLoginService {
     await this.credentials.clearFailures(input.familyCode, input.handle);
     const customToken = await this.firebaseAuth.createCustomToken(
       credential.firebaseUid,
-      { role: "child", participantId: credential.participantId },
+      { roles: ["child"] },
     );
     await this.audit.record("CHILD_LOGIN_SUCCEEDED", {
       requestId,
