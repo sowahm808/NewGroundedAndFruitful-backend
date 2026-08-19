@@ -153,7 +153,7 @@ product. The order reflects dependencies and risk.
       transition helper alone is not a feature implementation).
 - [ ] Academic-support activities and verified completion workflows.
 - [ ] Special-activity definition, approval, and completion workflows.
-- [ ] Administrator point adjustment/reversal API with reason, original-entry
+- [x] Administrator point adjustment/reversal API with reason, original-entry
       linkage, authorization, and audit event.
 
 ### Engagement, reporting, and safety
@@ -192,6 +192,7 @@ documentation page exists. Check it only when all applicable work is complete:
       operational recovery or reconciliation procedure exist.
 - [ ] Documentation and seed/test fixtures are updated, and the feature has been
       exercised in staging with production-like configuration.
+
 # Authorization policy decisions still requiring product approval
 
 - Define a reviewed guardian-summary DTO/privacy policy before exposing any additional child content.
