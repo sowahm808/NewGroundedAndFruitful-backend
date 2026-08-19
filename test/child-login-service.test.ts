@@ -16,7 +16,8 @@ describe("ChildLoginService", () => {
         firebaseUid: "child-1",
         handle: "sprout",
         participantId: "participant-1",
-        passwordHash: "hash",
+        organizationId: "organization-1",
+        pinHash: "hash",
       }),
       clearFailures: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),
@@ -24,6 +25,7 @@ describe("ChildLoginService", () => {
         id: "membership-1",
         organizationId: "organization-1",
       }),
+      hasActiveContext: vi.fn().mockResolvedValue(true),
       key: vi.fn(
         (familyCode: string, handle: string) => `${familyCode}_${handle}`,
       ),

@@ -16,7 +16,7 @@ export class ChildLoginService {
       input.familyCode,
       input.handle,
     );
-    const hash = credential?.passwordHash ?? DUMMY_PASSWORD_HASH;
+    const hash = credential?.pinHash ?? DUMMY_PASSWORD_HASH;
     const pinValid = await verify(
       hash,
       `${input.pin}${env.CHILD_LOGIN_PEPPER}`,
@@ -36,9 +36,16 @@ export class ChildLoginService {
     const firebaseUser = await this.firebaseAuth
       .getUser(credential.firebaseUid)
       .catch(() => undefined);
-    const membership =
-      await this.credentials.findActiveChildMembership(credential);
-    if (!firebaseUser || firebaseUser.disabled || !membership) {
+    const [membership, activeContext] = await Promise.all([
+      this.credentials.findActiveChildMembership(credential),
+      this.credentials.hasActiveContext(credential),
+    ]);
+    if (
+      !firebaseUser ||
+      firebaseUser.disabled ||
+      !membership ||
+      !activeContext
+    ) {
       await this.audit.record("CHILD_LOGIN_FAILED", {
         requestId,
         credentialKey: this.credentials.key(input.familyCode, input.handle),

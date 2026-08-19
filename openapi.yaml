@@ -6,7 +6,6 @@ info:
     Authorization uses canonical roles from active memberships plus organization,
     program, and resource relationships. Custom claims and route entry never grant
     tenant resource access. Domain Firestore access is server-only.
-  description: Render-hosted API. Authoritative writes require a verified Firebase ID token.
 servers: [{ url: /api/v1 }]
 tags:
   [
@@ -338,7 +337,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -349,7 +356,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -360,7 +375,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -371,7 +394,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -382,7 +413,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -393,7 +432,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -404,7 +451,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -415,7 +470,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -424,7 +487,11 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Creates a child-owned project in idea state; identity and tenancy are server resolved.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
         "200": { description: Saved }
         "201": { description: Created }
@@ -436,7 +503,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -445,7 +520,11 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Updates an owned project using required optimistic version and validated lifecycle transition.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
         "200": { description: Saved }
         "201": { description: Created }
@@ -457,7 +536,15 @@ paths:
       security: [{ firebaseBearer: [] }]
       description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
       responses:
-        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Authorized child response,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -467,9 +554,21 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
-        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Saved or idempotently completed,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -480,9 +579,21 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
-        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Saved or idempotently completed,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -493,9 +604,21 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
-        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Saved or idempotently completed,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -506,9 +629,21 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
-        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Saved or idempotently completed,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -519,9 +654,21 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
-        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Saved or idempotently completed,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -532,9 +679,21 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
-        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Saved or idempotently completed,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -545,9 +704,21 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
-        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Saved or idempotently completed,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -558,9 +729,21 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object } } },
+        }
       responses:
-        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "200":
+          {
+            description: Saved or idempotently completed,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
+              },
+          }
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -571,39 +754,108 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       description: Lists only the authenticated child's private gratitude entries using an opaque continuation cursor.
-      responses: { "200": { description: Private gratitude history }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+      responses:
+        {
+          "200": { description: Private gratitude history },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+        }
     post:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, minLength: 1, maxLength: 2000 } } } } } }
-      responses: { "200": { description: Existing daily entry }, "201": { description: Entry created }, "409": { description: Quarter is unavailable or read-only }, "422": { $ref: "#/components/responses/Validation" } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      type: object,
+                      required: [text],
+                      properties:
+                        {
+                          text: { type: string, minLength: 1, maxLength: 2000 },
+                        },
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "200": { description: Existing daily entry },
+          "201": { description: Entry created },
+          "409": { description: Quarter is unavailable or read-only },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
   /child/special-activities:
     get:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
-      responses: { "200": { description: Active activities assigned to the authenticated child } }
+      responses:
+        {
+          "200":
+            {
+              description: Active activities assigned to the authenticated child,
+            },
+        }
   /child/special-activities/{activityId}/submissions:
     post:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
-      parameters: [{ name: activityId, in: path, required: true, schema: { type: string } }]
-      responses: { "200": { description: Existing idempotent submission }, "201": { description: Completed with an atomic participation award } }
+      parameters:
+        [
+          {
+            name: activityId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses:
+        {
+          "200": { description: Existing idempotent submission },
+          "201": { description: Completed with an atomic participation award },
+        }
   /child/surveys:
     get:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
-      responses: { "200": { description: Active surveys assigned to the authenticated child } }
+      responses:
+        {
+          "200":
+            { description: Active surveys assigned to the authenticated child },
+        }
   /child/surveys/{activityId}/submissions:
     post:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
-      parameters: [{ name: activityId, in: path, required: true, schema: { type: string } }]
-      responses: { "200": { description: Draft saved or final submission replayed }, "422": { $ref: "#/components/responses/Validation" } }
+      parameters:
+        [
+          {
+            name: activityId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses:
+        {
+          "200": { description: Draft saved or final submission replayed },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
   /child/points:
     get:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
-      responses: { "200": { description: Authenticated child's immutable point ledger page and calculation timestamp } }
+      responses:
+        {
+          "200":
+            {
+              description: Authenticated child's immutable point ledger page and calculation timestamp,
+            },
+        }
   /child/awards:
     get:
       tags: [Child]
@@ -675,7 +927,10 @@ components:
       type: object
       required: [data]
       properties:
-        data: { description: Route-specific child resource or honest availability state }
+        data:
+          {
+            description: Route-specific child resource or honest availability state,
+          }
     Health:
       {
         type: object,
@@ -824,8 +1079,20 @@ components:
         required: [familyCode, handle, pin],
         properties:
           {
-            familyCode: { type: string },
-            handle: { type: string },
+            familyCode:
+              {
+                type: string,
+                minLength: 4,
+                maxLength: 32,
+                description: NFKC-normalized server-side,
+              },
+            handle:
+              {
+                type: string,
+                minLength: 2,
+                maxLength: 32,
+                description: NFKC-normalized server-side,
+              },
             pin:
               { type: string, format: password, minLength: 4, maxLength: 128 },
           },

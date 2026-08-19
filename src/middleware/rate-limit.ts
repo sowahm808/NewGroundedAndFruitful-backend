@@ -42,7 +42,7 @@ export const childCredentialRateLimit = (windowMs: number, limit: number) =>
     const body = request.body as Record<string, unknown> | undefined;
     const familyCode = normalize(body?.familyCode);
     const handle = normalize(body?.handle);
-    return createHmac("sha256", env.CHILD_LOGIN_PEPPER)
+    return createHmac("sha256", env.CHILD_LOGIN_LOOKUP_SECRET)
       .update(`${request.ip ?? "unknown"}\0${familyCode}\0${handle}`)
       .digest("base64url");
   });

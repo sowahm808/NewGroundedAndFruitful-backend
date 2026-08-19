@@ -27,6 +27,10 @@ const schema = z
       .string()
       .min(16)
       .default("local-emulator-only-pepper"),
+    CHILD_LOGIN_LOOKUP_SECRET: z
+      .string()
+      .min(16)
+      .default("local-emulator-lookup-secret"),
     LOG_LEVEL: optionalWithDefault(
       z.enum(["debug", "info", "warn", "error"]).default("info"),
     ),
@@ -50,12 +54,19 @@ const schema = z
           "FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY must be configured together.",
       });
     }
+    if (value.CHILD_LOGIN_LOOKUP_SECRET === value.CHILD_LOGIN_PEPPER)
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "CHILD_LOGIN_LOOKUP_SECRET must be distinct from CHILD_LOGIN_PEPPER.",
+      });
     if (value.APP_ENV === "production") {
       for (const name of [
         "FIREBASE_PROJECT_ID",
         "FIREBASE_STORAGE_BUCKET",
         "ALLOWED_ORIGINS",
         "CHILD_LOGIN_PEPPER",
+        "CHILD_LOGIN_LOOKUP_SECRET",
       ]) {
         if (!process.env[name]?.trim())
           context.addIssue({
