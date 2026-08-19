@@ -62,5 +62,52 @@ export class ChildService {
   async addUpdate(principal:Principal|undefined,projectId:string,input:Record<string,unknown>){const {context:c,quarter}=await this.scope(principal);this.requireWritable(quarter);await this.project(principal,projectId);const ref=this.db.collection("projectUpdates").doc(),milestoneId=input.milestoneId as string|undefined;await this.db.runTransaction(async tx=>{if(milestoneId){const mref=this.db.doc(`projectMilestones/${milestoneId}`),m=await tx.get(mref);if(!m.exists||m.get("projectId")!==projectId||m.get("participantId")!==c.participantId)throw new NotFoundError();if(input.completeMilestone&&m.get("status")!=="completed"){if(quarter)await this.award(tx,c,quarter,"project_milestone",mref.id);tx.update(mref,{status:"completed",completedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});}}const record={text:input.text,projectId,organizationId:c.organizationId,participantId:c.participantId,createdAt:FieldValue.serverTimestamp()};tx.create(ref,record);});return{data:data(await ref.get()),created:true};}
 
   async team(principal:Principal|undefined){const {context:c,quarter}=await this.scope(principal);if(!quarter||!c.teamId)return null;const membership=await this.db.collection("teamMembers").where("participantId","==",c.participantId).where("status","==","active").get();if(!membership.docs.some(m=>m.get("teamId")===c.teamId&&m.get("organizationId")===c.organizationId))return null;const [team,stats,own]=await Promise.all([this.db.doc(`teams/${c.teamId}`).get(),this.db.doc(`teamQuarterStats/${quarter.id}_${c.teamId}`).get(),this.db.doc(`participantQuarterStats/${quarter.id}_${c.participantId}`).get()]);if(!team.exists||team.get("organizationId")!==c.organizationId)return null;const total=Number(stats.get("totalPoints")??0),target=Number(quarter.targetPoints??0);return{id:c.teamId,displayName:String(team.get("approvedDisplayName")??team.get("displayName")??""),quarter:{id:quarter.id,name:quarter.name,status:quarter.status},quarterPoints:total,targetPoints:target,progressPercentage:target>0?Math.min(100,Math.round(total/target*100)):0,ownContribution:Number(own.get("totalPoints")??0),calculatedAt:iso(stats.get("updatedAt"))??this.clock().toISOString()};}
+  async gratitude(principal: Principal | undefined, cursor?: string) {
+    const { context: c } = await this.scope(principal);
+    let query: Query<DocumentData> = this.db.collection("gratitudeEntries").where("organizationId", "==", c.organizationId).where("participantId", "==", c.participantId).orderBy("localDate", "desc").limit(21);
+    if (cursor) { const after = await this.db.doc(`gratitudeEntries/${cursor}`).get(); if (!after.exists || after.get("organizationId") !== c.organizationId || after.get("participantId") !== c.participantId) throw new NotFoundError(); query = query.startAfter(after); }
+    const docs = (await query.get()).docs, shown = docs.slice(0, 20);
+    return { items: shown.map(data), nextCursor: docs.length > 20 ? shown.at(-1)?.id ?? null : null };
+  }
+
+  async saveGratitude(principal: Principal | undefined, text: string) {
+    const { context: c, quarter } = await this.scope(principal); this.requireWritable(quarter);
+    const localDate = localDateIn(this.clock(), c.timezone), ref = this.db.doc(`gratitudeEntries/${id(c.organizationId, c.participantId, localDate)}`), old = await ref.get();
+    if (old.exists) return { data: data(old), created: false };
+    await ref.create({ organizationId: c.organizationId, participantId: c.participantId, quarterId: quarter.id, localDate, text, createdAt: FieldValue.serverTimestamp() });
+    return { data: data(await ref.get()), created: true };
+  }
+
+  private async assignedDefinitions(principal: Principal | undefined, collection: string) {
+    const { context: c, quarter } = await this.scope(principal); if (!quarter) return [];
+    const records = await this.list(this.db.collection(collection).where("organizationId", "==", c.organizationId).where("quarterId", "==", quarter.id).where("status", "==", "active").limit(100));
+    return records.filter((record) => !Array.isArray(record.participantIds) || record.participantIds.includes(c.participantId));
+  }
+  async specialActivities(principal: Principal | undefined) { return this.assignedDefinitions(principal, "specialActivities"); }
+  async surveys(principal: Principal | undefined) { return this.assignedDefinitions(principal, "surveys"); }
+
+  async completeSpecialActivity(principal: Principal | undefined, activityId: string, input: Record<string, unknown>) {
+    const { context: c, quarter } = await this.scope(principal); this.requireWritable(quarter);
+    if (!(await this.assignedDefinitions(principal, "specialActivities")).some((item) => item.id === activityId)) throw new NotFoundError();
+    const ref = this.db.doc(`specialActivitySubmissions/${id(quarter.id, activityId, c.participantId)}`);
+    return this.db.runTransaction(async (tx) => { const old = await tx.get(ref); if (old.exists) return { data: data(old), created: false }; const record = { organizationId: c.organizationId, participantId: c.participantId, quarterId: quarter.id, activityId, response: input.response ?? null, status: "completed", completedAt: FieldValue.serverTimestamp() }; await this.award(tx, c, quarter, "special_activity", ref.id); tx.create(ref, record); return { data: { id: ref.id, ...record }, created: true }; });
+  }
+
+  async submitSurvey(principal: Principal | undefined, surveyId: string, input: Record<string, unknown>) {
+    const { context: c, quarter } = await this.scope(principal); this.requireWritable(quarter);
+    const survey = (await this.assignedDefinitions(principal, "surveys")).find((item) => item.id === surveyId); if (!survey) throw new NotFoundError();
+    const questionIds = new Set((Array.isArray(survey.questions) ? survey.questions : []).map((question) => (question as Record<string, unknown>).id)); const answers = input.answers as Array<Record<string, unknown>>;
+    if (answers.some((answer) => !questionIds.has(answer.questionId))) throw new BusinessRuleError("SURVEY_ANSWER_INVALID", "An answer references an unavailable question.");
+    const ref = this.db.doc(`surveySubmissions/${id(quarter.id, surveyId, c.participantId)}`), complete = input.status === "completed";
+    return this.db.runTransaction(async (tx) => { const old = await tx.get(ref); if (old.exists && old.get("status") === "completed") return data(old); const record = { organizationId: c.organizationId, participantId: c.participantId, quarterId: quarter.id, surveyId, answers, status: input.status, updatedAt: FieldValue.serverTimestamp(), completedAt: complete ? FieldValue.serverTimestamp() : null }; if (complete) await this.award(tx, c, quarter, "survey", ref.id); tx.set(ref, record, { merge: true }); return { id: ref.id, ...record }; });
+  }
+
+  async points(principal: Principal | undefined, cursor?: string) {
+    const { context: c } = await this.scope(principal); let query: Query<DocumentData> = this.db.collection("pointLedger").where("participantId", "==", c.participantId).orderBy("createdAt", "desc").limit(21);
+    if (cursor) { const after = await this.db.doc(`pointLedger/${cursor}`).get(); if (!after.exists || after.get("organizationId") !== c.organizationId || after.get("participantId") !== c.participantId) throw new NotFoundError(); query = query.startAfter(after); }
+    const docs = (await query.get()).docs.filter((doc) => doc.get("organizationId") === c.organizationId), shown = docs.slice(0, 20); return { items: shown.map(data), nextCursor: docs.length > 20 ? shown.at(-1)?.id ?? null : null, calculatedAt: this.clock().toISOString() };
+  }
+  async awards(principal: Principal | undefined) { const { context: c } = await this.scope(principal); return this.list(this.db.collection("awards").where("organizationId", "==", c.organizationId).where("participantId", "==", c.participantId).limit(100)); }
+
   private async award(tx:Transaction,c:{organizationId:string;participantId:string;teamId:string|null;actorUid:string},quarter:ActiveQuarter,sourceType:string,sourceId:string){const rules=await tx.get(this.db.collection("pointRules").where("organizationId","==",c.organizationId).where("sourceType","==",sourceType).where("status","==","active"));const now=this.clock().getTime(),eligible=rules.docs.filter(r=>(!r.get("quarterId")||r.get("quarterId")===quarter.id)&&(!(r.get("effectiveFrom") as Timestamp|undefined)||(r.get("effectiveFrom") as Timestamp).toMillis()<=now)&&(!(r.get("effectiveUntil") as Timestamp|undefined)||(r.get("effectiveUntil") as Timestamp).toMillis()>=now));if(eligible.length>1)throw new ConflictError("Multiple eligible point rules are configured.");if(!eligible[0])return;const rule=eligible[0],points=Number(rule.get("points"));if(!Number.isSafeInteger(points)||points<=0)throw new ConflictError("The point rule is invalid.");const ledger=this.db.doc(`pointLedger/${id(quarter.id,sourceType,sourceId,c.participantId)}`),old=await tx.get(ledger);if(old.exists)return;tx.create(ledger,{ruleId:rule.id,ruleVersion:Number(rule.get("version")??1),ruleSnapshot:{sourceType,points},points,sourceType,sourceId,organizationId:c.organizationId,quarterId:quarter.id,participantId:c.participantId,teamId:c.teamId,actorId:c.actorUid,createdAt:FieldValue.serverTimestamp()});if(points>0){tx.set(this.db.doc(`participantQuarterStats/${quarter.id}_${c.participantId}`),{organizationId:c.organizationId,participantId:c.participantId,quarterId:quarter.id,totalPoints:FieldValue.increment(points),updatedAt:FieldValue.serverTimestamp()},{merge:true});if(c.teamId)tx.set(this.db.doc(`teamQuarterStats/${quarter.id}_${c.teamId}`),{organizationId:c.organizationId,teamId:c.teamId,quarterId:quarter.id,totalPoints:FieldValue.increment(points),updatedAt:FieldValue.serverTimestamp()},{merge:true});}}
 }

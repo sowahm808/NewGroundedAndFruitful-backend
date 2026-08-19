@@ -31,4 +31,10 @@ export const projectPatchSchema = z.object({
 });
 export const milestoneSchema = z.object({ title: safeText(160), dueDate: z.string().date().optional() });
 export const updateSchema = z.object({ text: safeText(4000), milestoneId: z.string().max(128).optional(), completeMilestone: z.boolean().default(false) });
+export const gratitudeSchema = z.object({ text: safeText(2000) });
+export const specialActivitySubmissionSchema = z.object({ response: z.string().trim().max(4000).optional() });
+export const surveySubmissionSchema = z.object({
+  answers: z.array(z.object({ questionId: z.string().min(1).max(128), value: z.union([z.string().max(4000), z.number(), z.boolean(), z.null()]) })).max(100),
+  status: z.enum(["draft", "completed"]),
+}).refine(({ answers }) => new Set(answers.map(({ questionId }) => questionId)).size === answers.length, { message: "Question answers must be unique.", path: ["answers"] });
 export type CheckInInput = z.infer<typeof checkInSchema>;

@@ -4,7 +4,7 @@ import { db } from "../../config/firebase.js";
 import { requireRole } from "../../middleware/authorize.js";
 import { validateBody } from "../../middleware/validate.js";
 import { ChildService } from "../service.js";
-import { activityResponseSchema, characterAssessmentSchema, checkInSchema, milestoneSchema, projectCreateSchema, projectPatchSchema, updateSchema } from "../schemas.js";
+import { activityResponseSchema, characterAssessmentSchema, checkInSchema, gratitudeSchema, milestoneSchema, projectCreateSchema, projectPatchSchema, specialActivitySubmissionSchema, surveySubmissionSchema, updateSchema } from "../schemas.js";
 
 const router=Router(), service=new ChildService(db), resourceId=z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
 router.use(requireRole("child"));
@@ -17,6 +17,8 @@ router.get("/today",handle(req=>service.today(req.principal)));
 router.get("/check-ins/today",handle(req=>service.getCheckIn(req.principal)));
 router.put("/check-ins/today/draft",validateBody(checkInSchema),handle(req=>service.saveCheckIn(req.principal,req.body,false)));
 router.post("/check-ins/today/complete",validateBody(checkInSchema),handle(req=>service.saveCheckIn(req.principal,req.body,true)));
+router.get("/gratitude",handle(req=>service.gratitude(req.principal,typeof req.query.cursor==="string"?req.query.cursor:undefined)));
+router.post("/gratitude",validateBody(gratitudeSchema),create(req=>service.saveGratitude(req.principal,req.body.text)));
 router.get("/character",handle(req=>service.character(req.principal)));
 router.put("/character/draft",validateBody(characterAssessmentSchema),handle(req=>service.saveCharacter(req.principal,req.body.responses,false)));
 router.post("/character/complete",validateBody(characterAssessmentSchema),handle(req=>service.saveCharacter(req.principal,req.body.responses,true)));
@@ -33,4 +35,10 @@ router.patch("/projects/:projectId",validateBody(projectPatchSchema),handle(req=
 router.post("/projects/:projectId/milestones",validateBody(milestoneSchema),create(req=>service.addMilestone(req.principal,pid(req),req.body)));
 router.post("/projects/:projectId/updates",validateBody(updateSchema),create(req=>service.addUpdate(req.principal,pid(req),req.body)));
 router.get("/team",handle(req=>service.team(req.principal)));
+router.get("/special-activities",handle(req=>service.specialActivities(req.principal)));
+router.post("/special-activities/:activityId/submissions",validateBody(specialActivitySubmissionSchema),create(req=>service.completeSpecialActivity(req.principal,aid(req),req.body)));
+router.get("/surveys",handle(req=>service.surveys(req.principal)));
+router.post("/surveys/:activityId/submissions",validateBody(surveySubmissionSchema),handle(req=>service.submitSurvey(req.principal,aid(req),req.body)));
+router.get("/points",handle(req=>service.points(req.principal,typeof req.query.cursor==="string"?req.query.cursor:undefined)));
+router.get("/awards",handle(req=>service.awards(req.principal)));
 export default router;

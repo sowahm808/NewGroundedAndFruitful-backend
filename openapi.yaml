@@ -562,6 +562,49 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { description: Version or lifecycle conflict }
         "422": { $ref: "#/components/responses/Validation" }
+  /child/gratitude:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Lists only the authenticated child's private gratitude entries using an opaque continuation cursor.
+      responses: { "200": { description: Private gratitude history }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, minLength: 1, maxLength: 2000 } } } } } }
+      responses: { "200": { description: Existing daily entry }, "201": { description: Entry created }, "409": { description: Quarter is unavailable or read-only }, "422": { $ref: "#/components/responses/Validation" } }
+  /child/special-activities:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      responses: { "200": { description: Active activities assigned to the authenticated child } }
+  /child/special-activities/{activityId}/submissions:
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ name: activityId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Existing idempotent submission }, "201": { description: Completed with an atomic participation award } }
+  /child/surveys:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      responses: { "200": { description: Active surveys assigned to the authenticated child } }
+  /child/surveys/{activityId}/submissions:
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ name: activityId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Draft saved or final submission replayed }, "422": { $ref: "#/components/responses/Validation" } }
+  /child/points:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      responses: { "200": { description: Authenticated child's immutable point ledger page and calculation timestamp } }
+  /child/awards:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      responses: { "200": { description: Authenticated child's issued awards } }
 components:
   securitySchemes:
     {
