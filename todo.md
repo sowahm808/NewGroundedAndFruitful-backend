@@ -83,17 +83,16 @@ product. The order reflects dependencies and risk.
       active/dated parent, mentor, and authorized-adult grants.
 - [ ] Approve and migrate legacy `admin`, `super_admin`, and `observer` roles to
       the final product role vocabulary without locking out existing users.
-- [ ] Add emulator-backed integration tests for authentication/session flows,
-      relationship authorization, cross-tenant denial, point transactions,
-      concurrency, idempotency, and failure rollback. Remove
-      `--passWithNoTests` when the integration suite is mandatory.
-- [ ] Prevent compiled `lib/test` files from leaking into test discovery and add
-      a clean-build check; the current integration command can discover stale
-      compiled rule tests after `npm run build`.
-- [ ] Run Firestore rules tests in CI instead of leaving `test:rules` as a
-      separate local command.
-- [ ] Pin `firebase-tools` as a development dependency so emulator/rules tests
-      do not depend on an unpinned `npx` network download.
+- [~] Emulator-backed point transaction and concurrent-idempotency tests are
+  mandatory and production access is guarded. Authentication/session,
+  relationship, cross-tenant, and rollback integration coverage remains.
+- [x] Compiled `lib/test` files are excluded, clean removes only the validated
+      build output, and CI performs a second clean build.
+- [x] Firestore rules tests are part of the CI-equivalent command.
+- [!] Pin `firebase-tools` as a development dependency. The execution
+  environment's registry returns HTTP 403 for this package; an approved
+  exact version and generated lockfile are required before merge. Risk:
+  emulator CI remains blocked until the infrastructure owner resolves it.
 - [ ] Replace process-local rate limiting with a managed shared limiter before
       enabling horizontal scaling.
 - [ ] Implement and test backend Firebase App Check token verification; current

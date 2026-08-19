@@ -8,19 +8,21 @@
   },
   "main": "lib/src/server.js",
   "scripts": {
+    "clean": "node scripts/clean.mjs",
     "dev": "tsx watch src/server.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude 'lib/**' --exclude 'test/integration/**'",
-    "test:integration": "FIREBASE_PROJECT_ID=demo-grounded-fruitful vitest run test/integration --exclude \"test/integration/firestore-rules.test.ts\" --exclude \"lib/**\" --passWithNoTests",
-    "build": "tsc -p tsconfig.json",
+    "test:integration": "npx --yes firebase-tools@14.12.1 emulators:exec --only firestore --project demo-grounded-fruitful-integration \"node scripts/verify-test-environment.mjs && vitest run test/integration/point-repository.integration.test.ts --exclude 'lib/**'\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "start": "node lib/src/server.js",
-    "emulators": "npx firebase-tools emulators:start",
+    "emulators": "npx --yes firebase-tools@14.12.1 emulators:start",
     "seed": "node scripts/guard-production.mjs --require-emulator && tsx scripts/seed.ts",
     "admin:assign-role": "tsx scripts/assign-role.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:rules": "npx firebase-tools emulators:exec --only firestore --project demo-grounded-fruitful-rules \"vitest run test/integration/firestore-rules.test.ts\""
+    "test:rules": "npx --yes firebase-tools@14.12.1 emulators:exec --only firestore --project demo-grounded-fruitful-rules \"node scripts/verify-test-environment.mjs && vitest run test/integration/firestore-rules.test.ts --exclude 'lib/**'\"",
+    "test:ci": "npm run clean && npm run lint && npm run typecheck && npm test && npm run test:rules && npm run test:integration && npm run build && npm run clean && npm run build"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
