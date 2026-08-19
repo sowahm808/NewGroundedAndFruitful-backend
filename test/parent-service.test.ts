@@ -56,4 +56,121 @@ describe("ParentService observations", () => {
       meta: { nextCursor: null },
     });
   });
+
+  it("returns an empty collection and propagates repository failures for sanitization", async () => {
+    const emptyDb = {
+      collection: () => ({
+        where: () => ({ get: () => Promise.resolve({ docs: [] }) }),
+      }),
+    } as unknown as Firestore;
+    await expect(
+      new ParentService(emptyDb).observations(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        { limit: 20 },
+      ),
+    ).resolves.toEqual({ data: [], meta: { nextCursor: null } });
+
+    const failure = new Error("raw Firestore detail");
+    const failedDb = {
+      collection: () => ({
+        where: () => ({ get: () => Promise.reject(failure) }),
+      }),
+    } as unknown as Firestore;
+    await expect(
+      new ParentService(failedDb).observations(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        { limit: 20 },
+      ),
+    ).rejects.toBe(failure);
+  });
+});
+
+describe("ParentService academic-support requests", () => {
+  const doc = (id: string, values: Record<string, unknown>) => ({
+    id,
+    get: (field: string) => values[field],
+  });
+  const supportDb = (
+    requests: ReturnType<typeof doc>[],
+    links: ReturnType<typeof doc>[],
+  ) =>
+    ({
+      collection: (name: string) => ({
+        where: () => ({
+          get: () =>
+            Promise.resolve({
+              docs: name === "supportRequests" ? requests : links,
+            }),
+        }),
+      }),
+      doc: (path: string) => ({
+        get: () => {
+          const id = path.split("/").at(-1);
+          const found = requests.find((item) => item.id === id);
+          return Promise.resolve(
+            found
+              ? { ...found, exists: true }
+              : { id, exists: false, get: () => undefined },
+          );
+        },
+      }),
+    }) as unknown as Firestore;
+
+  it("returns empty and populated pages scoped to an active relationship", async () => {
+    const link = doc("link", {
+      status: "active",
+      organizationId: "org-1",
+      participantId: "child-1",
+    });
+    await expect(
+      new ParentService(supportDb([], [link])).supportList(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        { limit: 20 },
+      ),
+    ).resolves.toEqual({ data: [], meta: { nextCursor: null } });
+    const request = doc("request-1", {
+      requesterUid: "parent-1",
+      organizationId: "org-1",
+      participantId: "child-1",
+      categoryId: "math",
+      subject: "Fractions",
+      status: "open",
+      createdAt: "2026-08-19T00:00:00.000Z",
+      updatedAt: "2026-08-19T00:00:00.000Z",
+    });
+    await expect(
+      new ParentService(supportDb([request], [link])).supportList(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        { limit: 20, status: "open" },
+      ),
+    ).resolves.toMatchObject({
+      data: [{ id: "request-1", childId: "child-1" }],
+    });
+    await expect(
+      new ParentService(supportDb([request], [])).supportList(
+        { uid: "other-parent", organizationIds: ["org-1"] },
+        { limit: 20 },
+      ),
+    ).resolves.toEqual({ data: [], meta: { nextCursor: null } });
+  });
+
+  it("returns not found for missing detail and another parent's request", async () => {
+    const own = doc("own", {
+      requesterUid: "parent-1",
+      organizationId: "org-1",
+    });
+    const service = new ParentService(supportDb([own], []));
+    await expect(
+      service.supportDetail(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        "missing",
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      service.supportDetail(
+        { uid: "other", organizationIds: ["org-1"] },
+        "own",
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
 });

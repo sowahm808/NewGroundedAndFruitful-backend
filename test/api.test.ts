@@ -33,6 +33,28 @@ describe("HTTP safety contract", () => {
       "/academic-support/configuration",
     );
   });
+  it("registers the exact academic-support routes in static-first order", () => {
+    const routes = parentRouter.stack
+      .map((layer) => layer.route)
+      .filter((route) => String(route?.path).startsWith("/academic-support"))
+      .map((route) => ({
+        path: route?.path,
+        methods: (route as unknown as { methods?: Record<string, boolean> })
+          .methods,
+      }));
+    expect(routes).toEqual([
+      {
+        path: "/academic-support/configuration",
+        methods: { get: true },
+      },
+      { path: "/academic-support/requests", methods: { get: true } },
+      { path: "/academic-support/requests", methods: { post: true } },
+      {
+        path: "/academic-support/requests/:requestId",
+        methods: { get: true },
+      },
+    ]);
+  });
 
   it("provides a minimal root health response for platform probes", async () => {
     const response = await fetch(`${base}/`);
@@ -62,6 +84,7 @@ describe("HTTP safety contract", () => {
       "children",
       "observations",
       "academic-support/configuration",
+      "academic-support/requests?cursor=&status=&search=&childId=",
       "support/categories",
     ]) {
       const response = await fetch(`${base}/api/v1/parent/${path}`);
@@ -90,6 +113,17 @@ describe("HTTP safety contract", () => {
     expect(await response.json()).toMatchObject({
       error: { code: "AUTHENTICATION_REQUIRED" },
     });
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("pragma")).toBe("no-cache");
+  });
+  it("does not turn a conditional private response into a bodyless 304", async () => {
+    const first = await fetch(`${base}/api/v1/parent/children`);
+    const response = await fetch(`${base}/api/v1/parent/children`, {
+      headers: { "if-none-match": first.headers.get("etag") ?? '"private"' },
+    });
+    expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect((await response.text()).length).toBeGreaterThan(0);
   });
   it("publishes the anonymous child-token request contract", async () => {
     const response = await fetch(`${base}/api/v1/auth/child-token`, {

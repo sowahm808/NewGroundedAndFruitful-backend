@@ -7,8 +7,9 @@ import {
   childQuerySchema,
   familyCompletionSchema,
   idSchema,
-  listSchema,
   observationSchema,
+  observationQuerySchema,
+  supportListQuerySchema,
   supportRequestSchema,
 } from "../schemas.js";
 import { ParentService } from "../service.js";
@@ -64,7 +65,10 @@ router.get("/children/:childId", async (req, res, next) => {
 router.get("/observations", async (req, res, next) => {
   try {
     res.json(
-      await service.observations(principal(req), parse(listSchema, req.query)),
+      await service.observations(
+        principal(req),
+        parse(observationQuerySchema, req.query),
+      ),
     );
   } catch (e) {
     next(e);
@@ -159,6 +163,44 @@ router.get("/academic-support/configuration", async (req, res, next) => {
     next(e);
   }
 });
+router.get("/academic-support/requests", async (req, res, next) => {
+  try {
+    res.json(
+      await service.supportList(
+        principal(req),
+        parse(supportListQuerySchema, req.query),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+router.post("/academic-support/requests", async (req, res, next) => {
+  try {
+    res
+      .status(201)
+      .json(
+        await service.createSupport(
+          principal(req),
+          parse(supportRequestSchema, req.body),
+        ),
+      );
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/academic-support/requests/:requestId", async (req, res, next) => {
+  try {
+    res.json(
+      await service.supportDetail(
+        principal(req),
+        parse(idSchema, req.params.requestId),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
 router.get("/support/categories", async (req, res, next) => {
   try {
     res.json(await service.supportCategories(principal(req)));
@@ -169,7 +211,10 @@ router.get("/support/categories", async (req, res, next) => {
 router.get("/support/requests", async (req, res, next) => {
   try {
     res.json(
-      await service.supportList(principal(req), parse(listSchema, req.query)),
+      await service.supportList(
+        principal(req),
+        parse(supportListQuerySchema, req.query),
+      ),
     );
   } catch (e) {
     next(e);

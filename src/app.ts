@@ -14,6 +14,7 @@ import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import { requestContext } from "./middleware/request.js";
+import { privateResponse } from "./middleware/private-response.js";
 import {
   AppError,
   InternalError,
@@ -111,16 +112,21 @@ app.use(rateLimit(60_000, 120));
  * Preserve the legacy route temporarily if the frontend still uses it.
  * Remove it after consumers migrate to /api/v1/auth.
  */
-app.use("/api/auth", authRoutes);
-app.use("/api/v1/auth", authRoutes);
+app.use("/api/auth", privateResponse, authRoutes);
+app.use("/api/v1/auth", privateResponse, authRoutes);
 
 /*
  * Attach authentication only to protected routers. A global authenticate
  * middleware would make unknown routes return 401 instead of 404.
  */
-app.use("/api/v1/participants", authenticate, participantRoutes);
-app.use("/api/v1/points", authenticate, pointRoutes);
-app.use("/api/v1/parent", authenticate, parentRoutes);
+app.use(
+  "/api/v1/participants",
+  privateResponse,
+  authenticate,
+  participantRoutes,
+);
+app.use("/api/v1/points", privateResponse, authenticate, pointRoutes);
+app.use("/api/v1/parent", privateResponse, authenticate, parentRoutes);
 
 app.use((_req, _res, next) => {
   next(new NotFoundError());

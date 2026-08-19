@@ -3,6 +3,8 @@ import {
   characterSelectionSchema,
   childQuerySchema,
   observationSchema,
+  observationQuerySchema,
+  supportListQuerySchema,
   supportRequestSchema,
 } from "../src/parent/schemas.js";
 
@@ -32,6 +34,33 @@ describe("parent API validation", () => {
       status: undefined,
       search: undefined,
     });
+  });
+  it("normalizes only optional observation and support query strings", () => {
+    expect(observationQuerySchema.parse({ cursor: "", childId: "" })).toEqual({
+      limit: 20,
+      cursor: undefined,
+      childId: undefined,
+    });
+    expect(
+      supportListQuerySchema.parse({
+        cursor: "",
+        childId: "",
+        status: "",
+        search: "",
+      }),
+    ).toEqual({
+      limit: 20,
+      cursor: undefined,
+      childId: undefined,
+      status: undefined,
+      search: undefined,
+    });
+    expect(
+      supportListQuerySchema.safeParse({ cursor: "bad cursor!" }).success,
+    ).toBe(false);
+    expect(
+      supportListQuerySchema.safeParse({ status: "pending" }).success,
+    ).toBe(false);
   });
   it("requires exactly five distinct configured quality IDs", () => {
     expect(
