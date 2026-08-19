@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localDateIn } from "../src/child/context.js";
+import { localDateIn, resolveChildContext } from "../src/child/context.js";
 import childRouter from "../src/child/routes/index.js";
 
 describe("child workflow contracts", () => {
@@ -10,6 +10,15 @@ describe("child workflow contracts", () => {
   it("registers all child route methods", () => {
     const routes=childRouter.stack.map(layer=>layer.route).filter(Boolean).map(route=>[Object.keys((route as unknown as {methods:Record<string,boolean>}).methods)[0],route?.path].join(" "));
     expect(routes).toEqual(expect.arrayContaining(["get /today","get /character","get /bible","get /reading","get /projects","get /team","post /check-ins/today/complete","post /projects/:projectId/updates"]));
+  });
+  it("accepts a legacy singular child membership during context resolution", async () => {
+    const membership = { get: (field: string) => ({ status: "active", role: "child", organizationId: "org-a", timezone: "UTC" })[field] };
+    const participant = { id: "participant-a", get: (field: string) => ({ organizationId: "org-a", status: "active" })[field] };
+    const collection = (name: string) => ({ where: () => ({ get: () => Promise.resolve({ docs: name === "memberships" ? [membership] : name === "participants" ? [participant] : [] }) }) });
+
+    await expect(resolveChildContext({ collection } as never, {
+      uid: "child-a", role: "child", roles: ["child"], organizationIds: ["org-a"], token: {} as never,
+    })).resolves.toMatchObject({ context: { actorUid: "child-a", participantId: "participant-a", organizationId: "org-a" } });
   });
 });
 
