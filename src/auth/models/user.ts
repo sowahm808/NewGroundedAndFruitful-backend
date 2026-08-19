@@ -2,7 +2,7 @@ import type { Timestamp } from "firebase-admin/firestore";
 import type { Role } from "../authorization.js";
 
 export type UserStatus = "active" | "disabled";
-export type MembershipStatus = "active" | "pending" | "suspended";
+export type MembershipStatus = "active" | "pending" | "suspended" | "revoked";
 export type OnboardingStatus =
   | "complete"
   | "role_required"
@@ -36,4 +36,8 @@ export interface SessionUser {
     roles: readonly Role[];
     status: MembershipStatus;
   }>;
+  authorization: {
+    source: "membership" | "legacy_user_profile" | "none";
+    migrationRequired: boolean;
+  };
 }

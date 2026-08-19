@@ -52,6 +52,15 @@ describe("central authorization policy", () => {
   it("denies super-admin cross-tenant access", async () => {
     await expect(policy.authorize(context("super_admin"), "organization.manage", { organizationId: "org-2" })).rejects.toBeInstanceOf(AuthorizationError);
   });
+  it("permits a scoped compatibility parent only for an explicitly linked child", async () => {
+    const legacy = context("parent", { memberships: [], authorizationSource: "legacy_user_profile" });
+    await expect(policy.authorize(legacy, "child.linked.read", scope)).resolves.toBeUndefined();
+    await expect(policy.authorize(legacy, "child.linked.read", { ...scope, participantId: "other" })).rejects.toBeInstanceOf(AuthorizationError);
+  });
+  it("denies a compatibility admin outside explicit organization scope", async () => {
+    const legacy = context("admin", { memberships: [], authorizationSource: "legacy_user_profile" });
+    await expect(policy.authorize(legacy, "program.configure", { ...scope, organizationId: "org-2" })).rejects.toBeInstanceOf(AuthorizationError);
+  });
   it.each(["pending", "suspended", "revoked"] as const)("ignores %s memberships", async (status) => {
     const base = context("super_admin");
     await expect(policy.authorize({ ...base, memberships: [{ ...base.memberships[0]!, status } as never] }, "organization.manage", scope)).rejects.toBeInstanceOf(AuthorizationError);

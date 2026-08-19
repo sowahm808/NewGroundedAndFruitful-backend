@@ -46,6 +46,8 @@ The response is `{ "data": { "customToken": "..." } }`. The web client must exch
 
 Create distinct Firebase projects and Render environments for staging and production. Configure every variable listed in `.env.example` in Render; secrets must be secret environment values, never repository files. Set `ALLOWED_ORIGINS` to a comma-separated allowlist (for example the two production website origins), and set a random high-entropy `CHILD_LOGIN_PEPPER`. Render builds the multi-stage Docker image, runs compiled JavaScript, probes `/health`, and waits for required GitHub checks before automatic deployment. Grant the runtime service account only the required Firebase permissions.
 
+`MEMBERSHIP_ENFORCEMENT_MODE=compatibility` is the deliberate migration-period setting. It prefers active memberships and uses server-controlled `users/{uid}.roles` only when no membership document exists. Set `strict` only after the membership verification command reports complete role and organization coverage; any other value fails startup validation.
+
 ## Security and privacy
 
 Helmet, strict CORS, 64 KiB JSON limits, global and child-token rate limits, generic login failures, temporary child lockouts, Argon2 credential verification, request IDs, safe error envelopes, revocation-aware Firebase verification, and structured redacted event logs are enabled. Tokens, passwords, PINs, reflections, and wellbeing notes are never logged. Firestore and Storage rules deny browser writes by default; Admin SDK authorization is independently enforced by the API.

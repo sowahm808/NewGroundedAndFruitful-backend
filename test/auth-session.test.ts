@@ -50,6 +50,7 @@ function service(
       firebaseAuth as never,
       users as never,
       memberships as never,
+      (options as { mode?: "compatibility" | "strict" }).mode,
     ),
   };
 }
@@ -94,6 +95,25 @@ describe("auth session bootstrap", () => {
     );
   });
 
+  it("restores a legacy-only user in compatibility mode and marks migration", async () => {
+    const { subject } = service({ profile: { ...activeProfile, roles: ["parent", "parent"] } });
+    await expect(subject.createSession("token-1")).resolves.toMatchObject({
+      roles: ["parent"],
+      onboardingStatus: "complete",
+      memberships: [],
+      authorization: { source: "legacy_user_profile", migrationRequired: true },
+    });
+  });
+
+  it("requires an active membership in strict mode", async () => {
+    const fixture = service({ profile: { ...activeProfile, roles: ["parent"] } });
+    const strict = new AuthSessionService(fixture.firebaseAuth as never, fixture.users as never, fixture.memberships as never, "strict");
+    await expect(strict.createSession("token-1")).resolves.toMatchObject({
+      roles: [], onboardingStatus: "role_required",
+      authorization: { source: "none", migrationRequired: false },
+    });
+  });
+
   it("does not mark a child without participant context complete", async () => {
     const fixture = service({ memberships: [membership("child")] });
     fixture.memberships.hasActiveChildContext.mockResolvedValue(false);
@@ -135,7 +155,30 @@ describe("auth session bootstrap", () => {
       service({
         memberships: [membership("parent", "suspended")],
       }).subject.createSession("t"),
-    ).resolves.toMatchObject({ roles: [], onboardingStatus: "role_required" });
+    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+  });
+
+  it.each(["pending", "revoked"])("does not bypass a %s membership with stale legacy roles", async (status) => {
+    await expect(service({
+      profile: { ...activeProfile, roles: ["admin"] },
+      memberships: [membership("parent", status)],
+    }).subject.createSession("t")).resolves.toMatchObject({ roles: [], authorization: { source: "none" } });
+  });
+
+  it("does not let a suspended membership bypass restriction with stale legacy roles", async () => {
+    await expect(service({
+      profile: { ...activeProfile, roles: ["admin"] },
+      memberships: [membership("parent", "suspended")],
+    }).subject.createSession("t")).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+  });
+
+  it("prefers active membership roles and rejects unknown legacy roles", async () => {
+    await expect(service({
+      profile: { ...activeProfile, roles: ["root", "admin"] },
+      memberships: [membership("parent")],
+    }).subject.createSession("t")).resolves.toMatchObject({
+      roles: ["parent"], authorization: { source: "membership", migrationRequired: false },
+    });
   });
 
   it("uses Firestore when token claims differ and repairs claims", async () => {

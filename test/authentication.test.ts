@@ -74,20 +74,33 @@ describe("server-authoritative authentication role resolution", () => {
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
-  it("does not authorize a transitional profile role without membership", async () => {
+  it("authorizes a transitional profile role without membership only in compatibility mode", async () => {
     await expect(
       resolvePrincipal(
-        firestore({ status: "active", roles: ["parent"] }) as never,
+        firestore({ status: "active", roles: ["parent"], organizationIds: ["org-1"] }) as never,
         { uid: "parent-1" } as never,
       ),
-    ).rejects.toBeInstanceOf(AuthorizationError);
+    ).resolves.toMatchObject({ roles: ["parent"], organizationIds: ["org-1"], memberships: [], authorizationSource: "legacy_user_profile" });
   });
-  it("does not allow a global super-admin without an active membership", async () => {
+  it("does not invent global organization scope for a legacy super-admin", async () => {
     await expect(
       resolvePrincipal(
         firestore({ status: "active", roles: ["super_admin"] }) as never,
         { uid: "root-1" } as never,
       ),
-    ).rejects.toBeInstanceOf(AuthorizationError);
+    ).resolves.toMatchObject({ roles: ["super_admin"], organizationIds: [], memberships: [] });
+  });
+  it("strict mode rejects a legacy-only principal", async () => {
+    await expect(resolvePrincipal(
+      firestore({ status: "active", roles: ["parent"] }) as never,
+      { uid: "parent-1" } as never,
+      "strict",
+    )).rejects.toBeInstanceOf(AuthorizationError);
+  });
+  it.each(["pending", "suspended", "revoked"])("does not fall back when a %s membership exists", async (status) => {
+    await expect(resolvePrincipal(
+      firestore({ status: "active", roles: ["parent"] }, [{ userId: "parent-1", roles: ["parent"], status }]) as never,
+      { uid: "parent-1" } as never,
+    )).rejects.toBeInstanceOf(AuthorizationError);
   });
 });
