@@ -17,6 +17,7 @@
     "start": "node lib/src/server.js",
     "emulators": "npx firebase-tools emulators:start",
     "seed": "node scripts/guard-production.mjs --require-emulator && tsx scripts/seed.ts",
+    "admin:assign-role": "tsx scripts/assign-role.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

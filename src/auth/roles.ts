@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const canonicalRoles = [
   "child",
   "parent",
@@ -8,6 +10,8 @@ export const canonicalRoles = [
 ] as const;
 
 export type Role = (typeof canonicalRoles)[number];
+export const canonicalRoleSchema = z.enum(canonicalRoles);
+export const canonicalRoleArraySchema = z.array(canonicalRoleSchema);
 
 const aliases: Readonly<Record<string, Role>> = {
   child: "child",
@@ -44,6 +48,11 @@ export function normalizeRoles(value: unknown): {
     if (!roles.includes(role)) roles.push(role);
   }
   return { roles, invalid };
+}
+
+/** Validates a server-controlled role array without accepting legacy aliases. */
+export function parseCanonicalRoles(value: unknown): Role[] {
+  return canonicalRoleArraySchema.parse(value);
 }
 
 export function isRole(value: unknown): value is Role {

@@ -1,5 +1,9 @@
 import type { Auth, DecodedIdToken, UserRecord } from "firebase-admin/auth";
-import { AuthenticationError, InternalError } from "../../shared/errors.js";
+import {
+  AuthenticationError,
+  AuthorizationError,
+  InternalError,
+} from "../../shared/errors.js";
 import { logger } from "../../shared/logger.js";
 import type { SessionUser } from "../models/user.js";
 import type { MembershipRepository } from "../repositories/memberships.js";
@@ -72,12 +76,14 @@ export class AuthSessionService {
     const disabled = authUser.disabled || profile.status === "disabled";
     const pending = memberships.some((item) => item.status === "pending");
 
-    if (disabled || memberships.some((item) => item.status === "suspended"))
+    if (disabled || memberships.some((item) => item.status === "suspended")) {
       logger.warn("session_account_restricted", {
         requestId: context.requestId,
         uid: decodedToken.uid,
         disabled,
       });
+      throw new AuthorizationError();
+    }
     if (activeMemberships.length === 0)
       logger.warn("session_no_active_membership", {
         requestId: context.requestId,
@@ -158,11 +164,11 @@ export class AuthSessionService {
     uid: string,
     context: SessionContext,
   ): void {
-    for (const value of invalid)
-      logger.warn("unknown_stored_role", {
+    if (invalid.length > 0)
+      logger.warn("invalid_stored_roles", {
         requestId: context.requestId,
         uid,
-        value,
+        invalidCount: invalid.length,
       });
   }
 
