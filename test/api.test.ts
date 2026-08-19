@@ -107,6 +107,15 @@ describe("HTTP safety contract", () => {
       error: { code: "AUTHENTICATION_REQUIRED", requestId: expect.any(String) },
     });
   });
+  it("protects the organization administration API", async () => {
+    const response = await fetch(
+      `${base}/api/v1/administration/participants?organizationId=org-1`,
+    );
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
   it("requires a token for auth session provisioning", async () => {
     const response = await fetch(`${base}/api/auth/session`, {
       method: "POST",

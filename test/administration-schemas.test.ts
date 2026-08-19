@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest";
+import {
+  consentCaptureSchema,
+  invitationCreateSchema,
+  participantCreateSchema,
+  roleUpdateSchema,
+} from "../src/administration/schemas.js";
+
+describe("administration request contracts", () => {
+  it("requires a guardian and a valid birth date when creating participants", () => {
+    expect(
+      participantCreateSchema.safeParse({
+        organizationId: "org-1",
+        programId: "program-1",
+        displayName: "Child",
+        birthDate: "2020-01-01",
+      }).success,
+    ).toBe(false);
+    expect(
+      participantCreateSchema.safeParse({
+        organizationId: "org-1",
+        programId: "program-1",
+        displayName: "Child",
+        birthDate: "2020-01-01",
+        guardianUserId: "guardian-1",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("only captures affirmative, explicitly versioned consent", () => {
+    const base = {
+      organizationId: "org-1",
+      participantId: "child-1",
+      policyKey: "participation",
+      policyVersion: "2026-08",
+    };
+    expect(
+      consentCaptureSchema.safeParse({ ...base, granted: false }).success,
+    ).toBe(false);
+    expect(
+      consentCaptureSchema.safeParse({ ...base, granted: true }).success,
+    ).toBe(true);
+  });
+
+  it("limits invitations and membership updates to canonical values", () => {
+    expect(
+      invitationCreateSchema.safeParse({
+        organizationId: "org-1",
+        email: "adult@example.com",
+        role: "admin",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+      }).success,
+    ).toBe(false);
+    expect(
+      roleUpdateSchema.safeParse({ role: "mentor", status: "suspended" })
+        .success,
+    ).toBe(true);
+  });
+});
