@@ -164,11 +164,10 @@ paths:
     post:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
+      deprecated: true
+      description: Disabled compatibility path. No write occurs until source completion and any point award can be committed atomically with a server-selected rule snapshot.
       responses:
-        {
-          "201": { description: Completion created },
-          "200": { description: Existing idempotent completion },
-        }
+        "503": { description: Workflow safely disabled }
   /parent/academic-support/configuration:
     get:
       tags: [Parent]
@@ -1001,16 +1000,11 @@ components:
     Error:
       {
         type: object,
-        required: [code, message, requestId],
+        required: [error],
         properties:
           {
-            code: { type: string },
-            message: { type: string },
-            details: {},
-            requestId: { type: string },
             error:
               {
-                deprecated: true,
                 type: object,
                 required: [code, message, requestId],
                 properties:
@@ -1018,6 +1012,7 @@ components:
                     code: { type: string },
                     message: { type: string },
                     requestId: { type: string },
+                    fieldErrors: { type: object, additionalProperties: true },
                   },
               },
           },

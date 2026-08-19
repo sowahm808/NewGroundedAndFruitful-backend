@@ -9,6 +9,7 @@ export type ErrorCode =
   | "CONFLICT"
   | "RATE_LIMITED"
   | "BUSINESS_RULE"
+  | "DEPENDENCY_UNAVAILABLE"
   | "INTERNAL";
 export class AppError extends Error {
   constructor(
@@ -71,5 +72,10 @@ export class BusinessRuleError extends AppError {
 export class InternalError extends AppError {
   constructor() {
     super(500, "INTERNAL", "An unexpected error occurred.");
+  }
+}
+export class ServiceUnavailableError extends AppError {
+  constructor(message = "This operation is not currently available.") {
+    super(503, "DEPENDENCY_UNAVAILABLE", message);
   }
 }

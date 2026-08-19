@@ -176,10 +176,9 @@ app.use(
     if (safeError instanceof RateLimitError)
       res.setHeader("retry-after", String(safeError.retryAfterSeconds));
     const body = {
-      code: safeError.code.toLowerCase(),
+      code: safeError.code,
       message: safeError.status === 401 ? "Sign-in failed" : safeError.message,
       requestId: req.requestId,
-      ...(safeError.details ? { details: safeError.details } : {}),
     };
     const fieldErrors =
       safeError.details &&
@@ -187,10 +186,6 @@ app.use(
       "fieldErrors" in safeError.details
         ? { fieldErrors: safeError.details.fieldErrors }
         : {};
-    // Keep the old nested member during the version-one envelope migration.
-    res.status(safeError.status).json({
-      ...body,
-      error: { ...body, code: safeError.code, ...fieldErrors },
-    });
+    res.status(safeError.status).json({ error: { ...body, ...fieldErrors } });
   },
 );

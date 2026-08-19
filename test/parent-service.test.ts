@@ -24,15 +24,37 @@ describe("ParentService observations", () => {
       observation("other-org", "org-2", "2026-03-01T00:00:00.000Z"),
       observation("new", "org-1", "2026-02-01T00:00:00.000Z"),
     ];
-    const get = () => Promise.resolve({ docs });
-    const where = (field: string, operator: string, value: string) => {
-      expect([field, operator, value]).toEqual(["parentUid", "==", "parent-1"]);
-      return { get };
-    };
+    const links = [
+      {
+        id: "link-old",
+        get: (field: string) =>
+          ({
+            status: "active",
+            organizationId: "org-1",
+            participantId: "child-old",
+          })[field],
+      },
+      {
+        id: "link-new",
+        get: (field: string) =>
+          ({
+            status: "active",
+            organizationId: "org-1",
+            participantId: "child-new",
+          })[field],
+      },
+    ];
     const db = {
       collection: (name: string) => {
-        expect(name).toBe("characterObservations");
-        return { where };
+        const query = {
+          where: () => query,
+          limit: () => query,
+          get: () =>
+            Promise.resolve({
+              docs: name === "characterObservations" ? docs : links,
+            }),
+        };
+        return query;
       },
     } as unknown as Firestore;
     const service = new ParentService(db);
@@ -60,7 +82,9 @@ describe("ParentService observations", () => {
   it("returns an empty collection and propagates repository failures for sanitization", async () => {
     const emptyDb = {
       collection: () => ({
-        where: () => ({ get: () => Promise.resolve({ docs: [] }) }),
+        where: () => ({
+          limit: () => ({ get: () => Promise.resolve({ docs: [] }) }),
+        }),
       }),
     } as unknown as Firestore;
     await expect(
@@ -73,7 +97,9 @@ describe("ParentService observations", () => {
     const failure = new Error("raw Firestore detail");
     const failedDb = {
       collection: () => ({
-        where: () => ({ get: () => Promise.reject(failure) }),
+        where: () => ({
+          limit: () => ({ get: () => Promise.reject(failure) }),
+        }),
       }),
     } as unknown as Firestore;
     await expect(
