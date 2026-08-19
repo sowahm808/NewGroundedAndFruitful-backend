@@ -331,6 +331,63 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "422": { $ref: "#/components/responses/Validation" }
+  /points/adjustments:
+    post:
+      tags: [Points]
+      operationId: adjustPoints
+      description: Creates an immutable administrator adjustment or reverses one eligible original award. Reversals are limited to one per original entry.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 200, pattern: "^[A-Za-z0-9:_-]+$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required:
+                    [
+                      type,
+                      participantId,
+                      teamId,
+                      quarterId,
+                      points,
+                      reason,
+                      occurredAt,
+                    ]
+                  properties:
+                    type: { const: adjustment }
+                    participantId: { type: string, maxLength: 128 }
+                    teamId: { type: string, maxLength: 128 }
+                    quarterId: { type: string, maxLength: 128 }
+                    points:
+                      {
+                        type: integer,
+                        not: { const: 0 },
+                        description: Signed point delta,
+                      }
+                    reason: { type: string, minLength: 3, maxLength: 500 }
+                    occurredAt: { type: string, format: date-time }
+                - type: object
+                  additionalProperties: false
+                  required: [type, originalEntryId, reason]
+                  properties:
+                    type: { const: reversal }
+                    originalEntryId: { type: string, maxLength: 200 }
+                    reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "201": { description: Adjustment and audit entries created atomically }
+        "200": { description: Existing entry returned for duplicate key }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Duplicate reversal or idempotency conflict }
+        "422": { $ref: "#/components/responses/Validation" }
   /child/today:
     get:
       tags: [Child]
