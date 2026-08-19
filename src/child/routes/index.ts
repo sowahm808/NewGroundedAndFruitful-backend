@@ -8,7 +8,9 @@ import { activityResponseSchema, characterAssessmentSchema, checkInSchema, miles
 
 const router=Router(), service=new ChildService(db), resourceId=z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
 router.use(requireRole("child"));
-const handle=(fn:(req:Request)=>Promise<unknown>,created=false):RequestHandler=>async(req,res,next)=>{try{res.status(created?201:200).json({data:await fn(req)});}catch(e){next(e);}};
+interface CreateResult<T> { data:T; created:boolean }
+const handle=(fn:(req:Request)=>Promise<unknown>):RequestHandler=>async(req,res,next)=>{try{res.status(200).json({data:await fn(req)});}catch(e){next(e);}};
+const create=(fn:(req:Request)=>Promise<CreateResult<unknown>>):RequestHandler=>async(req,res,next)=>{try{const result=await fn(req);res.status(result.created?201:200).json({data:result.data});}catch(e){next(e);}};
 const pid=(req:Request)=>resourceId.parse(req.params.projectId), aid=(req:Request)=>resourceId.parse(req.params.activityId), rid=(req:Request)=>resourceId.parse(req.params.assignmentId);
 
 router.get("/today",handle(req=>service.today(req.principal)));
@@ -25,10 +27,10 @@ router.get("/reading",handle(req=>service.reading(req.principal)));
 router.get("/reading/:assignmentId",handle(req=>service.reading(req.principal,rid(req))));
 router.post("/reading/:assignmentId/responses",validateBody(activityResponseSchema),handle(req=>service.respond(req.principal,"reading",rid(req),req.body)));
 router.get("/projects",handle(req=>service.projects(req.principal)));
-router.post("/projects",validateBody(projectCreateSchema),handle(req=>service.createProject(req.principal,req.body),true));
+router.post("/projects",validateBody(projectCreateSchema),create(req=>service.createProject(req.principal,req.body)));
 router.get("/projects/:projectId",handle(req=>service.project(req.principal,pid(req))));
 router.patch("/projects/:projectId",validateBody(projectPatchSchema),handle(req=>service.patchProject(req.principal,pid(req),req.body)));
-router.post("/projects/:projectId/milestones",validateBody(milestoneSchema),handle(req=>service.addMilestone(req.principal,pid(req),req.body),true));
-router.post("/projects/:projectId/updates",validateBody(updateSchema),handle(req=>service.addUpdate(req.principal,pid(req),req.body),true));
+router.post("/projects/:projectId/milestones",validateBody(milestoneSchema),create(req=>service.addMilestone(req.principal,pid(req),req.body)));
+router.post("/projects/:projectId/updates",validateBody(updateSchema),create(req=>service.addUpdate(req.principal,pid(req),req.body)));
 router.get("/team",handle(req=>service.team(req.principal)));
 export default router;

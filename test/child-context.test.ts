@@ -12,3 +12,43 @@ describe("child workflow contracts", () => {
     expect(routes).toEqual(expect.arrayContaining(["get /today","get /character","get /bible","get /reading","get /projects","get /team","post /check-ins/today/complete","post /projects/:projectId/updates"]));
   });
 });
+
+import { quarterAcceptsSubmissions } from "../src/child/context.js";
+import { requireRole } from "../src/auth/authorization.js";
+import type { Principal } from "../src/auth/authorization.js";
+
+const principal = (role: Principal["role"]): Principal => ({
+  uid: `user-${role}`,
+  role,
+  roles: [role],
+  organizationIds: ["org-a"],
+  token: {} as Principal["token"],
+});
+
+describe("child authorization and quarter policy", () => {
+  it.each(["parent", "mentor", "observer", "admin", "super_admin"] as const)(
+    "denies the %s role without an audited support workflow",
+    (role) => expect(() => requireRole(principal(role), "child")).toThrow(),
+  );
+  it("allows the canonical child role", () => {
+    expect(requireRole(principal("child"), "child").uid).toBe("user-child");
+  });
+  it.each([
+    ["open", true], ["checkpoint", true], ["recognition", false],
+    ["closed", false], ["archived", false],
+  ] as const)("treats %s submission eligibility as %s", (status, expected) => {
+    expect(quarterAcceptsSubmissions({ status } as Parameters<typeof quarterAcceptsSubmissions>[0])).toBe(expected);
+  });
+});
+
+import { readFileSync } from "node:fs";
+
+it("documents every mounted child route in OpenAPI", () => {
+  const specification = readFileSync(new URL("../openapi.yaml", import.meta.url), "utf8");
+  const mounted = childRouter.stack
+    .map((layer) => layer.route?.path)
+    .filter((path): path is string => typeof path === "string")
+    .map((path) => `/child${path.replace(/:([A-Za-z]+)/g, "{$1}")}:`);
+  expect(new Set(mounted).size).toBe(18);
+  for (const path of mounted) expect(specification).toContain(`  ${path}`);
+});

@@ -267,6 +267,10 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "status",
           "order": "ASCENDING"
         }
