@@ -84,7 +84,12 @@ export class AuthSessionService {
       });
       throw new AuthorizationError();
     }
-    if (activeMemberships.length === 0)
+    if (activeMemberships.length === 0 && global.roles.includes("super_admin"))
+      logger.info("session_global_super_admin_without_membership", {
+        requestId: context.requestId,
+        uid: decodedToken.uid,
+      });
+    else if (activeMemberships.length === 0)
       logger.warn("session_no_active_membership", {
         requestId: context.requestId,
         uid: decodedToken.uid,

@@ -16,8 +16,15 @@ type ChildStatus = "active" | "pending" | "inactive";
 type ListInput = {
   limit: number;
   cursor?: string | undefined;
-  status?: ChildStatus | undefined;
+  status?:
+    | ChildStatus
+    | "open"
+    | "in_progress"
+    | "resolved"
+    | "closed"
+    | undefined;
   search?: string | undefined;
+  childId?: string | undefined;
 };
 
 const iso = (value: unknown): string | null =>
@@ -331,8 +338,10 @@ export class ParentService {
       .where("parentUid", "==", principal.uid)
       .get();
     const authorized = snapshot.docs
-      .filter((doc) =>
-        principal.organizationIds.includes(doc.get("organizationId")),
+      .filter(
+        (doc) =>
+          principal.organizationIds.includes(doc.get("organizationId")) &&
+          (!input.childId || doc.get("participantId") === input.childId),
       )
       .sort((a, b) => {
         const createdAtDifference = (
@@ -613,19 +622,56 @@ export class ParentService {
     return { id: ref.id, status: "open" };
   }
   async supportList(principal: Principal, input: ListInput) {
-    let q = this.db
-      .collection("supportRequests")
-      .where("requesterUid", "==", principal.uid)
-      .orderBy("createdAt", "desc")
-      .limit(input.limit + 1);
-    if (input.cursor) {
-      const c = await this.db.doc(`supportRequests/${input.cursor}`).get();
-      if (!c.exists || c.get("requesterUid") !== principal.uid)
-        throw new NotFoundError();
-      q = q.startAfter(c);
-    }
-    const snap = await q.get();
-    const docs = snap.docs.slice(0, input.limit);
+    // Keep this query index-independent, then enforce relationship, tenant and
+    // allowlisted filters before pagination. An absent collection is a normal
+    // empty QuerySnapshot in Firestore and therefore returns an empty list.
+    const [snap, linkSnapshot] = await Promise.all([
+      this.db
+        .collection("supportRequests")
+        .where("requesterUid", "==", principal.uid)
+        .get(),
+      this.db
+        .collection("parentChildLinks")
+        .where("parentUid", "==", principal.uid)
+        .get(),
+    ]);
+    const activeLinks = new Set(
+      linkSnapshot.docs
+        .filter(
+          (link) =>
+            link.get("status") === "active" &&
+            principal.organizationIds.includes(link.get("organizationId")),
+        )
+        .map(
+          (link) =>
+            `${String(link.get("organizationId"))}:${String(link.get("participantId"))}`,
+        ),
+    );
+    const authorized = snap.docs
+      .filter(
+        (doc) =>
+          activeLinks.has(
+            `${String(doc.get("organizationId"))}:${String(doc.get("participantId"))}`,
+          ) &&
+          (!input.childId || doc.get("participantId") === input.childId) &&
+          (!input.status || doc.get("status") === input.status) &&
+          (!input.search ||
+            String(doc.get("subject"))
+              .toLocaleLowerCase()
+              .includes(input.search.toLocaleLowerCase())),
+      )
+      .sort(
+        (a, b) =>
+          (iso(b.get("createdAt")) ?? "").localeCompare(
+            iso(a.get("createdAt")) ?? "",
+          ) || b.id.localeCompare(a.id),
+      );
+    const cursorIndex = input.cursor
+      ? authorized.findIndex((doc) => doc.id === input.cursor)
+      : -1;
+    if (input.cursor && cursorIndex < 0) throw new NotFoundError();
+    const start = cursorIndex + 1;
+    const docs = authorized.slice(start, start + input.limit);
     return {
       data: docs.map((x) => ({
         id: x.id,
@@ -637,7 +683,10 @@ export class ParentService {
         updatedAt: iso(x.get("updatedAt")),
       })),
       meta: {
-        nextCursor: snap.size > input.limit ? (docs.at(-1)?.id ?? null) : null,
+        nextCursor:
+          start + input.limit < authorized.length
+            ? (docs.at(-1)?.id ?? null)
+            : null,
       },
     };
   }

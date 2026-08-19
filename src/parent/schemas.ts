@@ -7,7 +7,7 @@ export const idSchema = z
   .max(128)
   .regex(/^[A-Za-z0-9_-]+$/);
 
-const emptyQueryParameterAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+export const optionalQueryString = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(
     (value) =>
       typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -15,22 +15,29 @@ const emptyQueryParameterAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   );
 
 export const listSchema = z.object({
-  limit: emptyQueryParameterAsUndefined(
+  limit: optionalQueryString(
     z.coerce.number().int().min(1).max(50).default(20),
   ),
-  cursor: emptyQueryParameterAsUndefined(
-    z.string().trim().min(1).max(500).optional(),
-  ),
-  status: emptyQueryParameterAsUndefined(
+  cursor: optionalQueryString(idSchema.optional()),
+  status: optionalQueryString(
     z.enum(["active", "pending", "inactive"]).optional(),
   ),
-  search: emptyQueryParameterAsUndefined(z.string().trim().max(80).optional()),
+  search: optionalQueryString(z.string().trim().min(1).max(80).optional()),
 });
 export const childQuerySchema = listSchema.pick({
   limit: true,
   cursor: true,
   status: true,
   search: true,
+});
+export const observationQuerySchema = listSchema
+  .omit({ status: true })
+  .extend({ childId: optionalQueryString(idSchema.optional()) });
+export const supportListQuerySchema = listSchema.omit({ status: true }).extend({
+  childId: optionalQueryString(idSchema.optional()),
+  status: optionalQueryString(
+    z.enum(["open", "in_progress", "resolved", "closed"]).optional(),
+  ),
 });
 export const observationSchema = z.object({
   childId: idSchema,

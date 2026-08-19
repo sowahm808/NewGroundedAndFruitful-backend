@@ -9,19 +9,15 @@ function firestore(
   const get = (field: string) => user[field];
   const query = {
     where: vi.fn(),
-    get: vi
-      .fn()
-      .mockResolvedValue({
-        docs: memberships.map((data) => ({ data: () => data })),
-      }),
+    get: vi.fn().mockResolvedValue({
+      docs: memberships.map((data) => ({ data: () => data })),
+    }),
   };
   query.where.mockReturnValue(query);
   return {
-    doc: vi
-      .fn()
-      .mockReturnValue({
-        get: vi.fn().mockResolvedValue({ exists: true, get }),
-      }),
+    doc: vi.fn().mockReturnValue({
+      get: vi.fn().mockResolvedValue({ exists: true, get }),
+    }),
     collection: vi.fn().mockReturnValue(query),
   };
 }
@@ -54,5 +50,21 @@ describe("server-authoritative authentication role resolution", () => {
         { uid: "user-1" } as never,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+  it("keeps a transitional global parent role but grants no tenant scope", async () => {
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "active", roles: ["parent"] }) as never,
+        { uid: "parent-1" } as never,
+      ),
+    ).resolves.toEqual({ roles: ["parent"], organizationIds: [] });
+  });
+  it("allows a genuinely global super-admin without fabricating membership", async () => {
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "active", roles: ["super_admin"] }) as never,
+        { uid: "root-1" } as never,
+      ),
+    ).resolves.toEqual({ roles: ["super_admin"], organizationIds: [] });
   });
 });
