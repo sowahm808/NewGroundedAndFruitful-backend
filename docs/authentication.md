@@ -11,3 +11,13 @@ Firebase Authentication proves identity. `memberships` documents are authoritati
 A first session request idempotently creates a missing `users/{uid}` identity profile with server timestamps and no role. It returns `role_required` unless an authorized workflow has created a role/membership; pending membership returns `pending_approval`, and a missing display name returns `profile_required`. Public sign-in cannot select mentor, observer, admin, or super_admin (and does not implicitly select parent).
 
 Custom claims are a coarse cache only, are merged by Firebase Admin without removing unrelated keys, and never carry tenant relationships. Session and request authorization read server records rather than trusting claims. After an authorized role change, clients should force-refresh their Firebase ID token; the session response does not wait for claim propagation.
+
+## Initial administrator provisioning
+
+Role bootstrap is an operator-only CLI, not an HTTP endpoint. Configure the intended Firebase Admin credentials and `APP_ENV=production`, then run:
+
+```sh
+npm run admin:assign-role -- --uid <firebase-uid> --role super_admin --environment production --confirm
+```
+
+The command requires an existing Firebase Authentication user and matching Firestore user profile, validates canonical roles, preserves existing roles unless `--replace` is supplied, performs the profile and audit writes transactionally, and synchronizes the coarse custom-claim cache without overwriting unrelated claims. It is idempotent. Afterward, the user must force-refresh their ID token or sign out and back in. Never put credentials or an ID token in command arguments.

@@ -93,7 +93,21 @@ describe("auth session bootstrap", () => {
     );
   });
 
-  it("returns pending, disabled, and suspended state explicitly", async () => {
+  it("keeps multiple server roles and never replaces them during repeated login", async () => {
+    const profile = { ...activeProfile, roles: ["admin", "super_admin"] };
+    const { subject, users } = service({ profile });
+    await expect(
+      subject.createSession("email-or-google-token"),
+    ).resolves.toMatchObject({
+      roles: ["admin", "super_admin"],
+      onboardingStatus: "complete",
+    });
+    expect(users.provisionUserProfile).toHaveBeenCalledWith(
+      expect.not.objectContaining({ roles: expect.anything() }),
+    );
+  });
+
+  it("returns pending state and forbids disabled or suspended accounts", async () => {
     await expect(
       service({
         memberships: [membership("parent", "pending")],
@@ -107,15 +121,12 @@ describe("auth session bootstrap", () => {
         auth: { disabled: true },
         memberships: [membership("parent")],
       }).subject.createSession("t"),
-    ).resolves.toMatchObject({ disabled: true });
+    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
     await expect(
       service({
         memberships: [membership("parent", "suspended")],
       }).subject.createSession("t"),
-    ).resolves.toMatchObject({
-      roles: [],
-      memberships: [{ status: "suspended" }],
-    });
+    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
   });
 
   it("uses Firestore when token claims differ and repairs claims", async () => {
