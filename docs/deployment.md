@@ -1,5 +1,11 @@
 # Deployment
 
+## Child workflow rollout and rollback
+
+Deploy in this order: (1) back up Firestore; (2) create complete `memberships` records and unique `participants.firebaseUid` mappings, rejecting ambiguous mappings; (3) migrate legacy `programId`-only records to the approved `organizationId` tenant or quarantine them; (4) validate organization/quarter IANA timezones and remove overlapping active quarters; (5) deploy indexes and wait until they are ready; (6) deploy the deny-by-default Firestore rules; (7) deploy the API; (8) configure active activities and participation-only point rules; and (9) smoke-test every child GET plus one idempotent completion with a real staging child. Do not invent activity fixtures in production.
+
+Rollback by disabling child traffic at the API revision/load balancer, restoring the previous API image, and retaining all append-only ledger and completion records. Do not reverse or delete awarded ledger rows. If a rule was misconfigured, mark it inactive and deploy a corrected version; reconcile through a separately audited compensating process. Indexes may remain deployed because they do not broaden access. Restore prior rules only if they are at least as restrictive. The Firestore backup is a last-resort data restore, not the normal rollback mechanism.
+
 Firebase aliases isolate development, staging, and production. Run all validation before deployment. `deploy:staging` targets staging. `deploy:production` refuses branches other than the protected `production` branch and production should additionally require a reviewed CI environment approval. Configure secrets outside source control and set App Check enforcement true.
 
 ## Production API hostname

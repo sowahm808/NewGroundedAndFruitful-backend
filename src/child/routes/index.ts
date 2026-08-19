@@ -1,0 +1,34 @@
+import { Router, type Request, type RequestHandler } from "express";
+import { z } from "zod";
+import { db } from "../../config/firebase.js";
+import { requireRole } from "../../middleware/authorize.js";
+import { validateBody } from "../../middleware/validate.js";
+import { ChildService } from "../service.js";
+import { activityResponseSchema, characterAssessmentSchema, checkInSchema, milestoneSchema, projectCreateSchema, projectPatchSchema, updateSchema } from "../schemas.js";
+
+const router=Router(), service=new ChildService(db), resourceId=z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
+router.use(requireRole("child"));
+const handle=(fn:(req:Request)=>Promise<unknown>,created=false):RequestHandler=>async(req,res,next)=>{try{res.status(created?201:200).json({data:await fn(req)});}catch(e){next(e);}};
+const pid=(req:Request)=>resourceId.parse(req.params.projectId), aid=(req:Request)=>resourceId.parse(req.params.activityId), rid=(req:Request)=>resourceId.parse(req.params.assignmentId);
+
+router.get("/today",handle(req=>service.today(req.principal)));
+router.get("/check-ins/today",handle(req=>service.getCheckIn(req.principal)));
+router.put("/check-ins/today/draft",validateBody(checkInSchema),handle(req=>service.saveCheckIn(req.principal,req.body,false)));
+router.post("/check-ins/today/complete",validateBody(checkInSchema),handle(req=>service.saveCheckIn(req.principal,req.body,true)));
+router.get("/character",handle(req=>service.character(req.principal)));
+router.put("/character/draft",validateBody(characterAssessmentSchema),handle(req=>service.saveCharacter(req.principal,req.body.responses,false)));
+router.post("/character/complete",validateBody(characterAssessmentSchema),handle(req=>service.saveCharacter(req.principal,req.body.responses,true)));
+router.get("/bible",handle(req=>service.bible(req.principal)));
+router.get("/bible/:activityId",handle(req=>service.bible(req.principal,aid(req))));
+router.post("/bible/:activityId/responses",validateBody(activityResponseSchema),handle(req=>service.respond(req.principal,"bible",aid(req),req.body)));
+router.get("/reading",handle(req=>service.reading(req.principal)));
+router.get("/reading/:assignmentId",handle(req=>service.reading(req.principal,rid(req))));
+router.post("/reading/:assignmentId/responses",validateBody(activityResponseSchema),handle(req=>service.respond(req.principal,"reading",rid(req),req.body)));
+router.get("/projects",handle(req=>service.projects(req.principal)));
+router.post("/projects",validateBody(projectCreateSchema),handle(req=>service.createProject(req.principal,req.body),true));
+router.get("/projects/:projectId",handle(req=>service.project(req.principal,pid(req))));
+router.patch("/projects/:projectId",validateBody(projectPatchSchema),handle(req=>service.patchProject(req.principal,pid(req),req.body)));
+router.post("/projects/:projectId/milestones",validateBody(milestoneSchema),handle(req=>service.addMilestone(req.principal,pid(req),req.body),true));
+router.post("/projects/:projectId/updates",validateBody(updateSchema),handle(req=>service.addUpdate(req.principal,pid(req),req.body),true));
+router.get("/team",handle(req=>service.team(req.principal)));
+export default router;

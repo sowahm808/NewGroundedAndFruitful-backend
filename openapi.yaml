@@ -11,6 +11,7 @@ tags:
     { name: Participants },
     { name: Points },
     { name: Parent },
+    { name: Child },
   ]
 paths:
   /health:
@@ -327,6 +328,240 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "422": { $ref: "#/components/responses/Validation" }
+  /child/today:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+  /child/check-ins/today:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+  /child/character:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+  /child/bible:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+  /child/bible/{activityId}:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+  /child/reading:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+  /child/reading/{assignmentId}:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+  /child/projects:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Creates a child-owned project in idea state; identity and tenancy are server resolved.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved }
+        "201": { description: Created }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/projects/{projectId}:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+    patch:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Updates an owned project using required optimistic version and validated lifecycle transition.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved }
+        "201": { description: Created }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/team:
+    get:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
+      responses:
+        "200": { description: Authorized child response, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Lifecycle or configuration conflict }
+  /child/check-ins/today/draft:
+    put:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/check-ins/today/complete:
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/character/draft:
+    put:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/character/complete:
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/bible/{activityId}/responses:
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/reading/{assignmentId}/responses:
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/projects/{projectId}/milestones:
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
+  /child/projects/{projectId}/updates:
+    post:
+      tags: [Child]
+      security: [{ firebaseBearer: [] }]
+      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        "200": { description: Saved or idempotently completed, content: { application/json: { schema: { $ref: "#/components/schemas/ChildSuccess" } } } }
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Version or lifecycle conflict }
+        "422": { $ref: "#/components/responses/Validation" }
 components:
   securitySchemes:
     {
@@ -389,6 +624,11 @@ components:
           },
       }
   schemas:
+    ChildSuccess:
+      type: object
+      required: [data]
+      properties:
+        data: { description: Route-specific child resource or honest availability state }
     Health:
       {
         type: object,

@@ -25,3 +25,10 @@ No incomplete route is published merely to replace an unavailable frontend
 state. Completion requires schema, route, policy, tenant-scoped repository,
 indexes/rules evaluation, audit, OpenAPI, automated tests, staging evidence, and
 rollback instructions.
+# Child workflow status (2026-08-19)
+
+- [~] Partial — centralized child context, membership, participant mapping, tenant scope, active-quarter overlap protection, and local-date handling.
+- [~] Partial — Today, check-in, character, Bible, reading, project, and privacy-safe team API routes, contracts, services, indexes, server-only rules, OpenAPI, and tests.
+- [~] Partial — transactional participation-rule snapshots and deterministic idempotency for completion workflows.
+- [~] Partial — finalized records are immutable; a richer configurable edit/lock policy awaits product definition.
+- [!] Blocked — staging smoke verification requires deployed authenticated child fixtures.

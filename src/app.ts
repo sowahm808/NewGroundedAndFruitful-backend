@@ -9,6 +9,7 @@ import authRoutes from "./auth/routes/index.js";
 import participantRoutes from "./participants/routes/index.js";
 import pointRoutes from "./points/routes/index.js";
 import parentRoutes from "./parent/routes/index.js";
+import childRoutes from "./child/routes/index.js";
 import { env } from "./config/env.js";
 import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
@@ -127,6 +128,7 @@ app.use(
 );
 app.use("/api/v1/points", privateResponse, authenticate, pointRoutes);
 app.use("/api/v1/parent", privateResponse, authenticate, parentRoutes);
+app.use("/api/v1/child", privateResponse, authenticate, childRoutes);
 
 app.use((_req, _res, next) => {
   next(new NotFoundError());
@@ -172,10 +174,16 @@ app.use(
       requestId: req.requestId,
       ...(safeError.details ? { details: safeError.details } : {}),
     };
+    const fieldErrors =
+      safeError.details &&
+      typeof safeError.details === "object" &&
+      "fieldErrors" in safeError.details
+        ? { fieldErrors: safeError.details.fieldErrors }
+        : {};
     // Keep the old nested member during the version-one envelope migration.
     res.status(safeError.status).json({
       ...body,
-      error: { ...body, code: safeError.code },
+      error: { ...body, code: safeError.code, ...fieldErrors },
     });
   },
 );
