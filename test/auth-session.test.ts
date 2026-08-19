@@ -40,6 +40,7 @@ function service(
   };
   const memberships = {
     listForUser: vi.fn().mockResolvedValue(options.memberships ?? []),
+    hasActiveChildContext: vi.fn().mockResolvedValue(true),
   };
   return {
     firebaseAuth,
@@ -91,6 +92,14 @@ describe("auth session bootstrap", () => {
     expect(users.provisionUserProfile).toHaveBeenCalledWith(
       expect.not.objectContaining({ roles: expect.anything() }),
     );
+  });
+
+  it("does not mark a child without participant context complete", async () => {
+    const fixture = service({ memberships: [membership("child")] });
+    fixture.memberships.hasActiveChildContext.mockResolvedValue(false);
+    await expect(fixture.subject.createSession("token")).resolves.toMatchObject({
+      onboardingStatus: "provisioning_required",
+    });
   });
 
   it("keeps multiple server roles and never replaces them during repeated login", async () => {

@@ -19,4 +19,16 @@ export class MembershipRepository {
       .get();
     return snapshot.docs.map((doc) => doc.data() as StoredMembership);
   }
+
+  async hasActiveChildContext(uid: string, organizationIds: string[]): Promise<boolean> {
+    if (organizationIds.length === 0) return false;
+    const snapshots = await Promise.all(organizationIds.map((organizationId) =>
+      this.db.collection("participants")
+        .where("firebaseUid", "==", uid)
+        .where("organizationId", "==", organizationId)
+        .where("status", "==", "active")
+        .get(),
+    ));
+    return snapshots.some((snapshot) => !snapshot.empty);
+  }
 }

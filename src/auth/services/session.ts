@@ -75,6 +75,12 @@ export class AuthSessionService {
     ]);
     const disabled = authUser.disabled || profile.status === "disabled";
     const pending = memberships.some((item) => item.status === "pending");
+    const childOrganizations = activeMemberships
+      .filter((item) => item.roles.includes("child"))
+      .map((item) => item.organizationId);
+    const hasChildContext = childOrganizations.length === 0
+      ? true
+      : await this.memberships.hasActiveChildContext(decodedToken.uid, childOrganizations);
 
     if (disabled || memberships.some((item) => item.status === "suspended")) {
       logger.warn("session_account_restricted", {
@@ -114,7 +120,9 @@ export class AuthSessionService {
       disabled,
       onboardingStatus: !profile.displayName
         ? "profile_required"
-        : roles.length > 0
+        : roles.includes("child") && !hasChildContext
+          ? "provisioning_required"
+          : roles.length > 0
           ? "complete"
           : pending
             ? "pending_approval"
