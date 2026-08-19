@@ -18,13 +18,15 @@ export async function resolvePrincipal(
   const membershipSnapshot = await firestore
     .collection("memberships")
     .where("userId", "==", token.uid)
-    .where("status", "==", "active")
     .get();
   const membershipRoles: Role[] = [];
   const organizationIds: string[] = [];
   for (const doc of membershipSnapshot.docs) {
     const data = doc.data();
     if (data.userId !== token.uid) continue;
+    if (data.status === "suspended" || data.status === "deleted")
+      throw new AuthorizationError();
+    if (data.status !== "active") continue;
     membershipRoles.push(...normalizeRoles(data.roles ?? data.role).roles);
     if (typeof data.organizationId === "string")
       organizationIds.push(data.organizationId);

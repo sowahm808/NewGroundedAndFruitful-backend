@@ -23,7 +23,7 @@ export class AppError extends Error {
 }
 export class ValidationError extends AppError {
   constructor(message = "Invalid request.", details?: unknown) {
-    super(400, "VALIDATION_ERROR", message, details);
+    super(422, "VALIDATION_ERROR", message, details);
   }
 }
 export class AuthenticationError extends AppError {
@@ -59,7 +59,7 @@ export class ConflictError extends AppError {
   }
 }
 export class RateLimitError extends AppError {
-  constructor() {
+  constructor(public readonly retryAfterSeconds = 60) {
     super(429, "RATE_LIMITED", "Too many attempts. Try again later.");
   }
 }

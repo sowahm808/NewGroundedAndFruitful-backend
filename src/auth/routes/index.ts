@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { rateLimit } from "../../middleware/rate-limit.js";
+import { childCredentialRateLimit } from "../../middleware/rate-limit.js";
 import { auth, db } from "../../config/firebase.js";
 import { validateBody } from "../../middleware/validate.js";
 import { AuditRepository } from "../../audit/repository.js";
@@ -38,8 +38,8 @@ router.get(
 );
 
 router.post(
-  "/child-login",
-  rateLimit(15 * 60_000, 10),
+  "/child-token",
+  childCredentialRateLimit(15 * 60_000, 10),
   validateBody(childLoginSchema),
   (req, res, next) => void controller.login(req, res).catch(next),
 );
