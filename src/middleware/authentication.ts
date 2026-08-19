@@ -12,9 +12,11 @@ export async function resolvePrincipal(
   token: DecodedIdToken,
 ): Promise<{ roles: Role[]; organizationIds: string[] }> {
   const user = await firestore.doc(`users/${token.uid}`).get();
-  if (!user.exists || user.get("status") === "disabled")
+  if (user.exists && user.get("status") === "disabled")
     throw new AuthorizationError();
-  const global = normalizeRoles(user.get("roles") ?? user.get("role")).roles;
+  const global = user.exists
+    ? normalizeRoles(user.get("roles") ?? user.get("role")).roles
+    : [];
   const membershipSnapshot = await firestore
     .collection("memberships")
     .where("userId", "==", token.uid)
@@ -32,6 +34,9 @@ export async function resolvePrincipal(
       organizationIds.push(data.organizationId);
   }
   const roles = [...new Set([...global, ...membershipRoles])];
+  // A profile is optional identity metadata and can be provisioned by the
+  // session endpoint after sign-in. Do not reject a valid Firebase identity
+  // whose active, server-owned membership already grants application access.
   if (roles.length === 0) throw new AuthorizationError();
   return { roles, organizationIds: [...new Set(organizationIds)] };
 }

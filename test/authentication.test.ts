@@ -3,10 +3,10 @@ import { AuthorizationError } from "../src/shared/errors.js";
 import { isRole, resolvePrincipal } from "../src/middleware/authentication.js";
 
 function firestore(
-  user: Record<string, unknown>,
+  user: Record<string, unknown> | undefined,
   memberships: Record<string, unknown>[] = [],
 ) {
-  const get = (field: string) => user[field];
+  const get = (field: string) => user?.[field];
   const query = {
     where: vi.fn(),
     get: vi.fn().mockResolvedValue({
@@ -16,7 +16,7 @@ function firestore(
   query.where.mockReturnValue(query);
   return {
     doc: vi.fn().mockReturnValue({
-      get: vi.fn().mockResolvedValue({ exists: true, get }),
+      get: vi.fn().mockResolvedValue({ exists: Boolean(user), get }),
     }),
     collection: vi.fn().mockReturnValue(query),
   };
@@ -42,6 +42,27 @@ describe("server-authoritative authentication role resolution", () => {
         { uid: "parent-1", roles: ["admin"] } as never,
       ),
     ).resolves.toEqual({ roles: ["parent"], organizationIds: ["org-1"] });
+  });
+  it("authorizes an active membership before an optional profile is provisioned", async () => {
+    const db = firestore(undefined, [
+      {
+        userId: "child-1",
+        organizationId: "org-1",
+        roles: ["child"],
+        status: "active",
+      },
+    ]);
+    await expect(
+      resolvePrincipal(db as never, { uid: "child-1" } as never),
+    ).resolves.toEqual({ roles: ["child"], organizationIds: ["org-1"] });
+  });
+  it("still rejects an identity with neither a profile role nor an active membership", async () => {
+    await expect(
+      resolvePrincipal(
+        firestore(undefined) as never,
+        { uid: "user-1" } as never,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
   it("rejects authenticated users without a server role", async () => {
     await expect(
