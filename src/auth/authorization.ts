@@ -41,10 +41,22 @@ export async function requireParentOf(
 ): Promise<void> {
   const a = requireRole(p, "parent");
   const link = await db.doc(`parentChildLinks/${a.uid}_${childId}`).get();
-  if (!link.exists || link.get("status") === "suspended")
+  if (
+    !link.exists ||
+    link.get("parentUid") !== a.uid ||
+    link.get("participantId") !== childId ||
+    link.get("status") !== "active" ||
+    link.get("revokedAt") != null
+  )
     throw new AuthorizationError();
   const organizationId = link.get("organizationId") as string | undefined;
-  if (organizationId && !a.organizationIds.includes(organizationId))
+  const participant = await db.doc(`participants/${childId}`).get();
+  if (
+    !participant.exists ||
+    !organizationId ||
+    participant.get("organizationId") !== organizationId ||
+    !a.organizationIds.includes(organizationId)
+  )
     throw new AuthorizationError();
 }
 export async function requireMentorOfTeam(
@@ -56,7 +68,13 @@ export async function requireMentorOfTeam(
   const membership = await db
     .doc(`teamMembers/${teamId}_mentor_${a.uid}`)
     .get();
-  if (!membership.exists || membership.get("status") === "suspended")
+  if (
+    !membership.exists ||
+    membership.get("userId") !== a.uid ||
+    membership.get("teamId") !== teamId ||
+    membership.get("role") !== "mentor" ||
+    membership.get("status") !== "active"
+  )
     throw new AuthorizationError();
   const organizationId = membership.get("organizationId") as string | undefined;
   if (organizationId && !a.organizationIds.includes(organizationId))
@@ -75,4 +93,19 @@ export async function requireMentorOfChild(
   if (organizationId && !a.organizationIds.includes(organizationId))
     throw new AuthorizationError();
   await requireMentorOfTeam(db, p, teamId);
+}
+export async function requireChildParticipant(
+  db: Firestore,
+  p: Principal | undefined,
+  participantId: string,
+): Promise<void> {
+  const a = requireRole(p, "child");
+  const participant = await db.doc(`participants/${participantId}`).get();
+  if (!participant.exists || participant.get("firebaseUid") !== a.uid)
+    throw new AuthorizationError();
+  const organizationId = participant.get("organizationId") as
+    | string
+    | undefined;
+  if (organizationId && !a.organizationIds.includes(organizationId))
+    throw new AuthorizationError();
 }

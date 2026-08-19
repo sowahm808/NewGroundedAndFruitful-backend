@@ -54,6 +54,9 @@ const result = await assignRole(auth, db, {
   role: parsed.data.role,
   replace: parsed.data.replace,
   updatedBy: "admin-role-cli",
+  reason: "Explicit operational role provisioning",
+  requestId: `cli-${String(Date.now())}`,
+  initialBootstrap: parsed.data.role === "super_admin",
 });
 console.log(JSON.stringify({ uid: parsed.data.uid, ...result }));
 console.log(

@@ -48,8 +48,7 @@ describe("ChildLoginService", () => {
       tokenType: "firebaseCustomToken",
     });
     expect(firebaseAuth.createCustomToken).toHaveBeenCalledWith("child-1", {
-      role: "child",
-      participantId: "participant-1",
+      roles: ["child"],
     });
   });
 });

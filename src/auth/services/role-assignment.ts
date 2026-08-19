@@ -19,6 +19,15 @@ const inputSchema = z.object({
   role: canonicalRoleSchema,
   replace: z.boolean().default(false),
   updatedBy: z.string().trim().min(1).max(128),
+  reason: z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .default("Operational role assignment"),
+  requestId: z.string().trim().min(1).max(128).default("unspecified"),
+  actorRoles: z.array(canonicalRoleSchema).default([]),
+  initialBootstrap: z.boolean().default(false),
 });
 
 export interface AssignRoleInput {
@@ -26,6 +35,10 @@ export interface AssignRoleInput {
   role: Role;
   replace?: boolean;
   updatedBy: string;
+  reason?: string;
+  requestId?: string;
+  actorRoles?: Role[];
+  initialBootstrap?: boolean;
 }
 
 /** Trusted operational boundary. Firestore remains authoritative; claims are a cache. */
@@ -38,6 +51,31 @@ export async function assignRole(
   if (!parsed.success)
     throw new ValidationError("Invalid role assignment input.");
   const input = parsed.data;
+
+  if (
+    (input.role === "admin" || input.role === "super_admin") &&
+    !input.actorRoles.includes("super_admin") &&
+    !input.initialBootstrap
+  )
+    throw new ValidationError(
+      "A super_admin is required to assign an elevated role.",
+    );
+  if (input.initialBootstrap && input.role !== "super_admin")
+    throw new ValidationError("Bootstrap may only provision super_admin.");
+
+  if (input.initialBootstrap) {
+    const existing = await db
+      .collection("users")
+      .where("status", "==", "active")
+      .where("roles", "array-contains", "super_admin")
+      .limit(1)
+      .get();
+    if (
+      !existing.empty &&
+      existing.docs.some((document) => document.id !== input.uid)
+    )
+      throw new ConflictError("Initial super_admin is already provisioned.");
+  }
 
   const authUser = await auth.getUser(input.uid).catch((error: unknown) => {
     if (firebaseCode(error) === "auth/user-not-found")
@@ -73,6 +111,14 @@ export async function assignRole(
     const roles = input.replace
       ? [input.role]
       : [...new Set([...existing, input.role])];
+    if (
+      input.replace &&
+      existing.includes("super_admin") &&
+      !roles.includes("super_admin")
+    )
+      throw new ConflictError(
+        "Removing super_admin requires the dedicated guarded removal workflow.",
+      );
     const changed =
       roles.length !== existing.length ||
       roles.some((role, index) => role !== existing[index]);
@@ -81,6 +127,8 @@ export async function assignRole(
         roles,
         updatedAt: FieldValue.serverTimestamp(),
         updatedBy: input.updatedBy,
+        reason: input.reason,
+        requestId: input.requestId,
       });
       transaction.set(auditRef, {
         event: "USER_ROLE_ASSIGNED",
@@ -88,6 +136,9 @@ export async function assignRole(
         role: input.role,
         mode: input.replace ? "replace" : "add",
         updatedBy: input.updatedBy,
+        reason: input.reason,
+        requestId: input.requestId,
+        updatedAt: FieldValue.serverTimestamp(),
         createdAt: FieldValue.serverTimestamp(),
       });
     }
@@ -95,11 +146,15 @@ export async function assignRole(
   });
 
   const currentClaims = authUser.customClaims ?? {};
+  const currentRoleClaims = parseClaimRoles(currentClaims.roles);
+  const claimsAlreadySynchronized =
+    currentRoleClaims.length === result.roles.length &&
+    result.roles.every((role) => currentRoleClaims.includes(role));
+  if (claimsAlreadySynchronized) return { ...result, claimsSynchronized: true };
   try {
     await auth.setCustomUserClaims(input.uid, {
       ...currentClaims,
       roles: result.roles,
-      role: result.roles[0] ?? null,
     });
     return { ...result, claimsSynchronized: true };
   } catch (error) {
@@ -107,11 +162,19 @@ export async function assignRole(
       event: "USER_ROLE_CLAIM_SYNC_FAILED",
       targetUid: input.uid,
       updatedBy: input.updatedBy,
+      reason: input.reason,
+      requestId: input.requestId,
+      updatedAt: FieldValue.serverTimestamp(),
       retryable: true,
       createdAt: FieldValue.serverTimestamp(),
     });
     throw error;
   }
+}
+
+function parseClaimRoles(value: unknown): Role[] {
+  const parsed = canonicalRoleSchema.array().safeParse(value);
+  return parsed.success ? parsed.data : [];
 }
 
 function firebaseCode(error: unknown): string | undefined {

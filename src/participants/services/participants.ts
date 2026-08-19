@@ -3,9 +3,9 @@ import {
   requireMentorOfChild,
   requireParentOf,
   requireAnyRole,
+  requireChildParticipant,
   type Principal,
 } from "../../auth/authorization.js";
-import { AuthorizationError } from "../../shared/errors.js";
 import { ParticipantRepository } from "../repositories/participants.js";
 export class ParticipantService {
   constructor(
@@ -20,8 +20,7 @@ export class ParticipantService {
       "admin",
       "super_admin",
     ]);
-    if (p.role === "child" && p.uid !== id && p.token.participantId !== id)
-      throw new AuthorizationError();
+    if (p.role === "child") await requireChildParticipant(this.db, p, id);
     if (p.role === "parent") await requireParentOf(this.db, p, id);
     if (p.role === "mentor") await requireMentorOfChild(this.db, p, id);
     return this.repo.get(id);

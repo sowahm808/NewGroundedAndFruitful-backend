@@ -12,14 +12,15 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude 'lib/**' --exclude 'test/integration/**'",
-    "test:integration": "FIREBASE_PROJECT_ID=demo-grounded-fruitful vitest run test/integration --passWithNoTests",
+    "test:integration": "FIREBASE_PROJECT_ID=demo-grounded-fruitful vitest run test/integration --exclude 'test/integration/firestore-rules.test.ts' --passWithNoTests",
     "build": "tsc -p tsconfig.json",
     "start": "node lib/src/server.js",
     "emulators": "npx firebase-tools emulators:start",
     "seed": "node scripts/guard-production.mjs --require-emulator && tsx scripts/seed.ts",
     "admin:assign-role": "tsx scripts/assign-role.ts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:rules": "npx firebase-tools emulators:exec --only firestore --project demo-grounded-fruitful-rules \"vitest run test/integration/firestore-rules.test.ts\""
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",

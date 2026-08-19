@@ -136,11 +136,29 @@ describe("auth session bootstrap", () => {
     });
     await expect(subject.createSession("t")).resolves.toMatchObject({
       roles: ["parent"],
+      claimSynchronization: {
+        status: "refresh_required",
+        tokenRefreshRequired: true,
+      },
     });
     expect(firebaseAuth.setCustomUserClaims).toHaveBeenCalledWith(
       "uid-1",
       expect.objectContaining({ roles: ["parent"] }),
     );
+  });
+
+  it("returns a safe retry status when claim synchronization fails", async () => {
+    const { subject, firebaseAuth } = service({
+      memberships: [membership("parent")],
+    });
+    firebaseAuth.setCustomUserClaims.mockRejectedValueOnce(new Error("secret"));
+    await expect(subject.createSession("t")).resolves.toMatchObject({
+      roles: ["parent"],
+      claimSynchronization: {
+        status: "retry_required",
+        tokenRefreshRequired: false,
+      },
+    });
   });
 
   it("does not expose another user's membership", async () => {

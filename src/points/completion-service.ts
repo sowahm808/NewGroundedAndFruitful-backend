@@ -3,6 +3,7 @@ import {
   requireMentorOfChild,
   requireParentOf,
   requireAnyRole,
+  requireChildParticipant,
   type Principal,
 } from "../auth/authorization.js";
 import {
@@ -36,12 +37,8 @@ export class CompletionService {
     if (!participant.exists) throw new NotFoundError();
     if (participant.get("activeTeamId") !== input.teamId)
       throw new AuthorizationError();
-    if (
-      p.role === "child" &&
-      p.token.participantId !== input.participantId &&
-      p.uid !== input.participantId
-    )
-      throw new AuthorizationError();
+    if (p.role === "child")
+      await requireChildParticipant(this.db, p, input.participantId);
     if (p.role === "parent")
       await requireParentOf(this.db, p, input.participantId);
     if (p.role === "mentor")
