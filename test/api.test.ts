@@ -41,6 +41,9 @@ describe("HTTP safety contract", () => {
     });
     expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(response.headers.get("x-powered-by")).toBeNull();
+    expect(response.headers.get("cross-origin-opener-policy")).toBe(
+      "same-origin-allow-popups",
+    );
   });
   it("requires authentication for participant resources", async () => {
     const response = await fetch(`${base}/api/v1/participants/child-a`);
