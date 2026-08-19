@@ -127,15 +127,15 @@ product. The order reflects dependencies and risk.
 
 ### Organizations, people, and consent
 
-- [ ] Organization/program administration and membership APIs.
-- [ ] Parent onboarding beyond automatic identity-profile provisioning.
-- [ ] Participant creation, update, archival, and roster/list APIs.
-- [ ] Team creation, assignment, membership, and lifecycle APIs.
-- [ ] Mentor and authorized-adult invitation, approval, expiry, and revocation
+- [x] Organization/program administration and membership APIs.
+- [x] Parent onboarding beyond automatic identity-profile provisioning.
+- [x] Participant creation, update, archival, and roster/list APIs.
+- [x] Team creation, assignment, membership, and lifecycle APIs.
+- [x] Mentor and authorized-adult invitation, approval, expiry, and revocation
       workflows.
-- [ ] Consent capture, versioned consent history, withdrawal, and age/guardian
+- [x] Consent capture, versioned consent history, withdrawal, and age/guardian
       policy enforcement.
-- [ ] Administrative user/role/membership management with immutable audit
+- [x] Administrative user/role/membership management with immutable audit
       events and least-privilege authorization.
 
 ### Program workflows

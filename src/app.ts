@@ -10,6 +10,7 @@ import participantRoutes from "./participants/routes/index.js";
 import pointRoutes from "./points/routes/index.js";
 import parentRoutes from "./parent/routes/index.js";
 import childRoutes from "./child/routes/index.js";
+import administrationRoutes from "./administration/routes.js";
 import { env } from "./config/env.js";
 import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
@@ -129,6 +130,12 @@ app.use(
 app.use("/api/v1/points", privateResponse, authenticate, pointRoutes);
 app.use("/api/v1/parent", privateResponse, authenticate, parentRoutes);
 app.use("/api/v1/child", privateResponse, authenticate, childRoutes);
+app.use(
+  "/api/v1/administration",
+  privateResponse,
+  authenticate,
+  administrationRoutes,
+);
 
 app.use((_req, _res, next) => {
   next(new NotFoundError());
