@@ -79,7 +79,38 @@ describe("HTTP safety contract", () => {
       headers: { authorization: "Bearer token with spaces" },
     });
     expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "INVALID_AUTHENTICATION_TOKEN" },
+    });
   });
+
+  it.each([
+    "https://groundedandfruitful.netlify.app",
+    "https://groundedandfruitful.org",
+    "https://www.groundedandfruitful.org",
+  ])(
+    "permits production CORS preflight from %s when configured",
+    async (origin) => {
+      // The test process uses the default local allowlist, so mutate the exported
+      // set rather than weakening the production exact-match behavior.
+      const { allowedOrigins } = await import("../src/config/env.js");
+      allowedOrigins.add(origin);
+      const response = await fetch(`${base}/api/v1/auth/session`, {
+        method: "OPTIONS",
+        headers: {
+          origin,
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization,content-type",
+        },
+      });
+      expect(response.status).toBe(204);
+      expect(response.headers.get("access-control-allow-origin")).toBe(origin);
+      expect(response.headers.get("vary")).toContain("Origin");
+      expect(response.headers.get("access-control-allow-headers")).toContain(
+        "Authorization",
+      );
+    },
+  );
 
   it("rejects unlisted CORS origins", async () => {
     const response = await fetch(`${base}/health`, {

@@ -1,6 +1,9 @@
 export type ErrorCode =
   | "VALIDATION_ERROR"
   | "AUTHENTICATION_REQUIRED"
+  | "INVALID_AUTHENTICATION_TOKEN"
+  | "EXPIRED_AUTHENTICATION_TOKEN"
+  | "REVOKED_AUTHENTICATION_TOKEN"
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "CONFLICT"
@@ -24,8 +27,20 @@ export class ValidationError extends AppError {
   }
 }
 export class AuthenticationError extends AppError {
-  constructor() {
-    super(401, "AUTHENTICATION_REQUIRED", "Authentication is required.");
+  constructor(
+    code:
+      | "AUTHENTICATION_REQUIRED"
+      | "INVALID_AUTHENTICATION_TOKEN"
+      | "EXPIRED_AUTHENTICATION_TOKEN"
+      | "REVOKED_AUTHENTICATION_TOKEN" = "AUTHENTICATION_REQUIRED",
+  ) {
+    const messages = {
+      AUTHENTICATION_REQUIRED: "Authentication is required.",
+      INVALID_AUTHENTICATION_TOKEN: "The authentication token is invalid.",
+      EXPIRED_AUTHENTICATION_TOKEN: "The authentication token has expired.",
+      REVOKED_AUTHENTICATION_TOKEN: "The authentication token was revoked.",
+    } as const;
+    super(401, code, messages[code]);
   }
 }
 export class AuthorizationError extends AppError {

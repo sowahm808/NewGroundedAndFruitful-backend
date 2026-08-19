@@ -14,11 +14,13 @@ services:
         value: production
       - key: FIREBASE_PROJECT_ID
         sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
       - key: FIREBASE_STORAGE_BUCKET
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
       - key: CHILD_LOGIN_PEPPER
-        sync: false
-      - key: GOOGLE_APPLICATION_CREDENTIALS
         sync: false

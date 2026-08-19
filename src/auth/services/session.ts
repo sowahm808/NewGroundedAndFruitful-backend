@@ -8,6 +8,7 @@ import { normalizeRoles, type Role } from "../roles.js";
 
 export interface SessionContext {
   requestId?: string;
+  authorizationPresent?: boolean;
 }
 
 export class AuthSessionService {
@@ -103,6 +104,17 @@ export class AuthSessionService {
             : "role_required",
       memberships,
     };
+    logger.info("session_resolved", {
+      requestId: context.requestId,
+      uid: decodedToken.uid,
+      authorizationPresent: context.authorizationPresent ?? true,
+      profileFound: Boolean(existing),
+      membershipCount: memberships.length,
+      activeMembershipCount: activeMemberships.length,
+      roleCount: roles.length,
+      onboardingStatus: session.onboardingStatus,
+      disabled,
+    });
     await this.syncRoleClaims(authUser, decodedToken, roles, context);
     return session;
   }
@@ -110,16 +122,21 @@ export class AuthSessionService {
   private async verifyIdToken(idToken: string): Promise<DecodedIdToken> {
     try {
       return await this.firebaseAuth.verifyIdToken(idToken, true);
-    } catch {
-      throw new AuthenticationError();
+    } catch (error) {
+      const code = firebaseErrorCode(error);
+      const category = tokenFailureCategory(code);
+      logger.warn("session_token_verification_failed", { category });
+      throw new AuthenticationError(category);
     }
   }
 
   private async getAuthUser(uid: string): Promise<UserRecord> {
     try {
       return await this.firebaseAuth.getUser(uid);
-    } catch {
-      throw new AuthenticationError();
+    } catch (error) {
+      if (firebaseErrorCode(error) === "auth/user-not-found")
+        throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
+      throw new InternalError();
     }
   }
 
@@ -178,4 +195,21 @@ export class AuthSessionService {
       throw new InternalError();
     }
   }
+}
+
+function firebaseErrorCode(error: unknown): string {
+  if (typeof error !== "object" || error === null || !("code" in error))
+    return "unknown";
+  return typeof error.code === "string" ? error.code : "unknown";
+}
+
+function tokenFailureCategory(
+  code: string,
+):
+  | "INVALID_AUTHENTICATION_TOKEN"
+  | "EXPIRED_AUTHENTICATION_TOKEN"
+  | "REVOKED_AUTHENTICATION_TOKEN" {
+  if (code === "auth/id-token-expired") return "EXPIRED_AUTHENTICATION_TOKEN";
+  if (code === "auth/id-token-revoked") return "REVOKED_AUTHENTICATION_TOKEN";
+  return "INVALID_AUTHENTICATION_TOKEN";
 }

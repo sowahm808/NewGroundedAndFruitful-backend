@@ -24,16 +24,14 @@ function service(
     verifyIdToken: vi
       .fn()
       .mockResolvedValue({ uid: "uid-1", ...options.token }),
-    getUser: vi
-      .fn()
-      .mockResolvedValue({
-        uid: "uid-1",
-        email: "parent@example.com",
-        displayName: "Parent User",
-        disabled: false,
-        customClaims: {},
-        ...options.auth,
-      }),
+    getUser: vi.fn().mockResolvedValue({
+      uid: "uid-1",
+      email: "parent@example.com",
+      displayName: "Parent User",
+      disabled: false,
+      customClaims: {},
+      ...options.auth,
+    }),
     setCustomUserClaims: vi.fn().mockResolvedValue(undefined),
   };
   const users = {
@@ -66,6 +64,7 @@ describe("auth session bootstrap", () => {
     expect(() => bearerToken(undefined)).toThrow();
     expect(() => bearerToken("Basic abc")).toThrow();
     expect(bearerToken("Bearer token-1")).toBe("token-1");
+    expect(bearerToken("bearer token-2")).toBe("token-2");
   });
 
   it.each(["child", "parent", "mentor", "observer", "admin", "super_admin"])(
@@ -148,11 +147,22 @@ describe("auth session bootstrap", () => {
 
   it("maps invalid tokens to a stable authentication failure", async () => {
     const { subject, firebaseAuth } = service();
-    firebaseAuth.verifyIdToken.mockRejectedValueOnce(
-      new Error("expired/revoked/invalid"),
-    );
-    await expect(subject.createSession("bad")).rejects.toThrow(
-      "Authentication is required.",
-    );
+    firebaseAuth.verifyIdToken.mockRejectedValueOnce(new Error("invalid"));
+    await expect(subject.createSession("bad")).rejects.toMatchObject({
+      code: "INVALID_AUTHENTICATION_TOKEN",
+    });
+  });
+
+  it.each([
+    ["auth/id-token-expired", "EXPIRED_AUTHENTICATION_TOKEN"],
+    ["auth/id-token-revoked", "REVOKED_AUTHENTICATION_TOKEN"],
+    ["auth/argument-error", "INVALID_AUTHENTICATION_TOKEN"],
+  ])("sanitizes Firebase token failure %s", async (firebaseCode, code) => {
+    const { subject, firebaseAuth } = service();
+    firebaseAuth.verifyIdToken.mockRejectedValueOnce({ code: firebaseCode });
+    await expect(subject.createSession("secret-token")).rejects.toMatchObject({
+      status: 401,
+      code,
+    });
   });
 });
