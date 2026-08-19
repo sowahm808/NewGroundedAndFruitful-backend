@@ -91,3 +91,7 @@ The requested success envelope includes `success: true`, but adding it globally 
 This change applies only unambiguous hardening and does not invent product behavior. Deploy Firestore rules before exposing new client collections. Existing point-rule documents must contain `points` as a positive integer, `enabled`, and Firestore `effectiveFrom`; malformed rules become ineligible. Monitor `CONFLICT`, `FORBIDDEN`, and `POINT_RULE_INELIGIBLE` responses after rollout.
 
 Next, approve a non-destructive organization migration: add organization/program membership records, dual-read old and new fields, backfill in batches with checkpoints, verify counts and relationship invariants, deploy organization-scoped indexes, switch reads, and retain a rollback flag until validation completes. Then implement source-specific services that atomically create the completion and ledger award. Do not launch multi-tenant, leaderboard, safeguarding, or privacy-export features before their policies and emulator allow/deny tests are reviewed.
+
+## Current delivery evidence
+
+The command-by-command baseline, deployment order, rollback pointer, environment delta, and consolidated `[x]`/`[~]`/`[ ]`/`[!]` status are recorded in [`backend-delivery-report.md`](backend-delivery-report.md). The authoritative DOCX contract is absent. This absence and the unverified emulator, OpenAPI, security-advisory, and Docker gates prevent a production-readiness declaration.
