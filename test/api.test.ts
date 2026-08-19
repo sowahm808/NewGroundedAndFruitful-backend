@@ -45,6 +45,20 @@ describe("HTTP safety contract", () => {
       "same-origin-allow-popups",
     );
   });
+  it("requires authentication for every parent workflow", async () => {
+    for (const path of [
+      "dashboard",
+      "children",
+      "observations",
+      "support/categories",
+    ]) {
+      const response = await fetch(`${base}/api/v1/parent/${path}`);
+      expect(response.status).toBe(401);
+      expect(await response.json()).toMatchObject({
+        error: { code: "AUTHENTICATION_REQUIRED" },
+      });
+    }
+  });
   it("requires authentication for participant resources", async () => {
     const response = await fetch(`${base}/api/v1/participants/child-a`);
     expect(response.status).toBe(401);

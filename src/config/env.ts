@@ -30,6 +30,7 @@ const schema = z
     LOG_LEVEL: optionalWithDefault(
       z.enum(["debug", "info", "warn", "error"]).default("info"),
     ),
+    PROGRAM_TIMEZONE: optionalWithDefault(z.string().default("UTC")),
   })
   .superRefine((value, context) => {
     const explicitCredentials = [

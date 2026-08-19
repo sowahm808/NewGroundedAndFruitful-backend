@@ -8,6 +8,7 @@ import helmet from "helmet";
 import authRoutes from "./auth/routes/index.js";
 import participantRoutes from "./participants/routes/index.js";
 import pointRoutes from "./points/routes/index.js";
+import parentRoutes from "./parent/routes/index.js";
 import { env } from "./config/env.js";
 import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
@@ -119,6 +120,7 @@ app.use("/api/v1/auth", authRoutes);
  */
 app.use("/api/v1/participants", authenticate, participantRoutes);
 app.use("/api/v1/points", authenticate, pointRoutes);
+app.use("/api/v1/parent", authenticate, parentRoutes);
 
 app.use((_req, _res, next) => {
   next(new NotFoundError());

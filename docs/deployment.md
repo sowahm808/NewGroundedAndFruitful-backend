@@ -42,3 +42,5 @@ it in Google Cloud IAM, create a replacement, and update the Render secret.
 5. Run `npm run test:rules` and `firebase deploy --only firestore:indexes,firestore:rules --project <staging-project> --dry-run` before the reviewed production rules deployment. Deploy indexes before code that queries them.
 
 Rollback by redeploying the versioned previous rules file and previous backend release, without changing user or membership documents. If Firestore was updated but claims failed, do not revert the authoritative record: rerun the idempotent command to recover the claim cache. If claims were updated but the Firestore transaction did not commit, rerun the command; session authorization continues to use Firestore and will not trust the stale claim. Never manually broaden rules as an incident workaround.
+
+Parent APIs require `PROGRAM_TIMEZONE` (IANA name) and the indexes in `firestore.indexes.json`. Deploy indexes before the application. Roll back by restoring the prior Render release; writes are additive, so rollback must not delete observations, completions, selections, or support requests.
