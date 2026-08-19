@@ -7,6 +7,7 @@ export type OnboardingStatus =
   | "complete"
   | "role_required"
   | "profile_required"
+  | "provisioning_required"
   | "pending_approval";
 
 export interface UserProfile {
