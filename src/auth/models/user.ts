@@ -2,6 +2,12 @@ import type { Timestamp } from "firebase-admin/firestore";
 import type { Role } from "../authorization.js";
 
 export type UserStatus = "active" | "disabled";
+export type MembershipStatus = "active" | "pending" | "suspended";
+export type OnboardingStatus =
+  | "complete"
+  | "role_required"
+  | "profile_required"
+  | "pending_approval";
 
 export interface UserProfile {
   uid: string;
@@ -17,6 +23,12 @@ export interface SessionUser {
   uid: string;
   email: string | null;
   displayName: string;
-  roles: Role[];
+  roles: readonly Role[];
   disabled: boolean;
+  onboardingStatus: OnboardingStatus;
+  memberships: Array<{
+    organizationId: string;
+    roles: readonly Role[];
+    status: MembershipStatus;
+  }>;
 }

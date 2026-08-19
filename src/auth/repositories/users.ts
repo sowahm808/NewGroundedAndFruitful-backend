@@ -1,6 +1,5 @@
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
-import type { Role } from "../authorization.js";
 import type { UserProfile } from "../models/user.js";
 
 const collection = "users";
@@ -9,7 +8,6 @@ export interface ProvisionUserProfileInput {
   uid: string;
   email: string | null;
   displayName: string;
-  roles: Role[];
 }
 
 export class UserRepository {
@@ -33,7 +31,7 @@ export class UserRepository {
           uid: input.uid,
           email: input.email,
           displayName: input.displayName,
-          roles: input.roles,
+          roles: [],
           status: "active",
           createdAt: now,
           updatedAt: now,
@@ -42,7 +40,7 @@ export class UserRepository {
           uid: input.uid,
           email: input.email,
           displayName: input.displayName,
-          roles: input.roles,
+          roles: [],
           status: "active",
         };
       }
@@ -53,8 +51,6 @@ export class UserRepository {
       if (typeof current.email === "undefined") patch.email = input.email;
       if (!current.displayName && input.displayName)
         patch.displayName = input.displayName;
-      if (!Array.isArray(current.roles) || current.roles.length === 0)
-        patch.roles = input.roles;
       if (Object.keys(patch).length > 0) {
         patch.updatedAt = now;
         transaction.set(ref, patch, { merge: true });

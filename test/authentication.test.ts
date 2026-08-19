@@ -1,38 +1,58 @@
 import { describe, expect, it, vi } from "vitest";
 import { AuthorizationError } from "../src/shared/errors.js";
-import {
-  isRole,
-  resolvePrincipalRole,
-} from "../src/middleware/authentication.js";
+import { isRole, resolvePrincipal } from "../src/middleware/authentication.js";
 
-describe("authentication role resolution", () => {
-  it("accepts roles from verified Firebase custom claims", () => {
+function firestore(
+  user: Record<string, unknown>,
+  memberships: Record<string, unknown>[] = [],
+) {
+  const get = (field: string) => user[field];
+  const query = {
+    where: vi.fn(),
+    get: vi
+      .fn()
+      .mockResolvedValue({
+        docs: memberships.map((data) => ({ data: () => data })),
+      }),
+  };
+  query.where.mockReturnValue(query);
+  return {
+    doc: vi
+      .fn()
+      .mockReturnValue({
+        get: vi.fn().mockResolvedValue({ exists: true, get }),
+      }),
+    collection: vi.fn().mockReturnValue(query),
+  };
+}
+
+describe("server-authoritative authentication role resolution", () => {
+  it("recognizes only canonical role values", () => {
     expect(isRole("parent")).toBe(true);
-    expect(isRole("guest")).toBe(false);
+    expect(isRole("guardian")).toBe(false);
   });
-
-  it("uses the server-side user document role when a Firebase token has no role claim", async () => {
-    const firestore = {
-      doc: vi.fn().mockReturnValue({
-        get: vi.fn().mockResolvedValue({ get: () => "parent" }),
-      }),
-    };
-
+  it("ignores claims and resolves an active membership", async () => {
+    const db = firestore({ status: "active" }, [
+      {
+        userId: "parent-1",
+        organizationId: "org-1",
+        roles: ["guardian"],
+        status: "active",
+      },
+    ]);
     await expect(
-      resolvePrincipalRole(firestore as never, { uid: "parent-1" } as never),
-    ).resolves.toBe("parent");
-    expect(firestore.doc).toHaveBeenCalledWith("users/parent-1");
+      resolvePrincipal(
+        db as never,
+        { uid: "parent-1", roles: ["admin"] } as never,
+      ),
+    ).resolves.toEqual({ roles: ["parent"], organizationIds: ["org-1"] });
   });
-
-  it("rejects authenticated users without an allowed application role", async () => {
-    const firestore = {
-      doc: vi.fn().mockReturnValue({
-        get: vi.fn().mockResolvedValue({ get: () => "guest" }),
-      }),
-    };
-
+  it("rejects authenticated users without a server role", async () => {
     await expect(
-      resolvePrincipalRole(firestore as never, { uid: "user-1" } as never),
+      resolvePrincipal(
+        firestore({ status: "active" }) as never,
+        { uid: "user-1" } as never,
+      ),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
 });
