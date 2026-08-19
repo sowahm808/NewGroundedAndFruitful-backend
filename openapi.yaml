@@ -98,7 +98,8 @@ paths:
             name: Idempotency-Key,
             in: header,
             required: true,
-            schema: { type: string, maxLength: 200 },
+            schema:
+              { type: string, maxLength: 200, pattern: "^[A-Za-z0-9:_-]+$" },
           },
         ]
       requestBody:
@@ -293,7 +294,22 @@ components:
             participantId: { type: string },
             teamId: { type: string },
             quarterId: { type: string },
-            sourceType: { type: string },
+            sourceType:
+              {
+                type: string,
+                enum:
+                  [
+                    daily_checkin,
+                    gratitude,
+                    character_assessment,
+                    bible_activity,
+                    family_activity,
+                    reading,
+                    project_milestone,
+                    academic_session,
+                    character_observation_bonus,
+                  ],
+              },
             sourceId: { type: string },
             reason: { type: string },
             occurredAt: { type: string, format: date-time },

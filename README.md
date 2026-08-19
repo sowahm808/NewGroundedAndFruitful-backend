@@ -6,7 +6,7 @@ A Node.js 22, TypeScript, Express API hosted as one Render service. Firebase Adm
 
 `src/app.ts` owns the HTTP pipeline and `src/server.ts` owns process lifecycle. Domain modules separate routes, controllers, services, repositories, schemas, and models. Repositories are the only persistence boundary. Firebase bearer tokens are verified with revocation checks, and services authorize the verified principal against parent-child and mentor-team link documents.
 
-The point ledger uses the idempotency key as its immutable document identity. A Firestore transaction creates the ledger row and updates participant-quarter, team-quarter, and team-week aggregates atomically. Point domain inputs intentionally omit ratings, correctness, and grades so participation—not performance—controls awards. Corrections are new `adjustment` entries rather than mutations.
+The point ledger uses a validated idempotency key as its immutable document identity. An exact retry returns the existing result, while reuse for another source or owner is rejected. A Firestore transaction creates the ledger row and updates participant-quarter, team-quarter, and team-week aggregates atomically. Configured rules must award positive whole points. Point domain inputs intentionally omit ratings, correctness, and grades so participation—not performance—controls awards. The public completion route cannot create adjustments.
 
 ## Endpoints
 
@@ -52,4 +52,4 @@ Helmet, strict CORS, 64 KiB JSON limits, global and child-login rate limits, gen
 
 ## Current scope and next steps
 
-The production foundation and first authentication, participant, and point routes are implemented. The remaining named program domains require product-owned workflow contracts before their endpoints can be safely exposed. Before launch, add those contracts and emulator-backed relationship/concurrency/rules tests, use a managed shared rate-limit store for horizontal scaling, add aggregate-rebuild jobs, and wire a secrets manager/service-account injection strategy appropriate to the Render plan.
+The production foundation and first authentication, participant, and point routes are implemented. This is not the complete product backend: see [the production audit](docs/backend-production-audit.md) for confirmed gaps and launch blockers. In particular, the generic completion route is not a source-specific daily workflow, multi-organization isolation is not implemented, and emulator integration tests are absent. Before launch, add approved contracts and migrations, emulator-backed relationship/concurrency/rules tests, a managed shared rate-limit store for horizontal scaling, aggregate-rebuild jobs, and a secrets manager/service-account injection strategy appropriate to the Render plan.

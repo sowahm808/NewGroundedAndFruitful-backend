@@ -1,5 +1,6 @@
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
+import { ConflictError } from "../shared/errors.js";
 import type { AwardRequest, PointLedgerEntry } from "./domain.js";
 export class PointRepository {
   constructor(private readonly db: Firestore) {}
@@ -10,8 +11,14 @@ export class PointRepository {
     const ref = this.db.doc(`pointLedger/${input.idempotencyKey}`);
     return this.db.runTransaction(async (tx) => {
       const old = await tx.get(ref);
-      if (old.exists)
-        return { entry: old.data() as PointLedgerEntry, created: false };
+      if (old.exists) {
+        const entry = old.data() as PointLedgerEntry;
+        if (!sameAward(entry, input))
+          throw new ConflictError(
+            "Idempotency key was already used for another completion.",
+          );
+        return { entry, created: false };
+      }
       const entry = {
         ...input,
         id: ref.id,
@@ -68,4 +75,15 @@ export class PointRepository {
       { merge: true },
     );
   }
+}
+
+function sameAward(entry: PointLedgerEntry, input: AwardRequest): boolean {
+  return (
+    entry.participantId === input.participantId &&
+    entry.teamId === input.teamId &&
+    entry.quarterId === input.quarterId &&
+    entry.sourceType === input.sourceType &&
+    entry.sourceId === input.sourceId &&
+    entry.awardedBy === input.awardedBy
+  );
 }
