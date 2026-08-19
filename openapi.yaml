@@ -24,10 +24,29 @@ paths:
             },
         }
   /auth/session:
+    get:
+      tags: [Auth]
+      operationId: getAuthSession
+      description: Verifies a Firebase ID token and returns canonical roles from server-controlled users and memberships. Missing profiles are idempotently created without a role.
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200":
+          {
+            description: Session state,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/AuthSessionResponse" },
+                  },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
     post:
       tags: [Auth]
       operationId: createAuthSession
-      description: Verifies a Firebase ID token, provisions users/{uid} when missing, and returns the normalized session user.
+      description: Deprecated compatibility alias for GET. Never accepts identity or role input.
       security: [{ firebaseBearer: [] }]
       responses:
         "200":
@@ -217,7 +236,16 @@ components:
             data:
               {
                 type: object,
-                required: [uid, email, displayName, roles, disabled],
+                required:
+                  [
+                    uid,
+                    email,
+                    displayName,
+                    roles,
+                    disabled,
+                    onboardingStatus,
+                    memberships,
+                  ],
                 properties:
                   {
                     uid: { type: string },
@@ -241,6 +269,52 @@ components:
                           },
                       },
                     disabled: { type: boolean },
+                    onboardingStatus:
+                      {
+                        type: string,
+                        enum:
+                          [
+                            complete,
+                            role_required,
+                            profile_required,
+                            pending_approval,
+                          ],
+                      },
+                    memberships:
+                      {
+                        type: array,
+                        items:
+                          {
+                            type: object,
+                            required: [organizationId, roles, status],
+                            properties:
+                              {
+                                organizationId: { type: string },
+                                roles:
+                                  {
+                                    type: array,
+                                    items:
+                                      {
+                                        type: string,
+                                        enum:
+                                          [
+                                            child,
+                                            parent,
+                                            mentor,
+                                            observer,
+                                            admin,
+                                            super_admin,
+                                          ],
+                                      },
+                                  },
+                                status:
+                                  {
+                                    type: string,
+                                    enum: [active, pending, suspended],
+                                  },
+                              },
+                          },
+                      },
                   },
               },
           },

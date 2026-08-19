@@ -28,7 +28,7 @@ describe("HTTP safety contract", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       status: "ok",
-      environment: "development",
+      environment: "test",
     });
   });
 
@@ -37,7 +37,7 @@ describe("HTTP safety contract", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       status: "ok",
-      environment: "development",
+      environment: "test",
     });
     expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(response.headers.get("x-powered-by")).toBeNull();
@@ -57,6 +57,20 @@ describe("HTTP safety contract", () => {
       method: "POST",
     });
     expect(response.status).toBe(401);
+  });
+  it("requires a token for GET session bootstrap", async () => {
+    const response = await fetch(`${base}/api/v1/auth/session`);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("returns 404 rather than authenticating unknown routes", async () => {
+    const response = await fetch(`${base}/api/v1/not-a-route`);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "NOT_FOUND" },
+    });
   });
 
   it("rejects malformed auth session bearer headers", async () => {

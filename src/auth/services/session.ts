@@ -1,38 +1,109 @@
 import type { Auth, DecodedIdToken, UserRecord } from "firebase-admin/auth";
-import {
-  AuthenticationError,
-  AuthorizationError,
-  InternalError,
-  NotFoundError,
-} from "../../shared/errors.js";
-import { isRole } from "../../middleware/authentication.js";
-import type { Role } from "../authorization.js";
-import type { SessionUser, UserProfile } from "../models/user.js";
+import { AuthenticationError, InternalError } from "../../shared/errors.js";
+import { logger } from "../../shared/logger.js";
+import type { SessionUser } from "../models/user.js";
+import type { MembershipRepository } from "../repositories/memberships.js";
 import type { UserRepository } from "../repositories/users.js";
+import { normalizeRoles, type Role } from "../roles.js";
 
-const defaultSelfRegistrationRoles: Role[] = ["parent"];
+export interface SessionContext {
+  requestId?: string;
+}
 
 export class AuthSessionService {
   constructor(
     private readonly firebaseAuth: Auth,
     private readonly users: UserRepository,
+    private readonly memberships: MembershipRepository,
   ) {}
 
-  async createSession(idToken: string): Promise<SessionUser> {
+  async createSession(
+    idToken: string,
+    context: SessionContext = {},
+  ): Promise<SessionUser> {
     const decodedToken = await this.verifyIdToken(idToken);
     const authUser = await this.getAuthUser(decodedToken.uid);
-    if (authUser.disabled) throw new AuthorizationError();
+    const existing = await this.users.getUserByUid(decodedToken.uid);
+    if (!existing)
+      logger.warn("session_profile_not_found", {
+        requestId: context.requestId,
+        uid: decodedToken.uid,
+      });
 
+    // Idempotently create identity/profile fields only. Authentication does not
+    // imply an application role and token claims never seed authorization data.
     const profile = await this.users.provisionUserProfile({
       uid: decodedToken.uid,
       email: authUser.email ?? decodedToken.email ?? null,
       displayName: this.displayName(authUser, decodedToken),
-      roles: this.safeDefaultRoles(decodedToken),
     });
+    const storedMemberships = await this.memberships.listForUser(
+      decodedToken.uid,
+    );
+    const memberships = storedMemberships
+      .filter((membership) => membership.userId === decodedToken.uid)
+      .filter((membership) =>
+        ["active", "pending", "suspended"].includes(membership.status),
+      )
+      .map((membership) => {
+        const normalized = normalizeRoles(membership.roles ?? membership.role);
+        this.logInvalidRoles(normalized.invalid, decodedToken.uid, context);
+        return {
+          organizationId: membership.organizationId,
+          roles: normalized.roles,
+          status: membership.status,
+        };
+      });
 
-    const session = this.toSessionUser(profile);
-    if (session.disabled) throw new AuthorizationError();
-    await this.syncRoleClaims(authUser, decodedToken, session.roles);
+    const storedProfile = profile as unknown as {
+      roles?: unknown;
+      role?: unknown;
+    };
+    const global = normalizeRoles(storedProfile.roles ?? storedProfile.role);
+    this.logInvalidRoles(global.invalid, decodedToken.uid, context);
+    const activeMemberships = memberships.filter(
+      (item) => item.status === "active",
+    );
+    const roles = this.unique([
+      ...global.roles,
+      ...activeMemberships.flatMap((item) => item.roles),
+    ]);
+    const disabled = authUser.disabled || profile.status === "disabled";
+    const pending = memberships.some((item) => item.status === "pending");
+
+    if (disabled || memberships.some((item) => item.status === "suspended"))
+      logger.warn("session_account_restricted", {
+        requestId: context.requestId,
+        uid: decodedToken.uid,
+        disabled,
+      });
+    if (activeMemberships.length === 0)
+      logger.warn("session_no_active_membership", {
+        requestId: context.requestId,
+        uid: decodedToken.uid,
+      });
+    if (roles.length === 0)
+      logger.warn("session_empty_role_resolution", {
+        requestId: context.requestId,
+        uid: decodedToken.uid,
+      });
+
+    const session: SessionUser = {
+      uid: profile.uid,
+      email: profile.email ?? null,
+      displayName: profile.displayName,
+      roles,
+      disabled,
+      onboardingStatus: !profile.displayName
+        ? "profile_required"
+        : roles.length > 0
+          ? "complete"
+          : pending
+            ? "pending_approval"
+            : "role_required",
+      memberships,
+    };
+    await this.syncRoleClaims(authUser, decodedToken, roles, context);
     return session;
   }
 
@@ -47,75 +118,64 @@ export class AuthSessionService {
   private async getAuthUser(uid: string): Promise<UserRecord> {
     try {
       return await this.firebaseAuth.getUser(uid);
-    } catch (error) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "auth/user-not-found"
-      )
-        throw new NotFoundError("Firebase user not found.");
-      throw new InternalError();
+    } catch {
+      throw new AuthenticationError();
     }
   }
 
-  private displayName(authUser: UserRecord, decodedToken: DecodedIdToken) {
+  private displayName(authUser: UserRecord, token: DecodedIdToken): string {
     return (
       authUser.displayName ??
-      (typeof decodedToken.name === "string" ? decodedToken.name : undefined) ??
+      (typeof token.name === "string" ? token.name : undefined) ??
       authUser.email ??
       ""
     );
   }
 
-  private safeDefaultRoles(decodedToken: DecodedIdToken): Role[] {
-    const claimRoles = normalizeRoles(decodedToken.roles);
-    const claimRole = isRole(decodedToken.role) ? [decodedToken.role] : [];
-    const safe = [...claimRoles, ...claimRole].filter(
-      (role) => role !== "admin" && role !== "super_admin",
-    );
-    return safe.length > 0 ? safe : defaultSelfRegistrationRoles;
+  private unique(roles: Role[]): Role[] {
+    return [...new Set(roles)];
   }
 
-  private toSessionUser(profile: UserProfile): SessionUser {
-    const roles = normalizeRoles(profile.roles);
-    return {
-      uid: profile.uid,
-      email: profile.email ?? null,
-      displayName: profile.displayName,
-      roles: roles.length > 0 ? roles : defaultSelfRegistrationRoles,
-      disabled: profile.status === "disabled",
-    };
+  private logInvalidRoles(
+    invalid: string[],
+    uid: string,
+    context: SessionContext,
+  ): void {
+    for (const value of invalid)
+      logger.warn("unknown_stored_role", {
+        requestId: context.requestId,
+        uid,
+        value,
+      });
   }
 
   private async syncRoleClaims(
     authUser: UserRecord,
     decodedToken: DecodedIdToken,
     roles: Role[],
+    context: SessionContext,
   ): Promise<void> {
     const currentClaims = authUser.customClaims ?? {};
-    const current = normalizeRoles(currentClaims.roles ?? decodedToken.roles);
-    const hasSameRoles =
+    const current = normalizeRoles(
+      currentClaims.roles ?? decodedToken.roles,
+    ).roles;
+    if (
       current.length === roles.length &&
-      roles.every((role) => current.includes(role));
-    const currentRole = isRole(currentClaims.role ?? decodedToken.role)
-      ? (currentClaims.role ?? decodedToken.role)
-      : undefined;
-    if (hasSameRoles && currentRole === roles[0]) return;
-    await this.firebaseAuth
-      .setCustomUserClaims(authUser.uid, {
+      roles.every((role) => current.includes(role))
+    )
+      return;
+    logger.info("session_claim_roles_out_of_sync", {
+      requestId: context.requestId,
+      uid: authUser.uid,
+    });
+    try {
+      await this.firebaseAuth.setCustomUserClaims(authUser.uid, {
         ...currentClaims,
         roles,
-        role: roles[0],
-      })
-      .catch(() => {
-        throw new InternalError();
+        role: roles[0] ?? null,
       });
+    } catch {
+      throw new InternalError();
+    }
   }
-}
-
-export function normalizeRoles(value: unknown): Role[] {
-  if (Array.isArray(value)) return value.filter(isRole);
-  if (isRole(value)) return [value];
-  return [];
 }

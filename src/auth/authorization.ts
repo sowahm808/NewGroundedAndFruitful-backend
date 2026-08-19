@@ -1,16 +1,13 @@
 import type { DecodedIdToken } from "firebase-admin/auth";
 import type { Firestore } from "firebase-admin/firestore";
 import { AuthenticationError, AuthorizationError } from "../shared/errors.js";
-export type Role =
-  | "child"
-  | "parent"
-  | "mentor"
-  | "observer"
-  | "admin"
-  | "super_admin";
+import type { Role } from "./roles.js";
+export type { Role } from "./roles.js";
 export interface Principal {
   uid: string;
   role: Role;
+  roles: readonly Role[];
+  organizationIds: readonly string[];
   token: DecodedIdToken;
 }
 export function requireAuthenticated(
@@ -21,7 +18,7 @@ export function requireAuthenticated(
 }
 export function requireRole(p: Principal | undefined, role: Role): Principal {
   const a = requireAuthenticated(p);
-  if (a.role !== role) throw new AuthorizationError();
+  if (!a.roles.includes(role)) throw new AuthorizationError();
   return a;
 }
 export function requireAnyRole(
@@ -29,7 +26,8 @@ export function requireAnyRole(
   roles: readonly Role[],
 ): Principal {
   const a = requireAuthenticated(p);
-  if (!roles.includes(a.role)) throw new AuthorizationError();
+  if (!a.roles.some((role) => roles.includes(role)))
+    throw new AuthorizationError();
   return a;
 }
 export const requireAdmin = (p: Principal | undefined) =>
@@ -42,7 +40,11 @@ export async function requireParentOf(
   childId: string,
 ): Promise<void> {
   const a = requireRole(p, "parent");
-  if (!(await db.doc(`parentChildLinks/${a.uid}_${childId}`).get()).exists)
+  const link = await db.doc(`parentChildLinks/${a.uid}_${childId}`).get();
+  if (!link.exists || link.get("status") === "suspended")
+    throw new AuthorizationError();
+  const organizationId = link.get("organizationId") as string | undefined;
+  if (organizationId && !a.organizationIds.includes(organizationId))
     throw new AuthorizationError();
 }
 export async function requireMentorOfTeam(
@@ -51,7 +53,13 @@ export async function requireMentorOfTeam(
   teamId: string,
 ): Promise<void> {
   const a = requireRole(p, "mentor");
-  if (!(await db.doc(`teamMembers/${teamId}_mentor_${a.uid}`).get()).exists)
+  const membership = await db
+    .doc(`teamMembers/${teamId}_mentor_${a.uid}`)
+    .get();
+  if (!membership.exists || membership.get("status") === "suspended")
+    throw new AuthorizationError();
+  const organizationId = membership.get("organizationId") as string | undefined;
+  if (organizationId && !a.organizationIds.includes(organizationId))
     throw new AuthorizationError();
 }
 export async function requireMentorOfChild(
@@ -62,5 +70,9 @@ export async function requireMentorOfChild(
   const part = await db.doc(`participants/${childId}`).get();
   const teamId = part.get("activeTeamId") as string | undefined;
   if (!teamId) throw new AuthorizationError();
+  const organizationId = part.get("organizationId") as string | undefined;
+  const a = requireAuthenticated(p);
+  if (organizationId && !a.organizationIds.includes(organizationId))
+    throw new AuthorizationError();
   await requireMentorOfTeam(db, p, teamId);
 }

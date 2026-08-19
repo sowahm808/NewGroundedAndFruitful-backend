@@ -1,4 +1,8 @@
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import helmet from "helmet";
 
 import authRoutes from "./auth/routes/index.js";
@@ -9,11 +13,7 @@ import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import { requestContext } from "./middleware/request.js";
-import {
-  AppError,
-  InternalError,
-  NotFoundError,
-} from "./shared/errors.js";
+import { AppError, InternalError, NotFoundError } from "./shared/errors.js";
 import { logger } from "./shared/logger.js";
 
 export const app = express();
@@ -41,6 +41,7 @@ app.use(express.json({ limit: "64kb" }));
 
 const healthResponse = {
   status: "ok",
+  environment: env.NODE_ENV,
 } as const;
 
 /*
@@ -69,10 +70,7 @@ app.get("/api/v1/health", (_req, res) => {
  */
 if (env.NODE_ENV !== "production") {
   app.get("/docs", (_req, res) => {
-    res
-      .status(200)
-      .type("html")
-      .send(`<!doctype html>
+    res.status(200).type("html").send(`<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -126,19 +124,13 @@ app.use((_req, _res, next) => {
  * _next even though it is only used for the headers-sent case.
  */
 app.use(
-  (
-    error: unknown,
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ): void => {
+  (error: unknown, req: Request, res: Response, next: NextFunction): void => {
     if (res.headersSent) {
       next(error);
       return;
     }
 
-    const safeError =
-      error instanceof AppError ? error : new InternalError();
+    const safeError = error instanceof AppError ? error : new InternalError();
 
     const logContext = {
       requestId: req.requestId,

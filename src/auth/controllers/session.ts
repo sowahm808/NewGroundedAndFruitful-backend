@@ -7,7 +7,9 @@ export class AuthSessionController {
 
   async create(req: Request, res: Response) {
     const token = bearerToken(req.header("authorization"));
-    const sessionUser = await this.service.createSession(token);
+    const sessionUser = await this.service.createSession(token, {
+      requestId: req.requestId,
+    });
     res.json({ data: sessionUser });
   }
 }
