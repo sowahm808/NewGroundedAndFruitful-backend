@@ -326,26 +326,33 @@ export class ParentService {
   }
 
   async observations(principal: Principal, input: ListInput) {
-    let query = this.db
+    const snapshot = await this.db
       .collection("characterObservations")
       .where("parentUid", "==", principal.uid)
-      .orderBy("createdAt", "desc")
-      .limit(input.limit + 1);
-    if (input.cursor) {
-      const cursor = await this.db
-        .doc(`characterObservations/${input.cursor}`)
-        .get();
-      if (!cursor.exists || cursor.get("parentUid") !== principal.uid)
-        throw new NotFoundError();
-      query = query.startAfter(cursor);
-    }
-    const snapshot = await query.get();
-    const docs = snapshot.docs.slice(0, input.limit);
+      .get();
+    const authorized = snapshot.docs
+      .filter((doc) =>
+        principal.organizationIds.includes(doc.get("organizationId")),
+      )
+      .sort((a, b) => {
+        const createdAtDifference = (
+          iso(b.get("createdAt")) ?? ""
+        ).localeCompare(iso(a.get("createdAt")) ?? "");
+        return createdAtDifference || b.id.localeCompare(a.id);
+      });
+    const cursorIndex = input.cursor
+      ? authorized.findIndex((doc) => doc.id === input.cursor)
+      : -1;
+    if (input.cursor && cursorIndex === -1) throw new NotFoundError();
+    const start = cursorIndex + 1;
+    const docs = authorized.slice(start, start + input.limit);
     return {
       data: docs.map((doc) => this.observationView(doc)),
       meta: {
         nextCursor:
-          snapshot.size > input.limit ? (docs.at(-1)?.id ?? null) : null,
+          start + input.limit < authorized.length
+            ? (docs.at(-1)?.id ?? null)
+            : null,
       },
     };
   }
