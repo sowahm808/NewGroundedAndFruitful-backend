@@ -1,7 +1,7 @@
 import { db, auth } from "../src/config/firebase.js";
 import { hash } from "@node-rs/argon2";
 import { env } from "../src/config/env.js";
-import { normalizeCredentialPart } from "../src/auth/repositories/child-credentials.js";
+import { credentialLookupDigest } from "../src/auth/repositories/child-credentials.js";
 if (
   !process.env.FIRESTORE_EMULATOR_HOST ||
   !process.env.FIREBASE_AUTH_EMULATOR_HOST
@@ -72,11 +72,12 @@ for (const credential of [
     uid: "suspended-child-1",
   },
 ]) {
-  const key = `${normalizeCredentialPart(credential.familyCode)}_${normalizeCredentialPart(credential.handle)}`;
+  const key = credentialLookupDigest(credential.familyCode, credential.handle);
   await db.doc(`childCredentials/${key}`).set({
     firebaseUid: credential.uid,
     participantId: credential.uid,
-    passwordHash: await hash(`2468${env.CHILD_LOGIN_PEPPER}`),
+    organizationId: "org-fixture",
+    pinHash: await hash(`2468${env.CHILD_LOGIN_PEPPER}`),
     failedAttempts: 0,
     disabled: false,
   });

@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "childCredentials",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "participantId", "order": "ASCENDING" },
+        { "fieldPath": "disabled", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "pointLedger",
       "queryScope": "COLLECTION",
       "fields": [

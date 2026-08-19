@@ -1,57 +1,94 @@
+import { createHmac } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-export interface Credential {
-  participantId: string;
-  firebaseUid: string;
-  passwordHash: string;
-  failedAttempts: number;
-  lockedUntil?: Timestamp;
-  disabled?: boolean;
-}
+import { z } from "zod";
+import { env } from "../../config/env.js";
+
+const credentialSchema = z
+  .object({
+    participantId: z.string().min(1),
+    firebaseUid: z.string().min(1),
+    organizationId: z.string().min(1),
+    pinHash: z.string().startsWith("$argon2id$"),
+    failedAttempts: z.number().int().nonnegative(),
+    lockedUntil: z.instanceof(Timestamp).nullable().optional(),
+    disabled: z.boolean().optional(),
+  })
+  .passthrough();
+const membershipSchema = z.object({
+  userId: z.string(),
+  participantId: z.string(),
+  organizationId: z.string(),
+  roles: z.array(z.string()),
+  status: z.literal("active"),
+});
+export type Credential = z.infer<typeof credentialSchema>;
+
 export class ChildCredentialRepository {
-  constructor(private db: Firestore) {}
+  constructor(private readonly db: Firestore) {}
   key(familyCode: string, handle: string) {
-    return `${normalizeCredentialPart(familyCode)}_${normalizeCredentialPart(handle)}`;
+    return credentialLookupDigest(familyCode, handle);
   }
 
-  async findActiveChildMembership(
-    credential: Credential,
-  ): Promise<{ id: string; organizationId: string } | undefined> {
+  async findActiveChildMembership(credential: Credential) {
     const snapshot = await this.db
       .collection("memberships")
       .where("userId", "==", credential.firebaseUid)
       .get();
-    const matches = snapshot.docs.filter((document) => {
-      const value = document.data();
-      const roles = Array.isArray(value.roles) ? value.roles : [value.role];
-      return (
-        value.userId === credential.firebaseUid &&
-        value.status === "active" &&
-        roles.includes("child") &&
-        (value.participantId === undefined ||
-          value.participantId === credential.participantId)
-      );
+    const matches = snapshot.docs.flatMap((document) => {
+      const parsed = membershipSchema.safeParse(document.data());
+      return parsed.success &&
+        parsed.data.roles.includes("child") &&
+        parsed.data.participantId === credential.participantId &&
+        parsed.data.organizationId === credential.organizationId
+        ? [{ id: document.id, organizationId: parsed.data.organizationId }]
+        : [];
     });
-    if (matches.length !== 1) return undefined;
-    return {
-      id: matches[0]!.id,
-      organizationId: String(matches[0]!.get("organizationId")),
-    };
+    return matches.length === 1 ? matches[0] : undefined;
   }
-  async find(f: string, h: string) {
+
+  async hasActiveContext(credential: Credential): Promise<boolean> {
+    const [participant, organization] = await Promise.all([
+      this.db.doc(`participants/${credential.participantId}`).get(),
+      this.db.doc(`organizations/${credential.organizationId}`).get(),
+    ]);
+    const p = z
+      .object({
+        firebaseUid: z.string(),
+        organizationId: z.string(),
+        status: z.literal("active"),
+      })
+      .safeParse(participant.data());
+    const o = z
+      .object({ status: z.literal("active") })
+      .safeParse(organization.data());
     return (
-      await this.db.doc(`childCredentials/${this.key(f, h)}`).get()
-    ).data() as Credential | undefined;
+      p.success &&
+      o.success &&
+      p.data.firebaseUid === credential.firebaseUid &&
+      p.data.organizationId === credential.organizationId
+    );
   }
-  async recordFailure(f: string, h: string) {
-    const ref = this.db.doc(`childCredentials/${this.key(f, h)}`);
+
+  async find(familyCode: string, handle: string) {
+    const snapshot = await this.db
+      .doc(`childCredentials/${this.key(familyCode, handle)}`)
+      .get();
+    const parsed = credentialSchema.safeParse(snapshot.data());
+    return parsed.success ? parsed.data : undefined;
+  }
+
+  async recordFailure(familyCode: string, handle: string) {
+    const ref = this.db.doc(`childCredentials/${this.key(familyCode, handle)}`);
     await this.db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
-      if (!snap.exists) return;
-      const value = snap.data() as Credential;
-      if (value.lockedUntil && value.lockedUntil.toMillis() > Date.now())
+      const parsed = credentialSchema.safeParse(snap.data());
+      if (
+        !parsed.success ||
+        (parsed.data.lockedUntil?.toMillis() ?? 0) > Date.now()
+      )
         return;
-      const attempts = value.failedAttempts + 1;
+      const attempts = parsed.data.failedAttempts + 1;
       tx.update(ref, {
         failedAttempts: attempts,
         lockedUntil:
@@ -60,15 +97,24 @@ export class ChildCredentialRepository {
       });
     });
   }
-  async clearFailures(f: string, h: string) {
-    await this.db.doc(`childCredentials/${this.key(f, h)}`).update({
-      failedAttempts: 0,
-      lockedUntil: null,
-      lastLoginAt: FieldValue.serverTimestamp(),
-    });
+  async clearFailures(familyCode: string, handle: string) {
+    await this.db
+      .doc(`childCredentials/${this.key(familyCode, handle)}`)
+      .update({
+        failedAttempts: 0,
+        lockedUntil: null,
+        lastLoginAt: FieldValue.serverTimestamp(),
+      });
   }
 }
 
-export function normalizeCredentialPart(value: string): string {
+export function normalizeCredentialPart(value: string) {
   return value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
+}
+export function credentialLookupDigest(familyCode: string, handle: string) {
+  return createHmac("sha256", env.CHILD_LOGIN_LOOKUP_SECRET)
+    .update(
+      `${normalizeCredentialPart(familyCode)}\n${normalizeCredentialPart(handle)}`,
+    )
+    .digest("hex");
 }
