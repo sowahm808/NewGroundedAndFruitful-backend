@@ -184,5 +184,9 @@ describe("production Firestore rules", () => {
     );
     await assertFails(getDoc(doc(db, "teams/team-1/private/record")));
     await assertFails(getDoc(doc(db, "unknown/x")));
+    for (const collection of ["dailyCheckins", "characterCycles", "characterAssessments", "bibleActivities", "bibleActivityResponses", "readingAssignments", "readingResponses", "projects", "projectMilestones", "projectUpdates", "teamMembers", "pointRules", "supportCategories"]) {
+      await assertFails(getDoc(doc(db, `${collection}/private`)));
+      await assertFails(setDoc(doc(db, `${collection}/private`), { organizationId: "org-1" }));
+    }
   });
 });
