@@ -5,6 +5,8 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     autoDeployTrigger: checksPass
+    domains:
+      - api.groundedandfruitful.org
     envVars:
       - key: NODE_ENV
         value: production
