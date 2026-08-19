@@ -103,7 +103,8 @@ product. The order reflects dependencies and risk.
 - [ ] Define program timezones, quarter lifecycle/state transitions, and week
       boundaries; stop deriving weekly aggregates solely from UTC Mondays.
 - [ ] Persist point-rule identity/version and the evaluated rule snapshot on
-      each ledger entry.
+      every ledger entry. Child-workflow awards include them, but the generic
+      completion and adjustment paths do not yet satisfy the invariant.
 - [ ] Add aggregate reconciliation/rebuild jobs with dry-run, checkpoint,
       observability, and repair audit trails.
 - [ ] Choose a production secrets manager/service-account injection strategy
@@ -140,28 +141,37 @@ product. The order reflects dependencies and risk.
 ### Program workflows
 
 - [ ] Quarterly goals and a quarter open/lock/close state machine.
-- [ ] Complete daily check-ins with source records, eligibility rules, edit
+- [x] Complete daily check-ins with source records, eligibility rules, edit
       windows, and one atomic source-completion/point-award transaction.
-- [ ] Character reflection and assessment persistence/API (the validator alone
-      is not a feature implementation).
-- [ ] Bible activity delivery, response persistence, and completion API (the
-      activity type and key helper alone are not an implementation).
+- [x] Character reflection and assessment persistence/API, including drafts,
+      finalization, active-cycle validation, and transactional point awards.
+- [x] Bible activity delivery, response persistence, and completion API.
 - [ ] Observations with author, subject, visibility, moderation, and audit rules.
-- [ ] Family activities and verified completion workflows.
-- [ ] Reading activities, progress, and verified completion workflows.
-- [ ] Project CRUD, mentor guidance, evidence, and transition endpoints (the
-      transition helper alone is not a feature implementation).
+- [x] Parent-scoped family activity listing and idempotent, verified completion
+      persistence.
+- [x] Reading activity delivery, response persistence, progress, and verified
+      completion workflow (text responses only; media remains deferred above).
+- [x] Participant-scoped project creation, reads, updates, milestones, evidence
+      updates, optimistic concurrency, audited transitions, and point awards.
+- [ ] Add the mentor-guidance workflow to the implemented project APIs.
 - [ ] Academic-support activities and verified completion workflows.
-- [ ] Special-activity definition, approval, and completion workflows.
+- [x] Assigned special-activity listing and idempotent participant completion
+      with transactional point awards.
+- [ ] Special-activity definition and approval administration workflows.
 - [x] Administrator point adjustment/reversal API with reason, original-entry
       linkage, authorization, and audit event.
 
 ### Engagement, reporting, and safety
 
-- [ ] Surveys, response privacy, and reporting APIs.
-- [ ] Awards/badges with deterministic eligibility and issuance history.
+- [x] Participant-scoped survey listing, answer validation, private draft/final
+      response persistence, idempotent finalization, and point awards.
+- [ ] Survey administration and privacy-reviewed aggregate reporting APIs.
+- [x] Participant-scoped issued-award history API.
+- [ ] Award/badge definition administration and deterministic eligibility and
+      issuance processing.
 - [ ] Notification preferences, delivery jobs, retries, and redacted payloads.
-- [ ] Participant, parent, mentor, team, and administrator dashboards.
+- [x] Participant today dashboard and parent dashboard/child summaries.
+- [ ] Mentor, team, and administrator dashboards.
 - [ ] Privacy-reviewed leaderboards with tenant/team scope, tie behavior, and
       safe participant display names.
 - [ ] Reports/exports with scoped authorization, asynchronous generation,
