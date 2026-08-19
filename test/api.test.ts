@@ -78,6 +78,12 @@ describe("HTTP safety contract", () => {
       "same-origin-allow-popups",
     );
   });
+  it("publishes the child router rather than returning 404", async () => {
+    const response = await fetch(`${base}/api/v1/child/today`);
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(404);
+    expect(response.headers.get("cache-control")).toBe("no-store, private");
+  });
   it("requires authentication for every parent workflow", async () => {
     for (const path of [
       "dashboard",
