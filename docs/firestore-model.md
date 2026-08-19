@@ -15,3 +15,8 @@ Relationships use document IDs rather than unbounded arrays. Trusted writes use 
 ## Parent feature collections
 
 Parent APIs use explicit `parentChildLinks` (`parentUid`, `participantId`, `organizationId`, `status`) and never infer a relationship. Configurable `characterQualities`, `familyActivities`, and `supportCategories` require `organizationId` where tenant-specific and an explicit `status`. `quarters` require `organizationId`, `name`, `status`, `startsAt`, and `endsAt` timestamps. Observations persist participant/parent/organization IDs, constructive description, observed timestamp, moderation status, and server timestamps. Family completions use deterministic `activityId_participantId` IDs. Support requests persist requester/participant/organization/category, safe text, status, version, and server timestamps. `pointLedger` remains append-only and authoritative.
+# Authorization invariants
+
+`memberships/{membershipId}` is the organization-role source of truth and stores `userId`, `organizationId`, canonical `roles`, lifecycle `status`, and integer `version`. Relationship collections (`parentChildLinks`, `mentorAssignments`, and `observerGrants`) are server-controlled and always repeat the organization plus lifecycle/validity fields needed for validation.
+
+The browser may only read its own non-authoritative `users/{uid}` profile. Participants, memberships, teams, relationships, invitations, consents, point ledgers, aggregates, awards, and audit logs are accessed through the API; Firestore rules deny all browser reads/writes for them. Server repositories must begin with an organization filter and must not globally query then filter.

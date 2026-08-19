@@ -2,12 +2,15 @@ import type { DecodedIdToken } from "firebase-admin/auth";
 import type { Firestore } from "firebase-admin/firestore";
 import { AuthenticationError, AuthorizationError } from "../shared/errors.js";
 import type { Role } from "./roles.js";
+import type { ActiveMembership } from "./policy.js";
 export type { Role } from "./roles.js";
 export interface Principal {
   uid: string;
   role: Role;
   roles: readonly Role[];
   organizationIds: readonly string[];
+  /** Populated by authentication; optional only for legacy internal call sites. */
+  memberships?: readonly ActiveMembership[];
   token: DecodedIdToken;
 }
 export function requireAuthenticated(
