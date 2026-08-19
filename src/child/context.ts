@@ -1,6 +1,7 @@
 import type { Firestore, Timestamp } from "firebase-admin/firestore";
 import type { Principal } from "../auth/authorization.js";
 import { requireRole } from "../auth/authorization.js";
+import { normalizeRoles } from "../auth/roles.js";
 import { AuthorizationError, ConflictError } from "../shared/errors.js";
 
 export interface ChildContext { actorUid: string; participantId: string; organizationId: string; teamId: string | null; activeQuarterId: string | null; timezone: string }
@@ -29,7 +30,7 @@ export async function resolveActiveQuarter(db: Firestore, organizationId: string
 export async function resolveChildContext(db: Firestore, principal: Principal | undefined, now = new Date()): Promise<{ context: ChildContext; participant: FirebaseFirestore.DocumentSnapshot; quarter: ActiveQuarter | null }> {
   const actor = requireRole(principal, "child");
   const memberships = await db.collection("memberships").where("userId", "==", actor.uid).get();
-  const valid = memberships.docs.filter((m) => m.get("status") === "active" && Array.isArray(m.get("roles")) && (m.get("roles") as unknown[]).includes("child"));
+  const valid = memberships.docs.filter((m) => m.get("status") === "active" && normalizeRoles(m.get("roles") ?? m.get("role")).roles.includes("child"));
   if (valid.length === 0) throw new AuthorizationError();
   if (valid.length > 1) throw new ConflictError("Multiple active child memberships require program selection.");
   const organizationId = valid[0]!.get("organizationId") as string;
