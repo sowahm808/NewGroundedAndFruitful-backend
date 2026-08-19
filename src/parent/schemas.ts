@@ -6,11 +6,25 @@ export const idSchema = z
   .min(1)
   .max(128)
   .regex(/^[A-Za-z0-9_-]+$/);
+
+const emptyQueryParameterAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    schema,
+  );
+
 export const listSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-  cursor: z.string().trim().min(1).max(500).optional(),
-  status: z.enum(["active", "pending", "inactive"]).optional(),
-  search: z.string().trim().max(80).optional(),
+  limit: emptyQueryParameterAsUndefined(
+    z.coerce.number().int().min(1).max(50).default(20),
+  ),
+  cursor: emptyQueryParameterAsUndefined(
+    z.string().trim().min(1).max(500).optional(),
+  ),
+  status: emptyQueryParameterAsUndefined(
+    z.enum(["active", "pending", "inactive"]).optional(),
+  ),
+  search: emptyQueryParameterAsUndefined(z.string().trim().max(80).optional()),
 });
 export const childQuerySchema = listSchema.pick({
   limit: true,
