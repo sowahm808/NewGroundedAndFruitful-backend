@@ -149,6 +149,16 @@ router.post("/family-activities/completions", async (req, res, next) => {
     next(e);
   }
 });
+// Compatibility endpoint used by the academic-support request form. Academic
+// support configuration is currently the set of active, tenant-scoped support
+// categories, so keep both URLs backed by the same service method.
+router.get("/academic-support/configuration", async (req, res, next) => {
+  try {
+    res.json(await service.supportCategories(principal(req)));
+  } catch (e) {
+    next(e);
+  }
+});
 router.get("/support/categories", async (req, res, next) => {
   try {
     res.json(await service.supportCategories(principal(req)));
