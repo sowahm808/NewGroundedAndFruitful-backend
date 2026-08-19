@@ -18,6 +18,21 @@ describe("parent API validation", () => {
     expect(childQuerySchema.safeParse({ status: "all" }).success).toBe(false);
     expect(childQuerySchema.safeParse({ limit: 51 }).success).toBe(false);
   });
+  it("treats empty query parameters as omitted", () => {
+    expect(
+      childQuerySchema.parse({
+        limit: "",
+        cursor: "",
+        status: "",
+        search: "",
+      }),
+    ).toEqual({
+      limit: 20,
+      cursor: undefined,
+      status: undefined,
+      search: undefined,
+    });
+  });
   it("requires exactly five distinct configured quality IDs", () => {
     expect(
       characterSelectionSchema.safeParse({
