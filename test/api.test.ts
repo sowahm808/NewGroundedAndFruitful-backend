@@ -153,9 +153,11 @@ describe("HTTP safety contract", () => {
     expect(response.status).toBe(422);
     expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(await response.json()).toMatchObject({
-      code: "validation_error",
-      requestId: expect.any(String),
-      details: { fieldErrors: { pin: expect.any(Array) } },
+      error: {
+        code: "VALIDATION_ERROR",
+        requestId: expect.any(String),
+        fieldErrors: { pin: expect.any(Array) },
+      },
     });
   });
   it("returns 404 rather than authenticating unknown routes", async () => {

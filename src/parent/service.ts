@@ -73,27 +73,36 @@ export class ParentService {
     const links = await this.db
       .collection("parentChildLinks")
       .where("parentUid", "==", principal.uid)
+      .limit(200)
       .get();
     const authorized = links.docs.filter(
       (doc) =>
+        doc.get("status") === "active" &&
         principal.organizationIds.includes(doc.get("organizationId")) &&
-        (!input.status || doc.get("status") === input.status),
+        typeof doc.get("participantId") === "string" &&
+        typeof doc.get("organizationId") === "string",
     );
     const summaries = await Promise.all(
-      authorized.map(async (link) =>
-        this.summary(
-          link.get("participantId"),
-          link.get("organizationId"),
-          link.get("status"),
-        ),
-      ),
+      authorized.map(async (link) => {
+        const participantId = link.get("participantId");
+        const organizationId = link.get("organizationId");
+        if (
+          typeof participantId !== "string" ||
+          typeof organizationId !== "string"
+        )
+          throw new NotFoundError();
+        return this.summary(participantId, organizationId, link.get("status"));
+      }),
     );
     const search = input.search?.toLocaleLowerCase();
     const sorted = summaries
       .filter(
         (item) =>
-          !search ||
-          String(item.approvedDisplayName).toLocaleLowerCase().includes(search),
+          (!input.status || item.status === input.status) &&
+          (!search ||
+            String(item.approvedDisplayName)
+              .toLocaleLowerCase()
+              .includes(search)),
       )
       .sort(
         (a, b) =>
@@ -117,8 +126,8 @@ export class ParentService {
   }
 
   async child(principal: Principal, childId: string) {
-    const { link, organizationId } = await this.link(principal, childId, false);
-    return this.summary(childId, organizationId, link.get("status"));
+    const { organizationId } = await this.link(principal, childId);
+    return this.summary(childId, organizationId, "active");
   }
 
   private async summary(
@@ -129,10 +138,13 @@ export class ParentService {
     const child = await this.db.doc(`participants/${childId}`).get();
     if (!child.exists || child.get("organizationId") !== organizationId)
       throw new NotFoundError();
+    const participantStatus = child.get("status");
     const status: ChildStatus =
-      linkStatus === "pending" || linkStatus === "inactive"
-        ? linkStatus
-        : "active";
+      participantStatus === "pending" || participantStatus === "inactive"
+        ? participantStatus
+        : linkStatus === "active"
+          ? "active"
+          : "inactive";
     const teamId =
       typeof child.get("teamId") === "string"
         ? (child.get("teamId") as string)
@@ -300,7 +312,21 @@ export class ParentService {
       .where("recipientUid", "==", principal.uid)
       .where("read", "==", false)
       .get();
+    const organizations = await Promise.all(
+      principal.organizationIds.map(async (id) => {
+        const organization = await this.db.doc(`organizations/${id}`).get();
+        return {
+          id,
+          name:
+            organization.exists && typeof organization.get("name") === "string"
+              ? organization.get("name")
+              : null,
+        };
+      }),
+    );
+    const calculatedAt = new Date().toISOString();
     return {
+      organizations,
       parent: {
         uid: principal.uid,
         displayName:
@@ -328,19 +354,42 @@ export class ParentService {
         ).length,
       },
       currentQuarter,
-      updatedAt: new Date().toISOString(),
+      calculatedAt,
     };
   }
 
   async observations(principal: Principal, input: ListInput) {
-    const snapshot = await this.db
-      .collection("characterObservations")
-      .where("parentUid", "==", principal.uid)
-      .get();
+    if (input.childId) await this.link(principal, input.childId);
+    const [snapshot, linkSnapshot] = await Promise.all([
+      this.db
+        .collection("characterObservations")
+        .where("parentUid", "==", principal.uid)
+        .limit(200)
+        .get(),
+      this.db
+        .collection("parentChildLinks")
+        .where("parentUid", "==", principal.uid)
+        .limit(200)
+        .get(),
+    ]);
+    const activeLinks = new Set(
+      linkSnapshot.docs
+        .filter(
+          (link) =>
+            link.get("status") === "active" &&
+            principal.organizationIds.includes(link.get("organizationId")),
+        )
+        .map(
+          (link) =>
+            `${String(link.get("organizationId"))}:${String(link.get("participantId"))}`,
+        ),
+    );
     const authorized = snapshot.docs
       .filter(
         (doc) =>
-          principal.organizationIds.includes(doc.get("organizationId")) &&
+          activeLinks.has(
+            `${String(doc.get("organizationId"))}:${String(doc.get("participantId"))}`,
+          ) &&
           (!input.childId || doc.get("participantId") === input.childId),
       )
       .sort((a, b) => {
@@ -373,6 +422,7 @@ export class ParentService {
       !principal.organizationIds.includes(doc.get("organizationId"))
     )
       throw new NotFoundError();
+    await this.link(principal, String(doc.get("participantId")));
     return this.observationView(doc);
   }
   private observationView(doc: QueryDocumentSnapshot | DocumentSnapshot) {
@@ -698,6 +748,7 @@ export class ParentService {
       !principal.organizationIds.includes(doc.get("organizationId"))
     )
       throw new NotFoundError();
+    await this.link(principal, String(doc.get("participantId")));
     return {
       id,
       childId: doc.get("participantId"),

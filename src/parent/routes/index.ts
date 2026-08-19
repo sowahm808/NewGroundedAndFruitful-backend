@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { db } from "../../config/firebase.js";
 import { requireAnyRole } from "../../middleware/authorize.js";
-import { ValidationError } from "../../shared/errors.js";
+import {
+  ServiceUnavailableError,
+  ValidationError,
+} from "../../shared/errors.js";
 import {
   characterSelectionSchema,
   childQuerySchema,
-  familyCompletionSchema,
   idSchema,
   observationSchema,
   observationQuerySchema,
@@ -140,18 +142,12 @@ router.get("/family-activities", async (req, res, next) => {
     next(e);
   }
 });
-router.post("/family-activities/completions", async (req, res, next) => {
-  try {
-    const body = parse(familyCompletionSchema, req.body);
-    const result = await service.completeFamilyActivity(
-      principal(req),
-      body.childId,
-      body.activityId,
-    );
-    res.status(result.created ? 201 : 200).json(result);
-  } catch (e) {
-    next(e);
-  }
+router.post("/family-activities/completions", (_req, _res, next) => {
+  next(
+    new ServiceUnavailableError(
+      "Family activity completion is disabled until completion and point award writes are atomic.",
+    ),
+  );
 });
 // Compatibility endpoint used by the academic-support request form. Academic
 // support configuration is currently the set of active, tenant-scoped support
