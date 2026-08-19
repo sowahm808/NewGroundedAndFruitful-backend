@@ -11,6 +11,7 @@ export interface Principal {
   organizationIds: readonly string[];
   /** Populated by authentication; optional only for legacy internal call sites. */
   memberships?: readonly ActiveMembership[];
+  authorizationSource?: "membership" | "legacy_user_profile";
   token: DecodedIdToken;
 }
 export function requireAuthenticated(

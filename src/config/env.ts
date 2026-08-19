@@ -31,6 +31,9 @@ const schema = z
       z.enum(["debug", "info", "warn", "error"]).default("info"),
     ),
     PROGRAM_TIMEZONE: optionalWithDefault(z.string().default("UTC")),
+    MEMBERSHIP_ENFORCEMENT_MODE: optionalWithDefault(
+      z.enum(["compatibility", "strict"]).default("compatibility"),
+    ),
   })
   .superRefine((value, context) => {
     const explicitCredentials = [

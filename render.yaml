@@ -12,6 +12,8 @@ services:
         value: production
       - key: APP_ENV
         value: production
+      - key: MEMBERSHIP_ENFORCEMENT_MODE
+        value: compatibility
       - key: FIREBASE_PROJECT_ID
         sync: false
       - key: FIREBASE_CLIENT_EMAIL

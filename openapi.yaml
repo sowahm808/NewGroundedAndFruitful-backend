@@ -728,6 +728,7 @@ components:
                     disabled,
                     onboardingStatus,
                     memberships,
+                    authorization,
                   ],
                 properties:
                   {
@@ -793,9 +794,23 @@ components:
                                 status:
                                   {
                                     type: string,
-                                    enum: [active, pending, suspended],
+                                    enum: [active, pending, suspended, revoked],
                                   },
                               },
+                          },
+                      },
+                    authorization:
+                      {
+                        type: object,
+                        required: [source, migrationRequired],
+                        properties:
+                          {
+                            source:
+                              {
+                                type: string,
+                                enum: [membership, legacy_user_profile, none],
+                              },
+                            migrationRequired: { type: boolean },
                           },
                       },
                   },

@@ -9,6 +9,8 @@ import type { SessionUser } from "../models/user.js";
 import type { MembershipRepository } from "../repositories/memberships.js";
 import type { UserRepository } from "../repositories/users.js";
 import { normalizeRoles, type Role } from "../roles.js";
+import { resolveRoles } from "../role-resolution.js";
+import { env } from "../../config/env.js";
 
 export interface SessionContext {
   requestId?: string;
@@ -20,6 +22,7 @@ export class AuthSessionService {
     private readonly firebaseAuth: Auth,
     private readonly users: UserRepository,
     private readonly memberships: MembershipRepository,
+    private readonly enforcementMode: "compatibility" | "strict" = env.MEMBERSHIP_ENFORCEMENT_MODE,
   ) {}
 
   async createSession(
@@ -48,7 +51,7 @@ export class AuthSessionService {
     const memberships = storedMemberships
       .filter((membership) => membership.userId === decodedToken.uid)
       .filter((membership) =>
-        ["active", "pending", "suspended"].includes(membership.status),
+        ["active", "pending", "suspended", "revoked"].includes(membership.status),
       )
       .map((membership) => {
         const normalized = normalizeRoles(membership.roles ?? membership.role);
@@ -63,7 +66,14 @@ export class AuthSessionService {
     const activeMemberships = memberships.filter(
       (item) => item.status === "active",
     );
-    const roles = this.unique(activeMemberships.flatMap((item) => item.roles));
+    const storedProfile = profile as unknown as { roles?: unknown; role?: unknown };
+    const resolution = resolveRoles(
+      memberships,
+      storedProfile.roles ?? storedProfile.role,
+      this.enforcementMode,
+    );
+    this.logInvalidRoles([...resolution.invalidLegacyRoles], decodedToken.uid, context);
+    const roles = [...resolution.roles];
     const disabled = authUser.disabled || profile.status === "disabled";
     const pending = memberships.some((item) => item.status === "pending");
     const childOrganizations = activeMemberships
@@ -73,11 +83,12 @@ export class AuthSessionService {
       ? true
       : await this.memberships.hasActiveChildContext(decodedToken.uid, childOrganizations);
 
-    if (disabled) {
+    if (disabled || memberships.some((item) => item.status === "suspended")) {
       logger.warn("session_account_restricted", {
         requestId: context.requestId,
         uid: decodedToken.uid,
         disabled,
+        suspended: memberships.some((item) => item.status === "suspended"),
       });
       throw new AuthorizationError();
     }
@@ -115,6 +126,10 @@ export class AuthSessionService {
             : "role_required",
       claimSynchronization,
       memberships,
+      authorization: {
+        source: resolution.source,
+        migrationRequired: resolution.migrationRequired,
+      },
     };
     logger.info("session_resolved", {
       requestId: context.requestId,
@@ -124,6 +139,8 @@ export class AuthSessionService {
       membershipCount: memberships.length,
       activeMembershipCount: activeMemberships.length,
       roleCount: roles.length,
+      authorizationSource: resolution.source,
+      migrationRequired: resolution.migrationRequired,
       onboardingStatus: session.onboardingStatus,
       disabled,
     });
@@ -158,10 +175,6 @@ export class AuthSessionService {
       authUser.email ??
       ""
     );
-  }
-
-  private unique(roles: Role[]): Role[] {
-    return [...new Set(roles)];
   }
 
   private logInvalidRoles(

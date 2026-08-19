@@ -21,6 +21,8 @@
     "admin:assign-role": "tsx scripts/assign-role.ts",
     "admin:bootstrap-organization": "tsx scripts/bootstrap-organization.ts",
     "admin:provision-child": "tsx scripts/provision-child.ts",
+    "migrate:memberships": "tsx scripts/migrate-memberships.ts",
+    "migrate:memberships:verify": "tsx scripts/migrate-memberships.ts --verify",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:rules": "npx --yes firebase-tools@14.12.1 emulators:exec --only firestore --project demo-grounded-fruitful-rules \"node scripts/verify-test-environment.mjs && vitest run test/integration/firestore-rules.test.ts --exclude 'lib/**'\"",

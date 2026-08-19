@@ -39,6 +39,7 @@ export interface AuthorizationContext {
   roles: readonly UserRole[];
   organizationIds: readonly string[];
   memberships: readonly ActiveMembership[];
+  authorizationSource?: "membership" | "legacy_user_profile";
 }
 export interface ResourceScope {
   organizationId: string;
@@ -79,13 +80,18 @@ export class AuthorizationPolicy {
     const memberships = context.memberships.filter(isActiveMembership).filter((membership) =>
       membership.userId === context.actorUid &&
       membership.organizationId === resource.organizationId);
-    if (memberships.length === 0) throw new AuthorizationError();
+    const legacyScoped = context.authorizationSource === "legacy_user_profile" &&
+      context.organizationIds.includes(resource.organizationId);
+    if (memberships.length === 0 && !legacyScoped) throw new AuthorizationError();
 
     const eligible = memberships.filter((membership) => membership.roles.some((role) =>
       rolePermissions[role].includes(permission)));
-    if (eligible.length === 0) throw new AuthorizationError();
+    const eligibleRoles = legacyScoped
+      ? context.roles.filter((role) => rolePermissions[role].includes(permission))
+      : [];
+    if (eligible.length === 0 && eligibleRoles.length === 0) throw new AuthorizationError();
     if (programPermissions.has(permission) && resource.programId &&
-      !eligible.some((membership) => !membership.programIds || membership.programIds.includes(resource.programId!)))
+      !legacyScoped && !eligible.some((membership) => !membership.programIds || membership.programIds.includes(resource.programId!)))
       throw new AuthorizationError();
 
     let related = true;
