@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 process.env.FIREBASE_PROJECT_ID = "demo-grounded-fruitful";
 process.env.NODE_ENV = "test";
 const { app } = await import("../src/app.js");
+const { default: parentRouter } = await import("../src/parent/routes/index.js");
 let server: Server;
 let base = "";
 beforeAll(async () => {
@@ -23,6 +24,16 @@ afterAll(
     ),
 );
 describe("HTTP safety contract", () => {
+  it("registers the academic-support configuration contract", () => {
+    const configurationRoute = parentRouter.stack.find(
+      (layer) => layer.route?.path === "/academic-support/configuration",
+    );
+
+    expect(configurationRoute?.route?.path).toBe(
+      "/academic-support/configuration",
+    );
+  });
+
   it("provides a minimal root health response for platform probes", async () => {
     const response = await fetch(`${base}/`);
     expect(response.status).toBe(200);
@@ -50,6 +61,7 @@ describe("HTTP safety contract", () => {
       "dashboard",
       "children",
       "observations",
+      "academic-support/configuration",
       "support/categories",
     ]) {
       const response = await fetch(`${base}/api/v1/parent/${path}`);

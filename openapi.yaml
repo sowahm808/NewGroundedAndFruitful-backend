@@ -165,6 +165,15 @@ paths:
           "201": { description: Completion created },
           "200": { description: Existing idempotent completion },
         }
+  /parent/academic-support/configuration:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      description: Compatibility endpoint for active, organization-scoped academic-support categories.
+      responses:
+        "200": { description: Configured academic-support categories }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /parent/support/categories:
     get:
       tags: [Parent]
