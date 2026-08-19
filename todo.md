@@ -192,3 +192,9 @@ documentation page exists. Check it only when all applicable work is complete:
       operational recovery or reconciliation procedure exist.
 - [ ] Documentation and seed/test fixtures are updated, and the feature has been
       exercised in staging with production-like configuration.
+# Authorization policy decisions still requiring product approval
+
+- Define a reviewed guardian-summary DTO/privacy policy before exposing any additional child content.
+- Decide whether selected admin permissions may ever include membership, role, or audit management (the baseline does not).
+- Define retention and review access for immutable authorization audit events.
+- Add frontend route-guard and safe-return-URL work in the separate Angular repository; this repository contains no frontend application.

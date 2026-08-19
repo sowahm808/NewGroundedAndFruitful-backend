@@ -60,19 +60,10 @@ export class AuthSessionService {
         };
       });
 
-    const storedProfile = profile as unknown as {
-      roles?: unknown;
-      role?: unknown;
-    };
-    const global = normalizeRoles(storedProfile.roles ?? storedProfile.role);
-    this.logInvalidRoles(global.invalid, decodedToken.uid, context);
     const activeMemberships = memberships.filter(
       (item) => item.status === "active",
     );
-    const roles = this.unique([
-      ...global.roles,
-      ...activeMemberships.flatMap((item) => item.roles),
-    ]);
+    const roles = this.unique(activeMemberships.flatMap((item) => item.roles));
     const disabled = authUser.disabled || profile.status === "disabled";
     const pending = memberships.some((item) => item.status === "pending");
     const childOrganizations = activeMemberships
@@ -82,7 +73,7 @@ export class AuthSessionService {
       ? true
       : await this.memberships.hasActiveChildContext(decodedToken.uid, childOrganizations);
 
-    if (disabled || memberships.some((item) => item.status === "suspended")) {
+    if (disabled) {
       logger.warn("session_account_restricted", {
         requestId: context.requestId,
         uid: decodedToken.uid,
@@ -90,12 +81,7 @@ export class AuthSessionService {
       });
       throw new AuthorizationError();
     }
-    if (activeMemberships.length === 0 && global.roles.includes("super_admin"))
-      logger.info("session_global_super_admin_without_membership", {
-        requestId: context.requestId,
-        uid: decodedToken.uid,
-      });
-    else if (activeMemberships.length === 0)
+    if (activeMemberships.length === 0)
       logger.warn("session_no_active_membership", {
         requestId: context.requestId,
         uid: decodedToken.uid,

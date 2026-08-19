@@ -6,83 +6,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Claims are a coarse, Admin-SDK-maintained cache. Relationship documents
-    // remain authoritative for resource and organization access.
-    function tokenHasRoles() {
-      return signedIn() && request.auth.token.roles is list;
-    }
-
-    function hasRole(role) {
-      return tokenHasRoles() && role in request.auth.token.roles;
-    }
-
-    function validParticipant(participant) {
-      return participant.organizationId is string;
-    }
-
-    function ownsParticipant(participant) {
-      return signedIn()
-        && participant.firebaseUid is string
-        && participant.firebaseUid == request.auth.uid;
-    }
-
-    function activeParentLink(participantId, participant) {
-      let link = get(/databases/$(database)/documents/parentChildLinks/$(request.auth.uid + '_' + participantId));
-      return hasRole('parent')
-        && validParticipant(participant)
-        && link.data.parentUid == request.auth.uid
-        && link.data.participantId == participantId
-        && link.data.organizationId == participant.organizationId
-        && link.data.status == 'active'
-        && link.data.revokedAt == null;
-    }
-
-    function activeOrganizationAdmin(organizationId) {
-      let membership = get(/databases/$(database)/documents/memberships/$(organizationId + '_' + request.auth.uid));
-      return hasRole('admin')
-        && membership.data.userId == request.auth.uid
-        && membership.data.organizationId == organizationId
-        && membership.data.status == 'active'
-        && membership.data.roles is list
-        && 'admin' in membership.data.roles;
-    }
-
-    // Product policy: super_admin is the only global cross-organization role.
-    function canAdminister(organizationId) {
-      return hasRole('super_admin') || activeOrganizationAdmin(organizationId);
-    }
-
-    function activeTeamAssignment(teamId, team) {
-      let assignment = get(/databases/$(database)/documents/teamMembers/$(teamId + '_mentor_' + request.auth.uid));
-      return hasRole('mentor')
-        && team.organizationId is string
-        && assignment.userId == request.auth.uid
-        && assignment.teamId == teamId
-        && assignment.organizationId == team.organizationId
-        && assignment.role == 'mentor'
-        && assignment.status == 'active';
-    }
-
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow write: if false;
     }
 
-    match /participants/{participantId} {
-      allow read: if ownsParticipant(resource.data)
-        || activeParentLink(participantId, resource.data)
-        || canAdminister(resource.data.organizationId);
-      allow write: if false;
-    }
-
-    match /teams/{teamId} {
-      allow read: if activeTeamAssignment(teamId, resource.data)
-        || canAdminister(resource.data.organizationId);
-      allow write: if false;
-    }
-
-    // Memberships, relationships, points, audits, and every nested collection
-    // are server-only. Admin SDK callers must apply the equivalent API policy.
+    // The web application uses Express APIs. All domain data is server-only;
+    // claims can never independently grant organization or relationship scope.
     match /{document=**} {
       allow read, write: if false;
     }

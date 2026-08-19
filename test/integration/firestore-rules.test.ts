@@ -91,9 +91,9 @@ describe("production Firestore rules", () => {
       }),
     );
   });
-  it("uses participant firebaseUid rather than document ID for self-access", async () => {
+  it("denies participant direct reads even to the owning child", async () => {
     await seed();
-    await assertSucceeds(
+    await assertFails(
       getDoc(
         doc(authed("child-auth", ["child"]), "participants/participant-1"),
       ),
@@ -104,13 +104,13 @@ describe("production Firestore rules", () => {
       ),
     );
   });
-  it("allows only an active, unrevoked, same-organization parent link", async () => {
+  it("denies parent direct reads despite an active relationship", async () => {
     await seed();
     const ref = doc(
       authed("parent-1", ["parent"]),
       "participants/participant-1",
     );
-    await assertSucceeds(getDoc(ref));
+    await assertFails(getDoc(ref));
     await env.withSecurityRulesDisabled(async (c) =>
       setDoc(doc(c.firestore(), "parentChildLinks/parent-1_participant-1"), {
         parentUid: "parent-1",
@@ -142,10 +142,10 @@ describe("production Firestore rules", () => {
       getDoc(doc(authed("parent-1", ["parent"]), "participants/participant-1")),
     );
   });
-  it("allows an assigned mentor only their team", async () => {
+  it("denies assigned mentors direct team access", async () => {
     await seed();
     const db = authed("mentor-1", ["mentor"]);
-    await assertSucceeds(getDoc(doc(db, "teams/team-1")));
+    await assertFails(getDoc(doc(db, "teams/team-1")));
     await assertFails(getDoc(doc(db, "teams/team-2")));
     await assertFails(
       getDoc(doc(authed("mentor-2", ["mentor"]), "teams/team-1")),
@@ -162,12 +162,12 @@ describe("production Firestore rules", () => {
       getDoc(doc(authed("mentor-1", ["owner"]), "teams/team-1")),
     );
   });
-  it("scopes admin and explicitly permits global super_admin", async () => {
+  it("denies admin and super-admin direct domain reads", async () => {
     await seed();
     const admin = authed("admin-1", ["admin"]);
-    await assertSucceeds(getDoc(doc(admin, "teams/team-1")));
+    await assertFails(getDoc(doc(admin, "teams/team-1")));
     await assertFails(getDoc(doc(admin, "teams/team-2")));
-    await assertSucceeds(
+    await assertFails(
       getDoc(doc(authed("root", ["super_admin"]), "teams/team-2")),
     );
   });

@@ -10,7 +10,7 @@ function firestore(
   const query = {
     where: vi.fn(),
     get: vi.fn().mockResolvedValue({
-      docs: memberships.map((data) => ({ data: () => data })),
+      docs: memberships.map((data, index) => ({ id: `membership-${String(index)}`, data: () => data })),
     }),
   };
   query.where.mockReturnValue(query);
@@ -34,6 +34,7 @@ describe("server-authoritative authentication role resolution", () => {
         organizationId: "org-1",
         roles: ["guardian"],
         status: "active",
+        version: 1,
       },
     ]);
     await expect(
@@ -41,7 +42,7 @@ describe("server-authoritative authentication role resolution", () => {
         db as never,
         { uid: "parent-1", roles: ["admin"] } as never,
       ),
-    ).resolves.toEqual({ roles: ["parent"], organizationIds: ["org-1"] });
+    ).resolves.toMatchObject({ roles: ["parent"], organizationIds: ["org-1"], memberships: [{ organizationId: "org-1", status: "active", version: 1 }] });
   });
   it("authorizes an active membership before an optional profile is provisioned", async () => {
     const db = firestore(undefined, [
@@ -50,11 +51,12 @@ describe("server-authoritative authentication role resolution", () => {
         organizationId: "org-1",
         roles: ["child"],
         status: "active",
+        version: 1,
       },
     ]);
     await expect(
       resolvePrincipal(db as never, { uid: "child-1" } as never),
-    ).resolves.toEqual({ roles: ["child"], organizationIds: ["org-1"] });
+    ).resolves.toMatchObject({ roles: ["child"], organizationIds: ["org-1"] });
   });
   it("still rejects an identity with neither a profile role nor an active membership", async () => {
     await expect(
@@ -72,20 +74,20 @@ describe("server-authoritative authentication role resolution", () => {
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
-  it("keeps a transitional global parent role but grants no tenant scope", async () => {
+  it("does not authorize a transitional profile role without membership", async () => {
     await expect(
       resolvePrincipal(
         firestore({ status: "active", roles: ["parent"] }) as never,
         { uid: "parent-1" } as never,
       ),
-    ).resolves.toEqual({ roles: ["parent"], organizationIds: [] });
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
-  it("allows a genuinely global super-admin without fabricating membership", async () => {
+  it("does not allow a global super-admin without an active membership", async () => {
     await expect(
       resolvePrincipal(
         firestore({ status: "active", roles: ["super_admin"] }) as never,
         { uid: "root-1" } as never,
       ),
-    ).resolves.toEqual({ roles: ["super_admin"], organizationIds: [] });
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
 });

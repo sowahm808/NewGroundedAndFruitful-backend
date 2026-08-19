@@ -5,40 +5,40 @@ import { auth, db } from "../config/firebase.js";
 import { AuthenticationError, AuthorizationError } from "../shared/errors.js";
 import { type Role } from "../auth/authorization.js";
 import { normalizeRoles } from "../auth/roles.js";
+import type { ActiveMembership } from "../auth/policy.js";
 export { isRole } from "../auth/roles.js";
 
 export async function resolvePrincipal(
   firestore: Firestore,
   token: DecodedIdToken,
-): Promise<{ roles: Role[]; organizationIds: string[] }> {
+): Promise<{ roles: Role[]; organizationIds: string[]; memberships: ActiveMembership[] }> {
   const user = await firestore.doc(`users/${token.uid}`).get();
   if (user.exists && user.get("status") === "disabled")
     throw new AuthorizationError();
-  const global = user.exists
-    ? normalizeRoles(user.get("roles") ?? user.get("role")).roles
-    : [];
   const membershipSnapshot = await firestore
     .collection("memberships")
     .where("userId", "==", token.uid)
     .get();
   const membershipRoles: Role[] = [];
   const organizationIds: string[] = [];
+  const memberships: ActiveMembership[] = [];
   for (const doc of membershipSnapshot.docs) {
     const data = doc.data();
     if (data.userId !== token.uid) continue;
-    if (data.status === "suspended" || data.status === "deleted")
-      throw new AuthorizationError();
     if (data.status !== "active") continue;
     membershipRoles.push(...normalizeRoles(data.roles ?? data.role).roles);
+    const roles = normalizeRoles(data.roles ?? data.role).roles;
+    if (typeof data.organizationId !== "string" || !Number.isInteger(data.version)) continue;
+    memberships.push({ id: doc.id, userId: token.uid, organizationId: data.organizationId, roles, status: "active", version: data.version, ...(Array.isArray(data.programIds) ? { programIds: data.programIds.filter((id): id is string => typeof id === "string") } : {}) });
     if (typeof data.organizationId === "string")
       organizationIds.push(data.organizationId);
   }
-  const roles = [...new Set([...global, ...membershipRoles])];
+  const roles = [...new Set(membershipRoles)];
   // A profile is optional identity metadata and can be provisioned by the
   // session endpoint after sign-in. Do not reject a valid Firebase identity
   // whose active, server-owned membership already grants application access.
   if (roles.length === 0) throw new AuthorizationError();
-  return { roles, organizationIds: [...new Set(organizationIds)] };
+  return { roles, organizationIds: [...new Set(organizationIds)], memberships };
 }
 
 /** @deprecated Use resolvePrincipal when enforcing organization boundaries. */
@@ -67,6 +67,7 @@ export async function authenticate(
       role: resolved.roles[0]!,
       roles: resolved.roles,
       organizationIds: resolved.organizationIds,
+      memberships: resolved.memberships,
       token,
     };
     next();

@@ -2,6 +2,10 @@ openapi: 3.1.0
 info:
   title: Grounded & Fruitful API
   version: 1.0.0
+  description: >-
+    Authorization uses canonical roles from active memberships plus organization,
+    program, and resource relationships. Custom claims and route entry never grant
+    tenant resource access. Domain Firestore access is server-only.
   description: Render-hosted API. Authoritative writes require a verified Firebase ID token.
 servers: [{ url: /api/v1 }]
 tags:
