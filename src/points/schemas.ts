@@ -5,7 +5,11 @@ export const awardSchema = z
     participantId: z.string().min(1).max(128),
     teamId: z.string().min(1).max(128),
     quarterId: z.string().min(1).max(128),
-    sourceType: z.enum(pointSourceTypes),
+    sourceType: z
+      .enum(pointSourceTypes)
+      .refine((value) => value !== "adjustment", {
+        message: "Adjustments require the administrator reversal workflow.",
+      }),
     sourceId: z.string().min(1).max(128),
     reason: z.string().min(1).max(200),
     occurredAt: z.coerce.date(),

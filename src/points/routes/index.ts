@@ -4,9 +4,10 @@ import { requireAuthenticated } from "../../middleware/authorize.js";
 import { validateBody } from "../../middleware/validate.js";
 import { ValidationError } from "../../shared/errors.js";
 import { awardSchema } from "../schemas.js";
+import { CompletionService } from "../completion-service.js";
 import { PointRepository } from "../repository.js";
 const router = Router(),
-  repo = new PointRepository(db);
+  service = new CompletionService(db, new PointRepository(db));
 router.post(
   "/completions",
   requireAuthenticated,
@@ -14,23 +15,11 @@ router.post(
   async (req, res, next) => {
     try {
       const key = req.header("idempotency-key");
-      if (!key || key.length > 200)
+      if (!key || !/^[A-Za-z0-9:_-]{1,200}$/.test(key))
         throw new ValidationError(
           "A valid Idempotency-Key header is required.",
         );
-      const p = req.principal!;
-      if (
-        p.role === "child" &&
-        p.token.participantId !== req.body.participantId &&
-        p.uid !== req.body.participantId
-      )
-        throw new ValidationError(
-          "Participant does not match authenticated identity.",
-        );
-      const result = await repo.award(
-        { ...req.body, awardedBy: p.uid, idempotencyKey: key },
-        10,
-      );
+      const result = await service.record(req.principal, req.body, key);
       res.status(result.created ? 201 : 200).json({
         data: {
           id: result.entry.id,

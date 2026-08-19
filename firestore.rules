@@ -2,11 +2,15 @@ rules_version = '2';
 service cloud.firestore { match /databases/{database}/documents {
   function signedIn(){ return request.auth != null; }
   function role(r){ return signedIn() && request.auth.token.role == r; }
-  function elevated(){ return role('admin') || role('super_admin'); }
-  function ownsParticipant(id){ return signedIn() && request.auth.uid == id; }
-  function parentOf(id){ return role('parent') && exists(/databases/$(database)/documents/parentChildLinks/$(request.auth.uid + '_' + id)); }
-  match /participants/{id} { allow read: if ownsParticipant(id) || parentOf(id) || elevated(); allow write: if elevated(); }
-  match /users/{id} { allow read: if signedIn() && (request.auth.uid == id || elevated()); allow write: if false; }
-  match /teams/{id} { allow read: if signedIn(); allow write: if elevated(); }
+  function ownsParticipant(id){ return signedIn() && (request.auth.uid == id || request.auth.token.participantId == id); }
+  function parentOf(id){
+    let link = get(/databases/$(database)/documents/parentChildLinks/$(request.auth.uid + '_' + id));
+    return role('parent') && link.data.status == 'active' && link.data.childId == id && link.data.parentId == request.auth.uid;
+  }
+  // Administrative and team access is served through the Admin SDK API where
+  // organization membership and resource relationships can both be checked.
+  match /participants/{id} { allow read: if ownsParticipant(id) || parentOf(id); allow write: if false; }
+  match /users/{id} { allow read: if signedIn() && request.auth.uid == id; allow write: if false; }
+  match /teams/{id} { allow read, write: if false; }
   match /{collection}/{id} { allow read,write: if false; }
 }}

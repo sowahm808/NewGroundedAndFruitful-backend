@@ -38,6 +38,7 @@ export interface PointLedgerEntry extends AwardRequest {
 }
 export function completionAward(rule: PointRule, input: AwardRequest): number {
   if (!rule.enabled || rule.activityType !== input.sourceType) return 0;
+  if (!Number.isSafeInteger(rule.points) || rule.points <= 0) return 0;
   if (
     input.occurredAt < rule.effectiveFrom ||
     (rule.effectiveUntil && input.occurredAt > rule.effectiveUntil)
