@@ -16,7 +16,10 @@ app.set("trust proxy", 1);
 app.use(
   requestContext,
   cors,
-  helmet({ contentSecurityPolicy: false }),
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+  }),
   express.json({ limit: "64kb" }),
   rateLimit(60_000, 120),
 );
