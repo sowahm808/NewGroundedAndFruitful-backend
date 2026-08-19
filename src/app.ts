@@ -13,7 +13,12 @@ import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import { requestContext } from "./middleware/request.js";
-import { AppError, InternalError, NotFoundError } from "./shared/errors.js";
+import {
+  AppError,
+  InternalError,
+  NotFoundError,
+  RateLimitError,
+} from "./shared/errors.js";
 import { logger } from "./shared/logger.js";
 
 export const app = express();
@@ -151,15 +156,18 @@ app.use(
       logger.warn("request_rejected", logContext);
     }
 
+    if (safeError instanceof RateLimitError)
+      res.setHeader("retry-after", String(safeError.retryAfterSeconds));
+    const body = {
+      code: safeError.code.toLowerCase(),
+      message: safeError.status === 401 ? "Sign-in failed" : safeError.message,
+      requestId: req.requestId,
+      ...(safeError.details ? { details: safeError.details } : {}),
+    };
+    // Keep the old nested member during the version-one envelope migration.
     res.status(safeError.status).json({
-      error: {
-        code: safeError.code,
-        message: safeError.message,
-        requestId: req.requestId,
-        ...(env.NODE_ENV !== "production" && safeError.details
-          ? { details: safeError.details }
-          : {}),
-      },
+      ...body,
+      error: { ...body, code: safeError.code },
     });
   },
 );

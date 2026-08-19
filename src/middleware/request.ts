@@ -6,7 +6,11 @@ export function requestContext(
   res: Response,
   next: NextFunction,
 ) {
-  req.requestId = req.header("x-request-id")?.slice(0, 128) ?? randomUUID();
+  const supplied = req.header("x-request-id");
+  req.requestId =
+    supplied && /^[A-Za-z0-9._:-]{1,128}$/.test(supplied)
+      ? supplied
+      : randomUUID();
   res.setHeader("x-request-id", req.requestId);
   const start = performance.now();
   res.on("finish", () =>

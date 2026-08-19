@@ -29,9 +29,12 @@ scripts do **not** count as completed features.
       idempotent role-free user profile creation.
 - [x] Canonical role resolution from server-controlled users/memberships rather
       than trusting token role claims.
-- [x] Child login via family code, handle, Argon2 password hash, server pepper,
-      Firebase custom token, generic failures, account lockout, and audit events.
-- [x] Child-login-specific process-local rate limiting.
+- [x] Anonymous `POST /auth/child-token` via normalized family code/handle,
+      Argon2 PIN hash, server pepper, constant-work generic failures, exactly
+      one active child membership, enabled Firebase user, scoped custom-token
+      claims, account lockout, and audit events.
+- [x] Child-token-specific privacy-hashed process-local rate limiting with an
+      integer `Retry-After` response.
 - [x] Role-assignment service and guarded administrator CLI.
 - [x] Relationship-aware participant summary read for the participant, linked
       parent, assigned mentor, and supported legacy administrative roles.
@@ -95,6 +98,9 @@ product. The order reflects dependencies and risk.
       enabling horizontal scaling.
 - [ ] Implement and test backend Firebase App Check token verification; current
       documentation/configuration intent is not executable enforcement.
+- [ ] Add membership administration before exposing access removal. It must
+      revoke Firebase refresh tokens in the same command path as suspension or
+      deletion and emit an immutable audit event.
 - [ ] Define program timezones, quarter lifecycle/state transitions, and week
       boundaries; stop deriving weekly aggregates solely from UTC Mondays.
 - [ ] Persist point-rule identity/version and the evaluated rule snapshot on

@@ -11,7 +11,7 @@ The point ledger uses a validated idempotency key as its immutable document iden
 ## Endpoints
 
 - `GET /health` and `GET /api/v1/health`
-- `POST /api/v1/auth/child-login`
+- `POST /api/v1/auth/child-token`
 - `GET /api/v1/participants/:id`
 - `POST /api/v1/points/completions`
 - `GET /docs` and `GET /openapi.yaml` (documentation UI is disabled in production)
@@ -23,13 +23,13 @@ The complete request/response contract is in [openapi.yaml](openapi.yaml).
 Child users do not sign in through Firebase email/password. A browser call to Firebase Auth's `accounts:signInWithPassword` REST endpoint will return a Firebase `400 Bad Request` whenever the supplied value is not an enabled Firebase email/password account, the password is wrong, or the API key/project does not match the account. For child access, call this backend instead:
 
 ```http
-POST /api/v1/auth/child-login
+POST /api/v1/auth/child-token
 Content-Type: application/json
 
-{ "familyCode": "...", "handle": "...", "password": "..." }
+{ "familyCode": "...", "handle": "...", "pin": "..." }
 ```
 
-The response is `{ "data": { "customToken": "...", "tokenType": "firebaseCustomToken" } }`. The web client must exchange that custom token with Firebase Auth using `signInWithCustomToken`, then send the resulting Firebase ID token as `Authorization: Bearer <idToken>` to protected API routes.
+The response is `{ "data": { "customToken": "..." } }`. The web client must exchange that custom token with Firebase Auth using `signInWithCustomToken`, then send the resulting Firebase ID token as `Authorization: Bearer <idToken>` to `GET /api/v1/auth/session` and protected API routes.
 
 ## Firestore collections
 
@@ -48,7 +48,7 @@ Create distinct Firebase projects and Render environments for staging and produc
 
 ## Security and privacy
 
-Helmet, strict CORS, 64 KiB JSON limits, global and child-login rate limits, generic login failures, temporary child lockouts, Argon2 credential verification, request IDs, safe error envelopes, revocation-aware Firebase verification, and structured redacted event logs are enabled. Tokens, passwords, PINs, reflections, and wellbeing notes are never logged. Firestore and Storage rules deny browser writes by default; Admin SDK authorization is independently enforced by the API.
+Helmet, strict CORS, 64 KiB JSON limits, global and child-token rate limits, generic login failures, temporary child lockouts, Argon2 credential verification, request IDs, safe error envelopes, revocation-aware Firebase verification, and structured redacted event logs are enabled. Tokens, passwords, PINs, reflections, and wellbeing notes are never logged. Firestore and Storage rules deny browser writes by default; Admin SDK authorization is independently enforced by the API.
 
 ## Current scope and next steps
 

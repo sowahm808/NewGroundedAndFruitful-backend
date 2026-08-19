@@ -65,18 +65,18 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/Internal" }
-  /auth/child-login:
+  /auth/child-token:
     post:
       tags: [Auth]
-      operationId: childLogin
-      description: Exchanges family code, child handle and password for a short-lived Firebase custom token. Rate limited and generically fails.
+      operationId: exchangeChildToken
+      description: Exchanges family code, child handle and PIN for a short-lived Firebase custom token. Rate limited and generically fails.
       requestBody:
         {
           required: true,
           content:
             {
               application/json:
-                { schema: { $ref: "#/components/schemas/ChildLogin" } },
+                { schema: { $ref: "#/components/schemas/ChildTokenRequest" } },
             },
         }
       responses:
@@ -87,7 +87,7 @@ paths:
               {
                 application/json:
                   {
-                    schema: { $ref: "#/components/schemas/ChildLoginResponse" },
+                    schema: { $ref: "#/components/schemas/ChildTokenResponse" },
                   },
               },
           }
@@ -211,11 +211,16 @@ components:
     Error:
       {
         type: object,
-        required: [error],
+        required: [code, message, requestId],
         properties:
           {
+            code: { type: string },
+            message: { type: string },
+            details: {},
+            requestId: { type: string },
             error:
               {
+                deprecated: true,
                 type: object,
                 required: [code, message, requestId],
                 properties:
@@ -319,19 +324,20 @@ components:
               },
           },
       }
-    ChildLogin:
+    ChildTokenRequest:
       {
         type: object,
         additionalProperties: false,
-        required: [familyCode, handle, password],
+        required: [familyCode, handle, pin],
         properties:
           {
             familyCode: { type: string },
             handle: { type: string },
-            password: { type: string, format: password },
+            pin:
+              { type: string, format: password, minLength: 4, maxLength: 128 },
           },
       }
-    ChildLoginResponse:
+    ChildTokenResponse:
       {
         type: object,
         required: [data],
@@ -340,12 +346,8 @@ components:
             data:
               {
                 type: object,
-                required: [customToken, tokenType],
-                properties:
-                  {
-                    customToken: { type: string },
-                    tokenType: { type: string, const: firebaseCustomToken },
-                  },
+                required: [customToken],
+                properties: { customToken: { type: string } },
               },
           },
       }

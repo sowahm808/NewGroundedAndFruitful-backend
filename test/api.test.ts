@@ -65,6 +65,24 @@ describe("HTTP safety contract", () => {
       error: { code: "AUTHENTICATION_REQUIRED" },
     });
   });
+  it("publishes the anonymous child-token request contract", async () => {
+    const response = await fetch(`${base}/api/v1/auth/child-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familyCode: "abcd",
+        handle: "kid",
+        password: "secret",
+      }),
+    });
+    expect(response.status).toBe(422);
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+    expect(await response.json()).toMatchObject({
+      code: "validation_error",
+      requestId: expect.any(String),
+      details: { fieldErrors: { pin: expect.any(Array) } },
+    });
+  });
   it("returns 404 rather than authenticating unknown routes", async () => {
     const response = await fetch(`${base}/api/v1/not-a-route`);
     expect(response.status).toBe(404);

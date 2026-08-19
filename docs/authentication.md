@@ -1,6 +1,6 @@
 # Authentication
 
-Adults use Firebase Authentication. Child sign-in is designed around family code, handle, and an Argon2id password hash plus server-held pepper. Implementations must use generic failures, account-based and device/IP-supported throttling, temporary lockout, suspicious-attempt auditing, and mint only Firebase custom tokens. Synthetic credentials are never returned. Activation, disablement, refresh-token revocation, and verified consent are parent/admin-controlled. No child-login endpoint is enabled until its persistent rate-limit and audit repository is deployed.
+Adults use Firebase Authentication. Child sign-in uses anonymous `POST /api/v1/auth/child-token` with family code, handle, and PIN. The PIN is stored as an Argon2id hash plus server-held pepper; missing and invalid accounts take the same slow verification path. The route uses generic failures, privacy-hashed network/family/account throttling, temporary account lock state, suspicious-attempt auditing, and mints only a Firebase custom token for an enabled Firebase user with one active child membership. Synthetic credentials are never returned. The client immediately exchanges the custom token and calls `GET /api/v1/auth/session`. Activation, disablement, refresh-token revocation, and verified consent remain parent/admin-controlled.
 
 ## Session bootstrap and roles
 

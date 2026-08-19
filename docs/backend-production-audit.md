@@ -11,7 +11,7 @@ HTTP controls currently include Firebase bearer-token verification with revocati
 ## Existing features confirmed
 
 - Adult Firebase session bootstrap and conservative parent self-provisioning.
-- Child family-code/handle login backed by Argon2 hashes, a server pepper, lockout, audit records, and Firebase custom tokens. Argon2 exists only for this child credential bridge; Firebase remains authoritative for sessions.
+- Anonymous child family-code/handle/PIN exchange at `POST /api/v1/auth/child-token`, backed by normalized identifiers, Argon2 hashes, a server pepper, constant-work generic failures, privacy-hashed throttling, lockout, audit records, enabled-user and unique-active-membership checks, and scoped Firebase custom tokens. Argon2 exists only for this child credential bridge; Firebase remains authoritative for sessions.
 - Relationship-aware participant summary reads for a child, linked parent, assigned mentor, and legacy administrators.
 - A transactional append-only points ledger with participant/team aggregates and exact-retry idempotency.
 - Participation-only point domain rules, five-item character reflection validation, and project transition validation.

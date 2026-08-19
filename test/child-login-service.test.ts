@@ -20,12 +20,17 @@ describe("ChildLoginService", () => {
       }),
       clearFailures: vi.fn().mockResolvedValue(undefined),
       recordFailure: vi.fn().mockResolvedValue(undefined),
+      findActiveChildMembership: vi.fn().mockResolvedValue({
+        id: "membership-1",
+        organizationId: "organization-1",
+      }),
       key: vi.fn(
         (familyCode: string, handle: string) => `${familyCode}_${handle}`,
       ),
     };
     const audit = { record: vi.fn().mockResolvedValue(undefined) };
     const firebaseAuth = {
+      getUser: vi.fn().mockResolvedValue({ disabled: false }),
       createCustomToken: vi.fn().mockResolvedValue("custom-token"),
     };
     const service = new ChildLoginService(
@@ -39,16 +44,19 @@ describe("ChildLoginService", () => {
         {
           familyCode: "family-1",
           handle: "sprout",
-          password: "correct-horse",
+          pin: "123456",
         },
         "request-1",
       ),
     ).resolves.toEqual({
       customToken: "custom-token",
-      tokenType: "firebaseCustomToken",
     });
     expect(firebaseAuth.createCustomToken).toHaveBeenCalledWith("child-1", {
       roles: ["child"],
+      participantId: "participant-1",
+      membershipId: "membership-1",
+      organizationId: "organization-1",
+      purpose: "child_session_exchange",
     });
   });
 });

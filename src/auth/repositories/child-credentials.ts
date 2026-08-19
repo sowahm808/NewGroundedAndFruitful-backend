@@ -1,6 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { RateLimitError } from "../../shared/errors.js";
 export interface Credential {
   participantId: string;
   firebaseUid: string;
@@ -12,7 +11,32 @@ export interface Credential {
 export class ChildCredentialRepository {
   constructor(private db: Firestore) {}
   key(familyCode: string, handle: string) {
-    return `${familyCode.toLowerCase()}_${handle.toLowerCase()}`;
+    return `${normalizeCredentialPart(familyCode)}_${normalizeCredentialPart(handle)}`;
+  }
+
+  async findActiveChildMembership(
+    credential: Credential,
+  ): Promise<{ id: string; organizationId: string } | undefined> {
+    const snapshot = await this.db
+      .collection("memberships")
+      .where("userId", "==", credential.firebaseUid)
+      .get();
+    const matches = snapshot.docs.filter((document) => {
+      const value = document.data();
+      const roles = Array.isArray(value.roles) ? value.roles : [value.role];
+      return (
+        value.userId === credential.firebaseUid &&
+        value.status === "active" &&
+        roles.includes("child") &&
+        (value.participantId === undefined ||
+          value.participantId === credential.participantId)
+      );
+    });
+    if (matches.length !== 1) return undefined;
+    return {
+      id: matches[0]!.id,
+      organizationId: String(matches[0]!.get("organizationId")),
+    };
   }
   async find(f: string, h: string) {
     return (
@@ -26,7 +50,7 @@ export class ChildCredentialRepository {
       if (!snap.exists) return;
       const value = snap.data() as Credential;
       if (value.lockedUntil && value.lockedUntil.toMillis() > Date.now())
-        throw new RateLimitError();
+        return;
       const attempts = value.failedAttempts + 1;
       tx.update(ref, {
         failedAttempts: attempts,
@@ -43,4 +67,8 @@ export class ChildCredentialRepository {
       lastLoginAt: FieldValue.serverTimestamp(),
     });
   }
+}
+
+export function normalizeCredentialPart(value: string): string {
+  return value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
 }
