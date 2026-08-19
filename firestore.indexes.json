@@ -4,30 +4,151 @@
       "collectionGroup": "pointLedger",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "participantId", "order": "ASCENDING" },
-        { "fieldPath": "quarterId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "participantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "quarterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "teamMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "active", "order": "ASCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "active",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "readingAssignments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "quarterId", "order": "ASCENDING" },
-        { "fieldPath": "week", "order": "ASCENDING" }
+        {
+          "fieldPath": "quarterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "week",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "parentChildLinks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "parentUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "participantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "quarters",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startsAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "characterObservations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "parentUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "supportRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "requesterUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "pointLedger",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "teamId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "quarterId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "familyActivities",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "quarterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],
   "fieldOverrides": [
-    { "collectionGroup": "dailyCheckins", "fieldPath": "note", "indexes": [] },
+    {
+      "collectionGroup": "dailyCheckins",
+      "fieldPath": "note",
+      "indexes": []
+    },
     {
       "collectionGroup": "characterObservations",
       "fieldPath": "description",

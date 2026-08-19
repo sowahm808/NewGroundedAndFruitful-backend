@@ -23,3 +23,14 @@ Participant IDs are **not** treated as Firebase UIDs. A participant is owned onl
 Rule `get()` operations are billable document access. Authorization documents are server-write-only, so clients cannot alter roles, status, membership, points, links, or audit records. The recursive fallback denies every unspecified collection and subcollection.
 
 The operational role service validates canonical roles with Zod, requires a `super_admin` actor for elevated assignments, prevents replacing away from `super_admin` through the generic command, writes reason/request ID/actor/timestamps to the audit log, preserves unrelated claims, and is idempotent. Initial bootstrap is allowed only when no active super-admin exists. If Firestore commits but claim synchronization fails, the failure is audited as retryable; rerunning the same command repairs claims without duplicating the role.
+
+## Parent resource matrix
+
+| Resource                   | Parent rule                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------- |
+| Dashboard/children/reports | Active membership plus explicit same-organization parent-child link                   |
+| Character selections       | Linked child, active quality records, and active same-organization quarter            |
+| Observations               | Linked child on create; creator UID and organization on read                          |
+| Family completion          | Linked child and active same-organization configured activity; idempotent transaction |
+| Support                    | Linked child/category on create; requester UID and organization on read               |
+| Team progress              | Team must be attached to a linked child; totals come only from the ledger             |
