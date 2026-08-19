@@ -50,8 +50,9 @@ export async function authenticate(
   try {
     const header = req.header("authorization");
     if (!header) return next();
-    const match = /^Bearer ([^ ]+)$/.exec(header);
-    if (!match?.[1]) throw new AuthenticationError();
+    const match = /^Bearer\s+([^\s]+)$/i.exec(header.trim());
+    if (!match?.[1])
+      throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
     const token: DecodedIdToken = await auth.verifyIdToken(match[1], true);
     const resolved = await resolvePrincipal(db, token);
     req.principal = {
@@ -64,7 +65,9 @@ export async function authenticate(
     next();
   } catch (error) {
     next(
-      error instanceof AuthorizationError ? error : new AuthenticationError(),
+      error instanceof AuthorizationError
+        ? error
+        : new AuthenticationError("INVALID_AUTHENTICATION_TOKEN"),
     );
   }
 }

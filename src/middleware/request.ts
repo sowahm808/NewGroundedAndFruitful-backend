@@ -16,6 +16,7 @@ export function requestContext(
       route: req.route?.path ?? req.path,
       method: req.method,
       status: res.statusCode,
+      authorizationPresent: Boolean(req.header("authorization")),
       durationMs: Math.round(performance.now() - start),
     }),
   );

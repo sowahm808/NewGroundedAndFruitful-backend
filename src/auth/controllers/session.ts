@@ -9,6 +9,7 @@ export class AuthSessionController {
     const token = bearerToken(req.header("authorization"));
     const sessionUser = await this.service.createSession(token, {
       requestId: req.requestId,
+      authorizationPresent: true,
     });
     res.json({ data: sessionUser });
   }
@@ -16,7 +17,8 @@ export class AuthSessionController {
 
 export function bearerToken(header: string | undefined): string {
   if (!header) throw new AuthenticationError();
-  const match = /^Bearer ([^ ]+)$/.exec(header);
-  if (!match?.[1]) throw new AuthenticationError();
+  const match = /^Bearer\s+([^\s]+)$/i.exec(header.trim());
+  if (!match?.[1])
+    throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
   return match[1];
 }
