@@ -196,16 +196,27 @@ export class QuarterAdministrationService {
     requestId: string,
   ) {
     const actor = this.actor(principal);
-    this.scope(actor, input.organizationId);
+    const organizationId =
+      input.organizationId ??
+      (actor.organizationIds.length === 1
+        ? actor.organizationIds[0]
+        : undefined);
+    if (!organizationId)
+      throw quarterError(
+        422,
+        "QUARTER_ORGANIZATION_REQUIRED",
+        "organizationId is required when the administrator does not have exactly one organization.",
+      );
+    this.scope(actor, organizationId);
     this.dateRange(input.startDate, input.endDate);
     const ref = this.db.collection("quarters").doc();
     await this.db.runTransaction(async (tx) => {
       const organization = await tx.get(
-        this.db.doc(`organizations/${input.organizationId}`),
+        this.db.doc(`organizations/${organizationId}`),
       );
       if (!organization.exists)
         throw new NotFoundError("Organization not found.");
-      await this.unique(tx, input.organizationId, input.name);
+      await this.unique(tx, organizationId, input.name);
       tx.create(ref, {
         name: input.name,
         normalizedName: normalizedName(input.name),
@@ -213,7 +224,7 @@ export class QuarterAdministrationService {
         startDate: input.startDate,
         endDate: input.endDate,
         status: "draft",
-        organizationId: input.organizationId,
+        organizationId,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         createdBy: actor.uid,
@@ -224,7 +235,7 @@ export class QuarterAdministrationService {
         event: "quarter.created",
         actorId: actor.uid,
         targetId: ref.id,
-        organizationId: input.organizationId,
+        organizationId,
         requestId,
         previousVersion: null,
         newVersion: 1,

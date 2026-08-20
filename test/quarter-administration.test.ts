@@ -25,6 +25,12 @@ describe("quarter administration validation", () => {
         search: "  Fall  ",
       }),
     ).toMatchObject({ page: 2, pageSize: 100, search: "Fall" });
+    expect(quarterListQuerySchema.parse({ sort: "-updatedAt" }).sort).toBe(
+      "updated_desc",
+    );
+    expect(quarterListQuerySchema.parse({ sort: "startDate" }).sort).toBe(
+      "start_date_asc",
+    );
     expect(() => quarterListQuerySchema.parse({ pageSize: 101 })).toThrow();
     expect(() => quarterListQuerySchema.parse({ status: "open" })).toThrow();
   });
@@ -38,6 +44,16 @@ describe("quarter administration validation", () => {
       organizationId: "org-1",
     };
     expect(quarterCreateSchema.parse(valid).name).toBe("Fall 2026");
+    const organizationScoped = {
+      name: valid.name,
+      description: valid.description,
+      startDate: valid.startDate,
+      endDate: valid.endDate,
+    };
+    expect(quarterCreateSchema.parse(organizationScoped)).toEqual({
+      ...organizationScoped,
+      name: "Fall 2026",
+    });
     for (const forbidden of [
       "id",
       "status",

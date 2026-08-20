@@ -192,6 +192,12 @@ export const quarterSorts = [
   "start_date_desc",
   "start_date_asc",
 ] as const;
+const quarterSortAliases = {
+  "-updatedAt": "updated_desc",
+  updatedAt: "updated_asc",
+  "-startDate": "start_date_desc",
+  startDate: "start_date_asc",
+} as const;
 const quarterName = z.string().trim().min(1).max(120);
 const quarterDate = z.string().date();
 export const quarterListQuerySchema = z
@@ -199,7 +205,17 @@ export const quarterListQuerySchema = z
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25),
     status: z.enum(quarterStatuses).optional(),
-    sort: z.enum(quarterSorts).default("updated_desc"),
+    sort: z
+      .union([
+        z.enum(quarterSorts),
+        z.enum(["-updatedAt", "updatedAt", "-startDate", "startDate"]),
+      ])
+      .transform((sort) =>
+        sort in quarterSortAliases
+          ? quarterSortAliases[sort as keyof typeof quarterSortAliases]
+          : (sort as (typeof quarterSorts)[number]),
+      )
+      .default("updated_desc"),
     search: z.string().trim().max(120).optional(),
     organizationId: idSchema.optional(),
   })
@@ -210,7 +226,7 @@ export const quarterCreateSchema = z
     description: z.string().trim().max(2000).nullable().optional(),
     startDate: quarterDate,
     endDate: quarterDate,
-    organizationId: idSchema,
+    organizationId: idSchema.optional(),
   })
   .strict();
 export const quarterUpdateSchema = z
