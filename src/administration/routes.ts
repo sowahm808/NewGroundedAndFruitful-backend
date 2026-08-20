@@ -91,7 +91,14 @@ for (const [path, collection] of configuredResources) {
 }
 router.get(
   "/users",
-  run((req) => service.users(req.principal, id(req.query.organizationId))),
+  run((req) => {
+    const query = schemas.userListQuerySchema.safeParse(req.query);
+    if (!query.success)
+      throw new ValidationError("Invalid user list query.", {
+        fieldErrors: query.error.flatten().fieldErrors,
+      });
+    return service.users(req.principal, query.data);
+  }),
 );
 router.get(
   "/roles",

@@ -150,6 +150,9 @@ app.use(
   authenticate,
   administrationRoutes,
 );
+// Keep the public admin contract aligned with the frontend while the longer
+// `/administration` namespace remains available to existing consumers.
+app.use("/api/v1/admin", privateResponse, authenticate, administrationRoutes);
 app.use(
   "/api/v1/configuration",
   privateResponse,
