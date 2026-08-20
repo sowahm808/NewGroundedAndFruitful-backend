@@ -8,6 +8,19 @@ import {
   quarterListQuerySchema,
   quarterUpdateSchema,
 } from "../src/administration/schemas.js";
+import { QuarterAdministrationService } from "../src/administration/quarters.js";
+import type { Principal } from "../src/auth/authorization.js";
+
+const principal = (
+  roles: Principal["roles"],
+  organizationIds: readonly string[],
+): Principal => ({
+  uid: "admin-1",
+  role: roles[0]!,
+  roles,
+  organizationIds,
+  token: {} as Principal["token"],
+});
 
 describe("quarter administration validation", () => {
   it("applies list defaults and validates filters, paging, and sorting", () => {
@@ -101,6 +114,57 @@ describe("quarter administration validation", () => {
     expect(quarterLifecycleSchema.parse({ expectedVersion: 1 })).toEqual({
       expectedVersion: 1,
     });
+  });
+});
+
+describe("quarter creation organization inference", () => {
+  const resolveOrganization = async (
+    actor: Principal,
+    organizationIds: string[],
+    requestedOrganizationId?: string,
+  ) => {
+    const db = {
+      collection: () => ({
+        limit: () => ({
+          get: () =>
+            Promise.resolve({
+              size: organizationIds.length,
+              docs: organizationIds.map((id) => ({ id })),
+            }),
+        }),
+      }),
+    };
+    const service = new QuarterAdministrationService(db as never);
+    return (
+      service as unknown as {
+        creationOrganization(
+          actor: Principal,
+          requestedOrganizationId?: string,
+        ): Promise<string | undefined>;
+      }
+    ).creationOrganization(actor, requestedOrganizationId);
+  };
+
+  it("uses the sole deployment organization for an unscoped super administrator", async () => {
+    await expect(
+      resolveOrganization(principal(["super_admin"], []), ["org-1"]),
+    ).resolves.toBe("org-1");
+  });
+
+  it("requires an explicit selection when multiple deployment organizations exist", async () => {
+    await expect(
+      resolveOrganization(principal(["super_admin"], []), ["org-1", "org-2"]),
+    ).resolves.toBeUndefined();
+  });
+
+  it("prefers the requested organization over inferred scope", async () => {
+    await expect(
+      resolveOrganization(
+        principal(["super_admin"], []),
+        ["org-1"],
+        "org-requested",
+      ),
+    ).resolves.toBe("org-requested");
   });
 });
 

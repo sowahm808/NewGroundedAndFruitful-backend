@@ -1054,7 +1054,7 @@ paths:
     post:
       tags: [Administration]
       operationId: createAdminQuarter
-      description: Creates a draft at version 1. IDs, lifecycle, timestamps, and audit fields are server controlled. Names are unique per organization.
+      description: Creates a draft at version 1. IDs, lifecycle, timestamps, and audit fields are server controlled. Names are unique per organization. When organizationId is omitted, the server uses the administrator's sole organization or, for a global super administrator, the deployment's sole organization. Ambiguous multi-organization requests return QUARTER_ORGANIZATION_REQUIRED.
       security: [{ firebaseBearer: [] }]
       requestBody:
         {
@@ -1387,7 +1387,7 @@ components:
         organizationId:
           {
             type: string,
-            description: Optional for an administrator scoped to exactly one organization; otherwise required.,
+            description: Optional when the target is unambiguous (the administrator's sole organization or the sole deployment organization for a global super administrator); otherwise required.,
           }
     QuarterUpdate:
       type: object
