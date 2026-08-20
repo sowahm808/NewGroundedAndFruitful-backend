@@ -19,6 +19,9 @@ export const membershipListQuerySchema = z
     sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
   })
   .strict();
+// Roles are represented by membership records, so both administration list
+// endpoints intentionally accept the same filtering and pagination contract.
+export const roleListQuerySchema = membershipListQuerySchema;
 export const ianaTimezoneSchema = z
   .string()
   .trim()

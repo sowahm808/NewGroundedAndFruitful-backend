@@ -113,14 +113,14 @@ router.get(
 );
 router.get(
   "/roles",
-  run((req) =>
-    service.resources(
-      req.principal,
-      "memberships",
-      id(req.query.organizationId),
-      true,
-    ),
-  ),
+  run((req) => {
+    const query = schemas.roleListQuerySchema.safeParse(req.query);
+    if (!query.success)
+      throw new ValidationError("Invalid role list query.", {
+        fieldErrors: query.error.flatten().fieldErrors,
+      });
+    return service.listMemberships(req.principal, query.data);
+  }),
 );
 router.get(
   "/reports",

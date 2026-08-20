@@ -3,6 +3,7 @@ import {
   consentCaptureSchema,
   invitationCreateSchema,
   participantCreateSchema,
+  roleListQuerySchema,
   roleUpdateSchema,
 } from "../src/administration/schemas.js";
 
@@ -56,5 +57,24 @@ describe("administration request contracts", () => {
       roleUpdateSchema.safeParse({ role: "mentor", status: "suspended" })
         .success,
     ).toBe(true);
+  });
+});
+
+describe("administration list query schemas", () => {
+  it("accepts the frontend roles pagination query without an organization", () => {
+    expect(
+      roleListQuerySchema.parse({
+        page: "1",
+        pageSize: "25",
+        sort: "-updatedAt",
+      }),
+    ).toEqual({ page: 1, pageSize: 25, sort: "-updatedAt" });
+  });
+
+  it("continues to reject unsupported roles query parameters", () => {
+    expect(
+      roleListQuerySchema.safeParse({ page: "1", unsupported: "value" })
+        .success,
+    ).toBe(false);
   });
 });

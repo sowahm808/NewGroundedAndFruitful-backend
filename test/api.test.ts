@@ -137,6 +137,16 @@ describe("HTTP safety contract", () => {
       error: { code: "AUTHENTICATION_REQUIRED" },
     });
   });
+  it("publishes the paginated frontend admin roles route rather than returning 422", async () => {
+    const response = await fetch(
+      `${base}/api/v1/admin/roles?page=1&pageSize=25&sort=-updatedAt`,
+    );
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(422);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
   it("requires a token for auth session provisioning", async () => {
     const response = await fetch(`${base}/api/auth/session`, {
       method: "POST",
