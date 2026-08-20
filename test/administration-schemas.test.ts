@@ -3,10 +3,25 @@ import {
   consentCaptureSchema,
   invitationCreateSchema,
   participantCreateSchema,
+  resourceListQuerySchema,
+  roleListQuerySchema,
   roleUpdateSchema,
 } from "../src/administration/schemas.js";
 
 describe("administration request contracts", () => {
+  it("accepts the frontend resource list pagination contract", () => {
+    expect(
+      resourceListQuerySchema.parse({
+        page: "1",
+        pageSize: "25",
+        sort: "-updatedAt",
+      }),
+    ).toEqual({ page: 1, pageSize: 25, sort: "-updatedAt" });
+    expect(
+      resourceListQuerySchema.safeParse({ page: "0", pageSize: "101" }).success,
+    ).toBe(false);
+  });
+
   it("requires a guardian and a valid birth date when creating participants", () => {
     expect(
       participantCreateSchema.safeParse({
@@ -56,5 +71,24 @@ describe("administration request contracts", () => {
       roleUpdateSchema.safeParse({ role: "mentor", status: "suspended" })
         .success,
     ).toBe(true);
+  });
+});
+
+describe("administration list query schemas", () => {
+  it("accepts the frontend roles pagination query without an organization", () => {
+    expect(
+      roleListQuerySchema.parse({
+        page: "1",
+        pageSize: "25",
+        sort: "-updatedAt",
+      }),
+    ).toEqual({ page: 1, pageSize: 25, sort: "-updatedAt" });
+  });
+
+  it("continues to reject unsupported roles query parameters", () => {
+    expect(
+      roleListQuerySchema.safeParse({ page: "1", unsupported: "value" })
+        .success,
+    ).toBe(false);
   });
 });

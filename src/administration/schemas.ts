@@ -3,6 +3,33 @@ import { canonicalRoleSchema } from "../auth/roles.js";
 import { idSchema } from "../shared/validation.js";
 
 const name = z.string().trim().min(1).max(120);
+export const userListQuerySchema = z
+  .object({
+    organizationId: idSchema.optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(25),
+    sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
+  })
+  .strict();
+export const membershipListQuerySchema = z
+  .object({
+    organizationId: idSchema.optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(25),
+    sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
+  })
+  .strict();
+// Roles are represented by membership records, so both administration list
+// endpoints intentionally accept the same filtering and pagination contract.
+export const roleListQuerySchema = membershipListQuerySchema;
+export const resourceListQuerySchema = z
+  .object({
+    organizationId: idSchema.optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(25),
+    sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
+  })
+  .strict();
 export const ianaTimezoneSchema = z
   .string()
   .trim()
@@ -151,6 +178,104 @@ export const resourceCreateSchema = z
   .strict();
 export const resourceLifecycleSchema = z
   .object({ version: versionSchema })
+  .strict();
+
+export const quarterStatuses = [
+  "draft",
+  "active",
+  "closed",
+  "archived",
+] as const;
+export const quarterSorts = [
+  "updated_desc",
+  "updated_asc",
+  "start_date_desc",
+  "start_date_asc",
+] as const;
+const quarterSortAliases = {
+  "-updatedAt": "updated_desc",
+  updatedAt: "updated_asc",
+  "-startDate": "start_date_desc",
+  startDate: "start_date_asc",
+} as const;
+const quarterName = z.string().trim().min(1).max(120);
+const quarterDate = z.string().date();
+export const quarterListQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25),
+    status: z.enum(quarterStatuses).optional(),
+    sort: z
+      .union([
+        z.enum(quarterSorts),
+        z.enum(["-updatedAt", "updatedAt", "-startDate", "startDate"]),
+      ])
+      .transform((sort) =>
+        sort in quarterSortAliases
+          ? quarterSortAliases[sort as keyof typeof quarterSortAliases]
+          : (sort as (typeof quarterSorts)[number]),
+      )
+      .default("updated_desc"),
+    search: z.string().trim().max(120).optional(),
+    organizationId: idSchema.optional(),
+  })
+  .strict();
+export const quarterCreateSchema = z
+  .object({
+    name: quarterName,
+    description: z.string().trim().max(2000).nullable().optional(),
+    startDate: quarterDate.optional(),
+    endDate: quarterDate.optional(),
+    startsOn: quarterDate.optional(),
+    endsOn: quarterDate.optional(),
+    organizationId: idSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const canonicalDates =
+      value.startDate !== undefined || value.endDate !== undefined;
+    const dateAliases =
+      value.startsOn !== undefined || value.endsOn !== undefined;
+    if (canonicalDates && dateAliases) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Use either startDate/endDate or startsOn/endsOn, not both.",
+      });
+      return;
+    }
+    for (const field of canonicalDates
+      ? (["startDate", "endDate"] as const)
+      : (["startsOn", "endsOn"] as const)) {
+      if (value[field] === undefined)
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: "Required",
+        });
+    }
+  })
+  .transform(({ startsOn, endsOn, ...value }) => ({
+    ...value,
+    startDate: value.startDate ?? (startsOn as string),
+    endDate: value.endDate ?? (endsOn as string),
+  }));
+export const quarterUpdateSchema = z
+  .object({
+    name: quarterName.optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    startDate: quarterDate.optional(),
+    endDate: quarterDate.optional(),
+    expectedVersion: versionSchema,
+  })
+  .strict()
+  .refine(
+    (value) => Object.keys(value).some((key) => key !== "expectedVersion"),
+    {
+      message: "At least one editable field is required.",
+    },
+  );
+export const quarterLifecycleSchema = z
+  .object({ expectedVersion: versionSchema })
   .strict();
 export const awardIssueSchema = z
   .object({

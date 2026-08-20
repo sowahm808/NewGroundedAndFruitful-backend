@@ -27,6 +27,8 @@
     "migrate:child-credentials": "tsx scripts/migrate-child-credentials.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "openapi:generate": "prettier --write openapi.yaml && node scripts/verify-openapi.mjs",
+    "openapi:check": "node scripts/verify-openapi.mjs",
     "test:rules": "npx --yes firebase-tools@14.12.1 emulators:exec --only firestore --project demo-grounded-fruitful-rules \"node scripts/verify-test-environment.mjs && vitest run test/integration/firestore-rules.test.ts --exclude 'lib/**'\"",
     "test:ci": "npm run clean && npm run lint && npm run typecheck && npm test && npm run test:rules && npm run test:integration && npm run build && npm run clean && npm run build"
   },

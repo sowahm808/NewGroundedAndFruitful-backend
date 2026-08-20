@@ -13,6 +13,7 @@ import {
   idempotencyKeySchema,
   observationSchema,
   observationQuerySchema,
+  notificationQuerySchema,
   reportQuerySchema,
   supportListQuerySchema,
   supportRequestSchema,
@@ -44,6 +45,18 @@ const idempotencyKey = (req: Request) =>
 router.get("/dashboard", async (req, res, next) => {
   try {
     res.json(await service.dashboard(principal(req)));
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/notifications", async (req, res, next) => {
+  try {
+    res.json(
+      await service.notifications(
+        principal(req),
+        parse(notificationQuerySchema, req.query),
+      ),
+    );
   } catch (e) {
     next(e);
   }

@@ -2,7 +2,11 @@ import type { Auth } from "firebase-admin/auth";
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
-import { requireAuthenticated, type Principal } from "../auth/authorization.js";
+import {
+  requireAuthenticated,
+  requireSuperAdmin,
+  type Principal,
+} from "../auth/authorization.js";
 import {
   AuthorizationError,
   BusinessRuleError,
@@ -53,6 +57,57 @@ export class AdministrationService {
       .where("organizationId", "==", organizationId)
       .get();
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  }
+  async listResources(
+    p: Principal | undefined,
+    collection: string,
+    query: {
+      organizationId?: string | undefined;
+      page: number;
+      pageSize: number;
+      sort: "updatedAt" | "-updatedAt";
+    },
+  ) {
+    const { organizationId, page, pageSize, sort } = query;
+    let resourceQuery = this.db.collection(collection);
+    if (organizationId) {
+      this.admin(p, organizationId);
+      resourceQuery = resourceQuery.where(
+        "organizationId",
+        "==",
+        organizationId,
+      ) as typeof resourceQuery;
+    } else {
+      requireSuperAdmin(p);
+    }
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof value.toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : 0;
+    const results: Array<Data & { id: string }> = (
+      await resourceQuery.get()
+    ).docs
+      .map<Data & { id: string }>((doc) => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+    const total = results.length;
+    return {
+      items: results.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
   async resource(
     p: Principal | undefined,
@@ -146,26 +201,123 @@ export class AdministrationService {
       version: version + 1,
     };
   }
-  async users(p: Principal | undefined, oid: string) {
-    this.superAdmin(p, oid);
-    const memberships = await this.db
-      .collection("memberships")
-      .where("organizationId", "==", oid)
-      .get();
-    const ids = [
-      ...new Set(memberships.docs.map((d) => String(d.get("userId")))),
-    ];
-    const users = await Promise.all(
-      ids.map((id) => this.db.doc(`users/${id}`).get()),
-    );
-    return users
+  async users(
+    p: Principal | undefined,
+    query: {
+      organizationId?: string | undefined;
+      page: number;
+      pageSize: number;
+      sort: "updatedAt" | "-updatedAt";
+    },
+  ) {
+    const { organizationId, page, pageSize, sort } = query;
+    let users;
+    if (organizationId) {
+      this.superAdmin(p, organizationId);
+      const memberships = await this.db
+        .collection("memberships")
+        .where("organizationId", "==", organizationId)
+        .get();
+      const ids = [
+        ...new Set(memberships.docs.map((d) => String(d.get("userId")))),
+      ];
+      users = await Promise.all(
+        ids.map((userId) => this.db.doc(`users/${userId}`).get()),
+      );
+    } else {
+      requireSuperAdmin(p);
+      users = (await this.db.collection("users").get()).docs;
+    }
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof value.toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : 0;
+    const results = users
       .filter((u) => u.exists)
       .map((u) => ({
         id: u.id,
         displayName: u.get("displayName") ?? "",
         email: u.get("email") ?? null,
         status: u.get("status") ?? "active",
-      }));
+        roles: u.get("roles") ?? (u.get("role") ? [u.get("role")] : []),
+        organizationIds:
+          u.get("organizationIds") ??
+          (u.get("organizationId") ? [u.get("organizationId")] : []),
+        updatedAt: u.get("updatedAt") ?? null,
+      }))
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+    const total = results.length;
+    return {
+      items: results.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
+  }
+  async listMemberships(
+    p: Principal | undefined,
+    query: {
+      organizationId?: string | undefined;
+      page: number;
+      pageSize: number;
+      sort: "updatedAt" | "-updatedAt";
+    },
+  ) {
+    const { organizationId, page, pageSize, sort } = query;
+    let membershipQuery = this.db.collection("memberships");
+    if (organizationId) {
+      this.superAdmin(p, organizationId);
+      membershipQuery = membershipQuery.where(
+        "organizationId",
+        "==",
+        organizationId,
+      ) as typeof membershipQuery;
+    } else {
+      requireSuperAdmin(p);
+    }
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof value.toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : 0;
+    const results: Array<Data & { id: string }> = (
+      await membershipQuery.get()
+    ).docs
+      .map<Data & { id: string }>((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+    const total = results.length;
+    return {
+      items: results.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
   private async scopedDocument(
     p: Principal | undefined,

@@ -52,7 +52,19 @@ export class ChildLoginService {
       });
       throw new AuthenticationError();
     }
-    await this.credentials.clearFailures(input.familyCode, input.handle);
+    // Re-read and clear state transactionally immediately before minting. A
+    // concurrent disable or lock therefore cannot race a successful exchange.
+    const consumed = await this.credentials.clearFailures(
+      input.familyCode,
+      input.handle,
+    );
+    if (!consumed) {
+      await this.audit.record("CHILD_LOGIN_FAILED", {
+        requestId,
+        credentialKey: this.credentials.key(input.familyCode, input.handle),
+      });
+      throw new AuthenticationError();
+    }
     const customToken = await this.firebaseAuth.createCustomToken(
       credential.firebaseUid,
       {

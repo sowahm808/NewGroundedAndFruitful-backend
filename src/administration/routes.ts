@@ -5,9 +5,11 @@ import { idSchema } from "../shared/validation.js";
 import { ValidationError } from "../shared/errors.js";
 import { AdministrationService } from "./service.js";
 import * as schemas from "./schemas.js";
+import { QuarterAdministrationService } from "./quarters.js";
 
 const router = Router(),
-  service = new AdministrationService(db, auth);
+  service = new AdministrationService(db, auth),
+  quarters = new QuarterAdministrationService(db);
 const run =
   (
     handler: (req: Parameters<RequestHandler>[0]) => Promise<unknown>,
@@ -27,7 +29,6 @@ const id = (value: unknown) => {
 };
 const configuredResources = [
   ["assignments", "assignments"],
-  ["quarters", "quarters"],
   ["character-qualities", "characterQualities"],
   ["character-cycles", "characterCycles"],
   ["bible-content", "bibleContent"],
@@ -40,13 +41,14 @@ const configuredResources = [
 for (const [path, collection] of configuredResources) {
   router.get(
     `/${path}`,
-    run((req) =>
-      service.resources(
-        req.principal,
-        collection,
-        id(req.query.organizationId),
-      ),
-    ),
+    run((req) => {
+      const query = schemas.resourceListQuerySchema.safeParse(req.query);
+      if (!query.success)
+        throw new ValidationError("Invalid resource list query.", {
+          fieldErrors: query.error.flatten().fieldErrors,
+        });
+      return service.listResources(req.principal, collection, query.data);
+    }),
   );
   router.get(
     `/${path}/:resourceId`,
@@ -89,20 +91,104 @@ for (const [path, collection] of configuredResources) {
     ),
   );
 }
+const query = <T>(
+  result: {
+    success: boolean;
+    data?: T;
+    error?: { flatten(): { fieldErrors: unknown } };
+  },
+  message: string,
+): T => {
+  if (!result.success)
+    throw new ValidationError(message, {
+      fieldErrors: result.error?.flatten().fieldErrors,
+    });
+  return result.data as T;
+};
+router.get(
+  "/quarters",
+  run((req) =>
+    quarters.list(
+      req.principal,
+      query(
+        schemas.quarterListQuerySchema.safeParse(req.query),
+        "Invalid quarter list query.",
+      ),
+    ),
+  ),
+);
+router.get(
+  "/quarters/:quarterId",
+  run((req) => quarters.get(req.principal, id(req.params.quarterId))),
+);
+router.post(
+  "/quarters",
+  validateBody(schemas.quarterCreateSchema),
+  run((req) => quarters.create(req.principal, req.body, req.requestId), 201),
+);
+router.patch(
+  "/quarters/:quarterId",
+  validateBody(schemas.quarterUpdateSchema),
+  run((req) =>
+    quarters.update(
+      req.principal,
+      id(req.params.quarterId),
+      req.body,
+      req.requestId,
+    ),
+  ),
+);
+for (const [action, status] of [
+  ["activate", "active"],
+  ["close", "closed"],
+  ["archive", "archived"],
+] as const) {
+  router.post(
+    `/quarters/:quarterId/${action}`,
+    validateBody(schemas.quarterLifecycleSchema),
+    run((req) =>
+      quarters.transition(
+        req.principal,
+        id(req.params.quarterId),
+        req.body,
+        status,
+        req.requestId,
+      ),
+    ),
+  );
+}
 router.get(
   "/users",
-  run((req) => service.users(req.principal, id(req.query.organizationId))),
+  run((req) => {
+    const query = schemas.userListQuerySchema.safeParse(req.query);
+    if (!query.success)
+      throw new ValidationError("Invalid user list query.", {
+        fieldErrors: query.error.flatten().fieldErrors,
+      });
+    return service.users(req.principal, query.data);
+  }),
+);
+router.get(
+  "/memberships",
+  run((req) => {
+    const query = schemas.membershipListQuerySchema.safeParse(req.query);
+    if (!query.success)
+      throw new ValidationError("Invalid membership list query.", {
+        fieldErrors: query.error.flatten().fieldErrors,
+      });
+    return service.listMemberships(req.principal, query.data);
+  }),
 );
 router.get(
   "/roles",
-  run((req) =>
-    service.resources(
-      req.principal,
-      "memberships",
-      id(req.query.organizationId),
-      true,
-    ),
-  ),
+  run((req) => {
+    const query = schemas.roleListQuerySchema.safeParse(req.query);
+    if (!query.success)
+      throw new ValidationError("Invalid role list query.", {
+        fieldErrors: query.error.flatten().fieldErrors,
+      });
+    return service.listMemberships(req.principal, query.data);
+  }),
 );
 router.get(
   "/reports",
