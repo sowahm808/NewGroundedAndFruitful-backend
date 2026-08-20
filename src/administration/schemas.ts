@@ -3,9 +3,23 @@ import { canonicalRoleSchema } from "../auth/roles.js";
 import { idSchema } from "../shared/validation.js";
 
 const name = z.string().trim().min(1).max(120);
+export const ianaTimezoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .refine((timezone) => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Must be a valid IANA timezone.");
 export const organizationCreateSchema = z
   .object({
     name,
+    timezone: ianaTimezoneSchema,
     slug: z
       .string()
       .trim()
@@ -19,6 +33,7 @@ export const lifecycleVersionSchema = z
 export const organizationUpdateSchema = z
   .object({
     name: name.optional(),
+    timezone: ianaTimezoneSchema.optional(),
     slug: z
       .string()
       .trim()
@@ -31,7 +46,7 @@ export const programCreateSchema = z
   .object({
     organizationId: idSchema,
     name,
-    timezone: z.string().trim().min(1).max(80),
+    timezone: ianaTimezoneSchema,
   })
   .strict();
 export const membershipSchema = z

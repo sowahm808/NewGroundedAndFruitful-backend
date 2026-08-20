@@ -21,6 +21,8 @@ export interface AwardRequest {
   awardedBy: string;
   idempotencyKey: string;
   occurredAt: Date;
+  /** Validated organization IANA timezone used for calendar aggregates. */
+  timezone?: string;
 }
 export interface PointRule {
   activityType: Exclude<PointSourceType, "adjustment">;
