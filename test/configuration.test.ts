@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BusinessRuleError } from "../src/shared/errors.js";
 import {
   assertQuarterTransition,
+  localEndExclusive,
   localMidnight,
   localWeekStart,
   rangesOverlap,
@@ -45,6 +46,9 @@ describe("program and quarter configuration", () => {
     expect(
       localWeekStart(new Date("2026-03-09T01:00:00Z"), "America/Chicago"),
     ).toBe("2026-03-02");
+    expect(localEndExclusive("2026-03-09", "America/Chicago").toISOString()).toBe(
+      "2026-03-10T05:00:00.000Z",
+    );
   });
 
   it("requires an explicit independently bounded cycle with five unique qualities", () => {
