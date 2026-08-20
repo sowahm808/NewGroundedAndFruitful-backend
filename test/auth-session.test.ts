@@ -101,10 +101,18 @@ describe("auth session bootstrap", () => {
     });
     await expect(subject.createSession("token-1")).resolves.toMatchObject({
       roles: ["parent"],
-      onboardingStatus: "complete",
+      onboardingStatus: "organization_required",
       memberships: [],
       authorization: { source: "legacy_user_profile", migrationRequired: true },
     });
+  });
+
+  it("resolves the sole active organization", async () => {
+    await expect(
+      service({ memberships: [membership("admin")] }).subject.createSession(
+        "t",
+      ),
+    ).resolves.toMatchObject({ activeOrganizationId: "org-1" });
   });
 
   it("requires an active membership in strict mode", async () => {
