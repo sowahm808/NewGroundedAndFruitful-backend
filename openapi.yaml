@@ -15,8 +15,73 @@ tags:
     { name: Points },
     { name: Parent },
     { name: Child },
+    { name: Onboarding },
   ]
 paths:
+  /onboarding/organization:
+    post:
+      tags: [Onboarding]
+      operationId: onboardOrganization
+      description: Creates the first organization and administrator membership for an eligible legacy super administrator.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, slug, timezone]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                slug: { type: string, pattern: "^[a-z0-9-]{3,50}$" }
+                timezone: { type: string, description: IANA timezone }
+      responses:
+        "201":
+          {
+            description: Organization onboarding completed,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        required: [data],
+                        properties:
+                          {
+                            data:
+                              {
+                                type: object,
+                                required:
+                                  [
+                                    uid,
+                                    organizationId,
+                                    membershipId,
+                                    outcome,
+                                    claims,
+                                  ],
+                                properties:
+                                  {
+                                    uid: { type: string },
+                                    organizationId: { type: string },
+                                    membershipId: { type: string },
+                                    outcome: { type: string, enum: [created] },
+                                    claims:
+                                      {
+                                        type: string,
+                                        enum: [refresh_required, synchronized],
+                                      },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              },
+          }
+        "400": { $ref: "#/components/responses/Validation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /health:
     get:
       tags: [Health]
