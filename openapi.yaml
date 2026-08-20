@@ -985,13 +985,279 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       responses: { "200": { description: Authenticated child's issued awards } }
+  /admin/quarters:
+    get:
+      tags: [Administration]
+      operationId: listAdminQuarters
+      summary: List organization-scoped quarters
+      description: Admins see only active membership organizations; super_admin may query any organization. Search is a case-insensitive name substring.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - {
+            name: page,
+            in: query,
+            schema: { type: integer, minimum: 1, default: 1 },
+          }
+        - {
+            name: pageSize,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 25 },
+          }
+        - {
+            name: status,
+            in: query,
+            schema: { $ref: "#/components/schemas/QuarterStatus" },
+          }
+        - {
+            name: sort,
+            in: query,
+            schema:
+              {
+                type: string,
+                enum:
+                  [updated_desc, updated_asc, start_date_desc, start_date_asc],
+                default: updated_desc,
+              },
+          }
+        - { name: search, in: query, schema: { type: string, maxLength: 120 } }
+        - {
+            name: organizationId,
+            in: query,
+            description: Must be within the authenticated administrator's server-authorized scope.,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          {
+            description: Paginated quarters,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/QuarterListResponse" },
+                  },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+    post:
+      tags: [Administration]
+      operationId: createAdminQuarter
+      description: Creates a draft at version 1. IDs, lifecycle, timestamps, and audit fields are server controlled. Names are unique per organization.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/QuarterCreate" },
+                  example:
+                    {
+                      name: Fall 2026,
+                      description: Fall program quarter,
+                      startDate: 2026-09-01,
+                      endDate: 2026-11-30,
+                      organizationId: org_123,
+                    },
+                },
+            },
+        }
+      responses:
+        "201":
+          {
+            description: Created quarter,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/QuarterResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          {
+            description: QUARTER_NAME_CONFLICT,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/Error" } },
+              },
+          }
+        "422": { $ref: "#/components/responses/Validation" }
+  /admin/quarters/{quarterId}:
+    parameters:
+      - { $ref: "#/components/parameters/QuarterId" }
+    get:
+      tags: [Administration]
+      operationId: getAdminQuarter
+      description: Returns 404 for missing and out-of-scope records.
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200":
+          {
+            description: Quarter,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/QuarterResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/QuarterNotFound" }
+    patch:
+      tags: [Administration]
+      operationId: updateAdminQuarter
+      description: Updates only a draft. expectedVersion provides optimistic concurrency; a stale value returns QUARTER_VERSION_CONFLICT with HTTP 409. Lifecycle fields are never accepted here.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/QuarterUpdate" },
+                  example:
+                    {
+                      name: Fall 2026,
+                      description: Updated schedule,
+                      expectedVersion: 1,
+                    },
+                },
+            },
+        }
+      responses:
+        "200":
+          {
+            description: Updated quarter,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/QuarterResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/QuarterNotFound" }
+        "409":
+          {
+            description: QUARTER_VERSION_CONFLICT,
+            QUARTER_NAME_CONFLICT,
+            or QUARTER_INVALID_TRANSITION,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/Error" } },
+              },
+          }
+        "422": { $ref: "#/components/responses/Validation" }
+  /admin/quarters/{quarterId}/activate:
+    post:
+      tags: [Administration]
+      operationId: activateAdminQuarter
+      description: Transitions draft to active. Rejects overlapping active quarters in the organization with QUARTER_OVERLAP.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/QuarterId" }]
+      requestBody: { $ref: "#/components/requestBodies/QuarterLifecycle" }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/QuarterSuccess" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/QuarterNotFound" },
+          "409": { $ref: "#/components/responses/QuarterConflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/quarters/{quarterId}/close:
+    post:
+      tags: [Administration]
+      operationId: closeAdminQuarter
+      description: Transitions active to closed. Referenced records remain intact; no quarter endpoint hard-deletes data.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/QuarterId" }]
+      requestBody: { $ref: "#/components/requestBodies/QuarterLifecycle" }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/QuarterSuccess" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/QuarterNotFound" },
+          "409": { $ref: "#/components/responses/QuarterConflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/quarters/{quarterId}/archive:
+    post:
+      tags: [Administration]
+      operationId: archiveAdminQuarter
+      description: Transitions closed to archived. Archived quarters are immutable and remain available to referenced assignments, reports, and point ledgers.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/QuarterId" }]
+      requestBody: { $ref: "#/components/requestBodies/QuarterLifecycle" }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/QuarterSuccess" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/QuarterNotFound" },
+          "409": { $ref: "#/components/responses/QuarterConflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
 components:
+  parameters:
+    QuarterId:
+      {
+        name: quarterId,
+        in: path,
+        required: true,
+        schema: { type: string, minLength: 1, maxLength: 128 },
+      }
+  requestBodies:
+    QuarterLifecycle:
+      required: true
+      description: The expectedVersion must match the current record version.
+      content:
+        {
+          application/json:
+            {
+              schema: { $ref: "#/components/schemas/QuarterLifecycle" },
+              example: { expectedVersion: 1 },
+            },
+        }
   securitySchemes:
     {
       firebaseBearer:
         { type: http, scheme: bearer, bearerFormat: Firebase ID token },
     }
   responses:
+    QuarterSuccess:
+      {
+        description: Transitioned quarter,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/QuarterResponse" } },
+          },
+      }
+    QuarterNotFound:
+      {
+        description: QUARTER_NOT_FOUND (also used for an out-of-scope resource),
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
+    QuarterConflict:
+      {
+        description: QUARTER_INVALID_TRANSITION,
+        QUARTER_VERSION_CONFLICT,
+        or QUARTER_OVERLAP,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
     Unauthorized:
       {
         description: Authentication required,
@@ -1047,6 +1313,92 @@ components:
           },
       }
   schemas:
+    QuarterStatus: { type: string, enum: [draft, active, closed, archived] }
+    Quarter:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          name,
+          description,
+          startDate,
+          endDate,
+          status,
+          organizationId,
+          createdAt,
+          updatedAt,
+          createdBy,
+          updatedBy,
+          version,
+        ]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, "null"], maxLength: 2000 }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        status: { $ref: "#/components/schemas/QuarterStatus" }
+        organizationId:
+          {
+            type: string,
+            description: Quarters are organization-scoped because programs and all quarter references are organization-owned.,
+          }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        updatedBy: { type: string }
+        version: { type: integer, minimum: 1 }
+    QuarterCreate:
+      type: object
+      additionalProperties: false
+      required: [name, startDate, endDate, organizationId]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, "null"], maxLength: 2000 }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        organizationId: { type: string }
+    QuarterUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, "null"], maxLength: 2000 }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        expectedVersion: { type: integer, minimum: 1 }
+    QuarterLifecycle:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties: { expectedVersion: { type: integer, minimum: 1 } }
+    QuarterResponse:
+      type: object
+      required: [data]
+      properties: { data: { $ref: "#/components/schemas/Quarter" } }
+    QuarterListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              { type: array, items: { $ref: "#/components/schemas/Quarter" } }
+            pagination:
+              type: object
+              required: [page, pageSize, total, totalPages]
+              properties:
+                {
+                  page: { type: integer },
+                  pageSize: { type: integer },
+                  total: { type: integer },
+                  totalPages: { type: integer },
+                }
     ChildSuccess:
       type: object
       required: [data]

@@ -179,6 +179,58 @@ export const resourceCreateSchema = z
 export const resourceLifecycleSchema = z
   .object({ version: versionSchema })
   .strict();
+
+export const quarterStatuses = [
+  "draft",
+  "active",
+  "closed",
+  "archived",
+] as const;
+export const quarterSorts = [
+  "updated_desc",
+  "updated_asc",
+  "start_date_desc",
+  "start_date_asc",
+] as const;
+const quarterName = z.string().trim().min(1).max(120);
+const quarterDate = z.string().date();
+export const quarterListQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25),
+    status: z.enum(quarterStatuses).optional(),
+    sort: z.enum(quarterSorts).default("updated_desc"),
+    search: z.string().trim().max(120).optional(),
+    organizationId: idSchema.optional(),
+  })
+  .strict();
+export const quarterCreateSchema = z
+  .object({
+    name: quarterName,
+    description: z.string().trim().max(2000).nullable().optional(),
+    startDate: quarterDate,
+    endDate: quarterDate,
+    organizationId: idSchema,
+  })
+  .strict();
+export const quarterUpdateSchema = z
+  .object({
+    name: quarterName.optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    startDate: quarterDate.optional(),
+    endDate: quarterDate.optional(),
+    expectedVersion: versionSchema,
+  })
+  .strict()
+  .refine(
+    (value) => Object.keys(value).some((key) => key !== "expectedVersion"),
+    {
+      message: "At least one editable field is required.",
+    },
+  );
+export const quarterLifecycleSchema = z
+  .object({ expectedVersion: versionSchema })
+  .strict();
 export const awardIssueSchema = z
   .object({
     organizationId: idSchema,
