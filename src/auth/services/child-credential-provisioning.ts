@@ -39,7 +39,7 @@ const inputSchema = z
           .string()
           .min(8)
           .max(24)
-          .regex(/^[a-z0-9-]+$/),
+          .regex(/^[a-z0-9_-]+$/),
       )
       .optional(),
     pin: z

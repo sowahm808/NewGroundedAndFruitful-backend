@@ -71,15 +71,18 @@ export class ChildCredentialRepository {
   }
 
   async find(familyCode: string, handle: string) {
-    const snapshot = await this.db
-      .doc(`childCredentials/${this.key(familyCode, handle)}`)
-      .get();
-    const parsed = credentialSchema.safeParse(snapshot.data());
+    const snapshot = await this.existingSnapshot(familyCode, handle);
+    const data = snapshot.data();
+    const parsed = credentialSchema.safeParse(
+      data && !data.pinHash && typeof data.passwordHash === "string"
+        ? { ...data, pinHash: data.passwordHash }
+        : data,
+    );
     return parsed.success ? parsed.data : undefined;
   }
 
   async recordFailure(familyCode: string, handle: string) {
-    const ref = this.db.doc(`childCredentials/${this.key(familyCode, handle)}`);
+    const ref = (await this.existingSnapshot(familyCode, handle)).ref;
     await this.db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const parsed = credentialSchema.safeParse(snap.data());
@@ -98,13 +101,29 @@ export class ChildCredentialRepository {
     });
   }
   async clearFailures(familyCode: string, handle: string) {
-    await this.db
+    await (
+      await this.existingSnapshot(familyCode, handle)
+    ).ref.update({
+      failedAttempts: 0,
+      lockedUntil: null,
+      lastLoginAt: FieldValue.serverTimestamp(),
+    });
+  }
+
+  private async existingSnapshot(familyCode: string, handle: string) {
+    let snapshot = await this.db
       .doc(`childCredentials/${this.key(familyCode, handle)}`)
-      .update({
-        failedAttempts: 0,
-        lockedUntil: null,
-        lastLoginAt: FieldValue.serverTimestamp(),
-      });
+      .get();
+    // Temporary bridge. No new credential is ever created under this plaintext
+    // ID; only lockout metadata may update an existing legacy record.
+    if (
+      !snapshot.exists &&
+      env.CHILD_CREDENTIAL_MIGRATION_MODE === "compatibility"
+    ) {
+      const legacyId = `${normalizeCredentialPart(familyCode)}_${normalizeCredentialPart(handle)}`;
+      snapshot = await this.db.doc(`childCredentials/${legacyId}`).get();
+    }
+    return snapshot;
   }
 }
 
