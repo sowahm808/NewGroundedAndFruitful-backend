@@ -16,6 +16,7 @@ import mentorRoutes from "./mentor/routes.js";
 import observerRoutes from "./observer/routes.js";
 import notificationRoutes from "./notifications/routes.js";
 import reportRoutes from "./reports/routes.js";
+import onboardingRoutes from "./onboarding/routes.js";
 import { env } from "./config/env.js";
 import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
@@ -144,6 +145,7 @@ app.use(
   notificationRoutes,
 );
 app.use("/api/v1/reports", privateResponse, authenticate, reportRoutes);
+app.use("/api/v1/onboarding", privateResponse, authenticate, onboardingRoutes);
 app.use(
   "/api/v1/administration",
   privateResponse,

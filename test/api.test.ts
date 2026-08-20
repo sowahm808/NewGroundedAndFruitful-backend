@@ -127,6 +127,22 @@ describe("HTTP safety contract", () => {
       error: { code: "AUTHENTICATION_REQUIRED" },
     });
   });
+  it("publishes the authenticated organization onboarding route", async () => {
+    const response = await fetch(`${base}/api/v1/onboarding/organization`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Grounded & Fruitful",
+        slug: "grounded-fruitful",
+        timezone: "UTC",
+      }),
+    });
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
   it("publishes the frontend admin memberships route rather than returning 404", async () => {
     const response = await fetch(
       `${base}/api/v1/admin/memberships?page=1&pageSize=25&sort=-updatedAt`,
