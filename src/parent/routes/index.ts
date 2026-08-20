@@ -1,16 +1,19 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { db } from "../../config/firebase.js";
 import { requireAnyRole } from "../../middleware/authorize.js";
+import { ValidationError } from "../../shared/errors.js";
 import {
-  ServiceUnavailableError,
-  ValidationError,
-} from "../../shared/errors.js";
-import {
+  characterPatchSchema,
+  characterQuerySchema,
   characterSelectionSchema,
   childQuerySchema,
+  familyActivityQuerySchema,
+  familyCompletionCommandSchema,
   idSchema,
+  idempotencyKeySchema,
   observationSchema,
   observationQuerySchema,
+  reportQuerySchema,
   supportListQuerySchema,
   supportRequestSchema,
 } from "../schemas.js";
@@ -19,7 +22,7 @@ import { ParentService } from "../service.js";
 const router = Router();
 const service = new ParentService(db);
 router.use(requireAnyRole("parent"));
-const principal = (req: Express.Request) => req.principal!;
+const principal = (req: Request) => req.principal!;
 const parse = <T>(
   schema: {
     safeParse(
@@ -35,6 +38,8 @@ const parse = <T>(
     throw new ValidationError("Invalid request.", result.error.flatten());
   return result.data;
 };
+const idempotencyKey = (req: Request) =>
+  parse(idempotencyKeySchema, req.headers["idempotency-key"]);
 
 router.get("/dashboard", async (req, res, next) => {
   try {
@@ -78,14 +83,12 @@ router.get("/observations", async (req, res, next) => {
 });
 router.post("/observations", async (req, res, next) => {
   try {
-    res
-      .status(201)
-      .json(
-        await service.createObservation(
-          principal(req),
-          parse(observationSchema, req.body),
-        ),
-      );
+    const result = await service.createObservation(
+      principal(req),
+      parse(observationSchema, req.body),
+      idempotencyKey(req),
+    );
+    res.status(result.created ? 201 : 200).json(result);
   } catch (e) {
     next(e);
   }
@@ -102,6 +105,28 @@ router.get("/observations/:id", async (req, res, next) => {
 router.get("/character/qualities", async (req, res, next) => {
   try {
     res.json(await service.qualities(principal(req)));
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/character", async (req, res, next) => {
+  try {
+    const input = parse(characterQuerySchema, req.query);
+    res.json(
+      await service.selection(principal(req), input.childId, input.quarterId),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+router.patch("/character", async (req, res, next) => {
+  try {
+    res.json(
+      await service.setSelection(
+        principal(req),
+        parse(characterPatchSchema, req.body),
+      ),
+    );
   } catch (e) {
     next(e);
   }
@@ -142,13 +167,35 @@ router.get("/family-activities", async (req, res, next) => {
     next(e);
   }
 });
-router.post("/family-activities/completions", (_req, _res, next) => {
-  next(
-    new ServiceUnavailableError(
-      "Family activity completion is disabled until completion and point award writes are atomic.",
-    ),
-  );
+router.get("/family/activities", async (req, res, next) => {
+  try {
+    const input = parse(familyActivityQuerySchema, req.query);
+    res.json(
+      await service.familyActivities(principal(req), input.childId, input),
+    );
+  } catch (e) {
+    next(e);
+  }
 });
+router.post(
+  "/family/activities/:activityId/completions",
+  async (req, res, next) => {
+    try {
+      // The deterministic activity/child document is the idempotency boundary;
+      // the header is still required so clients never accidentally issue an unsafe retry.
+      idempotencyKey(req);
+      const input = parse(familyCompletionCommandSchema, req.body);
+      const result = await service.completeFamilyActivity(
+        principal(req),
+        input.childId,
+        parse(idSchema, req.params.activityId),
+      );
+      res.status(result.created ? 201 : 200).json(result);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 // Compatibility endpoint used by the academic-support request form. Academic
 // support configuration is currently the set of active, tenant-scoped support
 // categories, so keep both URLs backed by the same service method.
@@ -173,14 +220,12 @@ router.get("/academic-support/requests", async (req, res, next) => {
 });
 router.post("/academic-support/requests", async (req, res, next) => {
   try {
-    res
-      .status(201)
-      .json(
-        await service.createSupport(
-          principal(req),
-          parse(supportRequestSchema, req.body),
-        ),
-      );
+    const result = await service.createSupport(
+      principal(req),
+      parse(supportRequestSchema, req.body),
+      idempotencyKey(req),
+    );
+    res.status(result.created ? 201 : 200).json(result);
   } catch (e) {
     next(e);
   }
@@ -218,14 +263,12 @@ router.get("/support/requests", async (req, res, next) => {
 });
 router.post("/support/requests", async (req, res, next) => {
   try {
-    res
-      .status(201)
-      .json(
-        await service.createSupport(
-          principal(req),
-          parse(supportRequestSchema, req.body),
-        ),
-      );
+    const result = await service.createSupport(
+      principal(req),
+      parse(supportRequestSchema, req.body),
+      idempotencyKey(req),
+    );
+    res.status(result.created ? 201 : 200).json(result);
   } catch (e) {
     next(e);
   }
@@ -247,6 +290,14 @@ router.get("/reports/:childId", async (req, res, next) => {
     res.json(
       await service.report(principal(req), parse(idSchema, req.params.childId)),
     );
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/reports", async (req, res, next) => {
+  try {
+    const input = parse(reportQuerySchema, req.query);
+    res.json(await service.report(principal(req), input.childId));
   } catch (e) {
     next(e);
   }

@@ -149,25 +149,83 @@ paths:
     post:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
+      parameters:
+        - {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema: { type: string, minLength: 8, maxLength: 128 },
+          }
+      description: Submits constructive positive recognition for moderation. This command does not award points.
       responses:
         { "201": { description: Observation persisted for moderation } }
-  /parent/family-activities:
+  /parent/character:
     get:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: childId, in: query, required: true, schema: { type: string } }
+        - {
+            name: quarterId,
+            in: query,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Versioned character selection or honest empty selection,
+            },
+        }
+    patch:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      description: Updates a selection using expectedVersion optimistic concurrency. Cannot modify child submissions.
+      responses:
+        {
+          "200": { description: Updated selection },
+          "409": { description: Stale version },
+        }
+  /parent/family/activities:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: childId, in: query, required: true, schema: { type: string } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 50, default: 20 },
+          }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string, maxLength: 80 } }
       responses:
         {
           "200":
             { description: Configured activities and child completion state },
         }
-  /parent/family-activities/completions:
+  /parent/family/activities/{activityId}/completions:
     post:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
-      deprecated: true
-      description: Disabled compatibility path. No write occurs until source completion and any point award can be committed atomically with a server-selected rule snapshot.
+      parameters:
+        - {
+            name: activityId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema: { type: string, minLength: 8, maxLength: 128 },
+          }
+      description: Records a linked child's completion idempotently. Parents cannot provide a point amount.
       responses:
-        "503": { description: Workflow safely disabled }
+        "201": { description: Completion created }
+        "200": { description: Exact retry returned existing completion }
   /parent/academic-support/configuration:
     get:
       tags: [Parent]
@@ -260,6 +318,16 @@ paths:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
       responses: { "201": { description: Support request created } }
+  /parent/reports:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: childId, in: query, required: true, schema: { type: string } }
+      description: Returns approved progress only, explicit unavailable states, and a server calculation timestamp.
+      responses:
+        "200": { description: Relationship-scoped child report }
+        "404": { $ref: "#/components/responses/NotFound" }
   /parent/reports/{childId}:
     get:
       tags: [Parent]
@@ -307,7 +375,10 @@ paths:
       description: The implementation exposes only static, source-specific paths; arbitrary source values are not routed.
       security: [{ firebaseBearer: [] }]
       responses:
-        "201": { description: Source completion and immutable ledger entry created atomically }
+        "201":
+          {
+            description: Source completion and immutable ledger entry created atomically,
+          }
         "200": { description: Exact idempotent retry }
         "409": { description: Conflicting idempotency-key reuse }
 
