@@ -118,7 +118,7 @@ describe("auth session bootstrap", () => {
     const fixture = service({ memberships: [membership("child")] });
     fixture.memberships.hasActiveChildContext.mockResolvedValue(false);
     await expect(fixture.subject.createSession("token")).resolves.toMatchObject({
-      onboardingStatus: "provisioning_required",
+      onboardingStatus: "pending",
     });
   });
 
@@ -143,19 +143,19 @@ describe("auth session bootstrap", () => {
       }).subject.createSession("t"),
     ).resolves.toMatchObject({
       roles: [],
-      onboardingStatus: "pending_approval",
+      onboardingStatus: "pending",
     });
     await expect(
       service({
         auth: { disabled: true },
         memberships: [membership("parent")],
       }).subject.createSession("t"),
-    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    ).resolves.toMatchObject({ roles: [], onboardingStatus: "disabled" });
     await expect(
       service({
         memberships: [membership("parent", "suspended")],
       }).subject.createSession("t"),
-    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    ).resolves.toMatchObject({ roles: [], onboardingStatus: "disabled" });
   });
 
   it.each(["pending", "revoked"])("does not bypass a %s membership with stale legacy roles", async (status) => {
@@ -165,11 +165,32 @@ describe("auth session bootstrap", () => {
     }).subject.createSession("t")).resolves.toMatchObject({ roles: [], authorization: { source: "none" } });
   });
 
+  it("fails closed for an expired membership and does not use legacy roles", async () => {
+    await expect(service({
+      profile: { ...activeProfile, roles: ["admin"] },
+      memberships: [{ ...membership("parent"), expiresAt: new Date(Date.now() - 1_000) }],
+    }).subject.createSession("t")).resolves.toMatchObject({
+      roles: [], onboardingStatus: "role_required",
+      memberships: [{ status: "expired" }],
+      authorization: { source: "none" },
+    });
+  });
+
+  it("fails closed for a malformed membership and does not use legacy roles", async () => {
+    await expect(service({
+      profile: { ...activeProfile, roles: ["admin"] },
+      memberships: [{ userId: "uid-1", organizationId: "org-1", status: "invalid" }],
+    }).subject.createSession("t")).resolves.toMatchObject({
+      roles: [], onboardingStatus: "role_required",
+      authorization: { source: "none" },
+    });
+  });
+
   it("does not let a suspended membership bypass restriction with stale legacy roles", async () => {
     await expect(service({
       profile: { ...activeProfile, roles: ["admin"] },
       memberships: [membership("parent", "suspended")],
-    }).subject.createSession("t")).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    }).subject.createSession("t")).resolves.toMatchObject({ roles: [], onboardingStatus: "disabled" });
   });
 
   it("prefers active membership roles and rejects unknown legacy roles", async () => {

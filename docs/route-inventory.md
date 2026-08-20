@@ -1,11 +1,11 @@
 # Executable route and authorization inventory
 
-Audit date: 2026-08-19. “Mounted” means registered beneath `/api/v1` in `src/app.ts`; it does not mean the workflow is complete. Health and auth-session behavior has API coverage. Child, parent, and administration groups contain executable handlers but broad emulator/authorization coverage is incomplete. OpenAPI currently omits administration and several parent subresources, so those rows are partial.
+Audit date: 2026-08-20. “Mounted” means registered beneath `/api/v1` in `src/app.ts`; it does not mean the workflow is complete. Health and auth-session behavior has API coverage. Child, parent, and administration groups contain executable handlers but broad emulator/authorization coverage is incomplete. OpenAPI currently omits administration and several parent subresources, so those rows are partial.
 
 | Method | Path(s) | Mounted | Authentication / roles | Relationship and tenant enforcement | Validation | OpenAPI | Tests | Status |
 |---|---|---:|---|---|---|---|---|---|
 | GET/HEAD | `/`, `/health`, `/api/v1/health` | yes | public | n/a | n/a | versioned health only | API | verified |
-| GET/POST | `/api/v1/auth/session` and legacy `/api/auth/session` | yes | revoked-token verification in session service | active memberships authoritative; compatibility only when no membership exists | bearer parser | yes (versioned only) | unit + API | verified, legacy alias partial |
+| GET/POST | `/api/v1/auth/session` and legacy `/api/auth/session` | yes | revoked-token verification in session service | active, unexpired memberships authoritative; inactive, expired, or malformed rows prevent compatibility fallback | bearer parser | yes (versioned only) | unit + API, including expiry/malformed fallback | verified, legacy alias partial |
 | POST | `/api/v1/auth/child-token` and legacy alias | yes | anonymous credential exchange | active credential, organization, membership, participant context | strict Zod | yes | unit + API; no full emulator login | partial |
 | GET | `/api/v1/participants/:id` | yes | canonical authenticated role | policy-based self/link/team plus organization | ID parser | yes | authorization/unit + unauthenticated API | partial |
 | POST | `/api/v1/points/completions`, `/api/v1/points/adjustments` | yes | child / administrator policy respectively | participant/team/organization and point rules | strict Zod + idempotency header | yes | unit + emulator | partial; generic source completion is not a source workflow |

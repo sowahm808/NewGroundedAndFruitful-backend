@@ -1067,8 +1067,9 @@ components:
                           [
                             complete,
                             role_required,
-                            profile_required,
-                            pending_approval,
+                            pending,
+                            disabled,
+                            session_error,
                           ],
                       },
                     memberships:

@@ -29,8 +29,11 @@ export async function resolvePrincipal(
     const data = doc.data();
     if (data.userId !== token.uid) continue;
     const normalizedRoles = normalizeRoles(data.roles ?? data.role).roles;
-    allMemberships.push({ status: typeof data.status === "string" ? data.status : "invalid", roles: normalizedRoles });
-    if (data.status !== "active") continue;
+    const status = data.status === "active" && membershipExpired(data.expiresAt)
+      ? "expired"
+      : typeof data.status === "string" ? data.status : "invalid";
+    allMemberships.push({ status, roles: normalizedRoles });
+    if (status !== "active") continue;
     const roles = normalizedRoles;
     if (typeof data.organizationId !== "string" || !Number.isInteger(data.version)) continue;
     memberships.push({ id: doc.id, userId: token.uid, organizationId: data.organizationId, roles, status: "active", version: data.version, ...(Array.isArray(data.programIds) ? { programIds: data.programIds.filter((id): id is string => typeof id === "string") } : {}) });
@@ -51,6 +54,16 @@ export async function resolvePrincipal(
   // whose active, server-owned membership already grants application access.
   if (roles.length === 0) throw new AuthorizationError();
   return { roles, organizationIds: [...new Set(organizationIds)], memberships, authorizationSource: resolution.source };
+}
+
+function membershipExpired(value: unknown): boolean {
+  if (value == null) return false;
+  if (value instanceof Date) return value.getTime() <= Date.now();
+  if (typeof value === "object" && "toMillis" in value && typeof value.toMillis === "function") {
+    const timestamp = value as { toMillis(): number };
+    return timestamp.toMillis() <= Date.now();
+  }
+  return true;
 }
 
 /** @deprecated Use resolvePrincipal when enforcing organization boundaries. */
