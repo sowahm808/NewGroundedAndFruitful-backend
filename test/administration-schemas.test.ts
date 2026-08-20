@@ -3,6 +3,7 @@ import {
   consentCaptureSchema,
   invitationCreateSchema,
   participantCreateSchema,
+  resourceListQuerySchema,
   roleListQuerySchema,
   roleUpdateSchema,
 } from "../src/administration/schemas.js";
