@@ -40,13 +40,14 @@ const configuredResources = [
 for (const [path, collection] of configuredResources) {
   router.get(
     `/${path}`,
-    run((req) =>
-      service.resources(
-        req.principal,
-        collection,
-        id(req.query.organizationId),
-      ),
-    ),
+    run((req) => {
+      const query = schemas.resourceListQuerySchema.safeParse(req.query);
+      if (!query.success)
+        throw new ValidationError("Invalid resource list query.", {
+          fieldErrors: query.error.flatten().fieldErrors,
+        });
+      return service.listResources(req.principal, collection, query.data);
+    }),
   );
   router.get(
     `/${path}/:resourceId`,

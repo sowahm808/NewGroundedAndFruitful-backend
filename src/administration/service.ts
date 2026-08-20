@@ -58,6 +58,57 @@ export class AdministrationService {
       .get();
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }
+  async listResources(
+    p: Principal | undefined,
+    collection: string,
+    query: {
+      organizationId?: string | undefined;
+      page: number;
+      pageSize: number;
+      sort: "updatedAt" | "-updatedAt";
+    },
+  ) {
+    const { organizationId, page, pageSize, sort } = query;
+    let resourceQuery = this.db.collection(collection);
+    if (organizationId) {
+      this.admin(p, organizationId);
+      resourceQuery = resourceQuery.where(
+        "organizationId",
+        "==",
+        organizationId,
+      ) as typeof resourceQuery;
+    } else {
+      requireSuperAdmin(p);
+    }
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof value.toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : 0;
+    const results: Array<Data & { id: string }> = (
+      await resourceQuery.get()
+    ).docs
+      .map<Data & { id: string }>((doc) => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+    const total = results.length;
+    return {
+      items: results.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
+  }
   async resource(
     p: Principal | undefined,
     collection: string,
