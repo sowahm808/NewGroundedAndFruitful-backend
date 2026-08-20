@@ -1015,7 +1015,16 @@ paths:
               {
                 type: string,
                 enum:
-                  [updated_desc, updated_asc, start_date_desc, start_date_asc],
+                  [
+                    updated_desc,
+                    updated_asc,
+                    start_date_desc,
+                    start_date_asc,
+                    -updatedAt,
+                    updatedAt,
+                    -startDate,
+                    startDate,
+                  ],
                 default: updated_desc,
               },
           }
@@ -1352,13 +1361,17 @@ components:
     QuarterCreate:
       type: object
       additionalProperties: false
-      required: [name, startDate, endDate, organizationId]
+      required: [name, startDate, endDate]
       properties:
         name: { type: string, minLength: 1, maxLength: 120 }
         description: { type: [string, "null"], maxLength: 2000 }
         startDate: { type: string, format: date }
         endDate: { type: string, format: date }
-        organizationId: { type: string }
+        organizationId:
+          {
+            type: string,
+            description: Optional for an administrator scoped to exactly one organization; otherwise required.,
+          }
     QuarterUpdate:
       type: object
       additionalProperties: false
