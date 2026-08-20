@@ -512,44 +512,6 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: Lifecycle or configuration conflict }
-  /child/bible:
-    get:
-      tags: [Child]
-      security: [{ firebaseBearer: [] }]
-      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
-      responses:
-        "200":
-          {
-            description: Authorized child response,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
-              },
-          }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: Lifecycle or configuration conflict }
-  /child/bible/{activityId}:
-    get:
-      tags: [Child]
-      security: [{ firebaseBearer: [] }]
-      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
-      responses:
-        "200":
-          {
-            description: Authorized child response,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
-              },
-          }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: Lifecycle or configuration conflict }
   /child/reading:
     get:
       tags: [Child]
@@ -749,31 +711,6 @@ paths:
         "409": { description: Version or lifecycle conflict }
         "422": { $ref: "#/components/responses/Validation" }
   /child/character/complete:
-    post:
-      tags: [Child]
-      security: [{ firebaseBearer: [] }]
-      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody:
-        {
-          required: true,
-          content: { application/json: { schema: { type: object } } },
-        }
-      responses:
-        "200":
-          {
-            description: Saved or idempotently completed,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
-              },
-          }
-        "201": { description: Created }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "409": { description: Version or lifecycle conflict }
-        "422": { $ref: "#/components/responses/Validation" }
-  /child/bible/{activityId}/responses:
     post:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
@@ -1211,8 +1148,279 @@ paths:
           "409": { $ref: "#/components/responses/QuarterConflict" },
           "422": { $ref: "#/components/responses/Validation" },
         }
+  /admin/bible-imports:
+    post:
+      tags: [Bible]
+      operationId: createBibleImport
+      description: Admin-only two-file preview import. Parsing never publishes content.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/BibleImportUpload" }
+      responses:
+        {
+          "201": { description: Draft preview },
+          "415": { $ref: "#/components/responses/Validation" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/bible-imports/{importId}:
+    get:
+      tags: [Bible]
+      operationId: getBibleImport
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      responses:
+        {
+          "200": { description: Tenant-scoped safe preview },
+          "404": { $ref: "#/components/responses/NotFound" },
+        }
+  /admin/bible-imports/{importId}/items/{itemId}:
+    patch:
+      tags: [Bible]
+      operationId: correctBibleImportItem
+      description: Corrects preview only; expectedVersion provides optimistic concurrency.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        [
+          { $ref: "#/components/parameters/ImportId" },
+          { name: itemId, in: path, required: true, schema: { type: string } },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleItemPatch" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Corrected preview },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/bible-imports/{importId}/validate:
+    post:
+      tags: [Bible]
+      operationId: validateBibleImport
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      responses: { "200": { description: Validation errors and warnings } }
+  /admin/bible-imports/{importId}/commit:
+    post:
+      tags: [Bible]
+      operationId: commitBibleImport
+      description: Idempotently commits validated preview as draft; never publishes.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Draft content set identifier },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/bible-content:
+    get:
+      {
+        tags: [Bible],
+        operationId: listBibleContent,
+        security: [{ firebaseBearer: [] }],
+        responses: { "200": { description: Tenant-scoped content list } },
+      }
+  /admin/bible-content/{contentSetId}:
+    get:
+      {
+        tags: [Bible],
+        operationId: getBibleContent,
+        security: [{ firebaseBearer: [] }],
+        parameters: [{ $ref: "#/components/parameters/ContentSetId" }],
+        responses:
+          {
+            "200":
+              {
+                description: Administrative content including protected answers,
+              },
+          },
+      }
+    patch:
+      tags: [Bible]
+      operationId: updateBibleContent
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ContentSetId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Updated draft },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/bible-content/{contentSetId}/publish:
+    post:
+      {
+        tags: [Bible],
+        operationId: publishBibleContent,
+        security: [{ firebaseBearer: [] }],
+        parameters: [{ $ref: "#/components/parameters/ContentSetId" }],
+        requestBody:
+          {
+            required: true,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+              },
+          },
+        responses:
+          {
+            "200": { description: Published content },
+            "409": { $ref: "#/components/responses/Conflict" },
+          },
+      }
+  /admin/bible-content/{contentSetId}/archive:
+    post:
+      {
+        tags: [Bible],
+        operationId: archiveBibleContent,
+        security: [{ firebaseBearer: [] }],
+        parameters: [{ $ref: "#/components/parameters/ContentSetId" }],
+        requestBody:
+          {
+            required: true,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+              },
+          },
+        responses: { "200": { description: Archived content } },
+      }
+  /child/bible:
+    get:
+      tags: [Bible]
+      operationId: getChildBibleToday
+      description: Resolves membership, participant, active quarter, timezone, and local date server-side. Child schema structurally excludes correct answers.
+      security: [{ firebaseBearer: [] }]
+      responses:
+        {
+          "200":
+            {
+              description: Assignment or honest no-assignment state,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        { $ref: "#/components/schemas/ChildBibleResponse" },
+                    },
+                },
+            },
+        }
+  /child/bible/history:
+    get:
+      {
+        tags: [Bible],
+        operationId: getChildBibleHistory,
+        security: [{ firebaseBearer: [] }],
+        responses:
+          {
+            "200":
+              {
+                description: Current child's completion summaries without scores or answers,
+              },
+          },
+      }
+  /child/bible/{activityId}/draft:
+    put:
+      tags: [Bible]
+      operationId: saveChildBibleDraft
+      description: Saves private answers without awarding points; expectedVersion is optional optimistic concurrency.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleAnswers" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Draft status },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /child/bible/{activityId}/complete:
+    post:
+      tags: [Bible]
+      operationId: completeChildBibleActivity
+      description: Atomically finalizes private answers and awards configured participation points independent of correctness. Exact retries reuse the key.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        [
+          { $ref: "#/components/parameters/ActivityId" },
+          {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema: { type: string, maxLength: 128 },
+          },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleAnswers" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Child-safe completion without score },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "503": { $ref: "#/components/responses/Internal" },
+        }
 components:
   parameters:
+    ImportId:
+      {
+        name: importId,
+        in: path,
+        required: true,
+        schema: { type: string, minLength: 1, maxLength: 128 },
+      }
+    ContentSetId:
+      {
+        name: contentSetId,
+        in: path,
+        required: true,
+        schema: { type: string, minLength: 1, maxLength: 128 },
+      }
+    ActivityId:
+      {
+        name: activityId,
+        in: path,
+        required: true,
+        schema: { type: string, minLength: 1, maxLength: 128 },
+      }
     QuarterId:
       {
         name: quarterId,
@@ -1285,6 +1493,7 @@ components:
               { schema: { $ref: "#/components/schemas/Error" } },
           },
       }
+    Conflict: { description: Version, lifecycle, or idempotency conflict }
     NotFound:
       {
         description: Not found,
@@ -1322,6 +1531,111 @@ components:
           },
       }
   schemas:
+    BibleImportUpload:
+      type: object
+      required: [organizationId, quarterId, title, quizFile, answerKeyFile]
+      properties:
+        organizationId: { type: string }
+        quarterId: { type: string }
+        title: { type: string, maxLength: 200 }
+        quizFile: { type: string, format: binary }
+        answerKeyFile: { type: string, format: binary }
+    BibleLifecycle:
+      type: object
+      required: [expectedVersion]
+      properties:
+        {
+          expectedVersion: { type: integer, minimum: 1 },
+          acknowledgeWarnings: { type: boolean },
+          title: { type: string },
+          description: { type: string },
+        }
+    BibleItemPatch:
+      type: object
+      required: [expectedVersion]
+      properties:
+        {
+          expectedVersion: { type: integer, minimum: 1 },
+          title: { type: string },
+          scriptureReference: { type: string },
+        }
+    BibleAnswers:
+      type: object
+      additionalProperties: false
+      required: [answers]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        answers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [questionId, selectedChoiceId]
+            properties:
+              {
+                questionId: { type: string },
+                selectedChoiceId: { type: string, enum: [a, b, c, d, e] },
+              }
+    ChildBibleQuestion:
+      type: object
+      additionalProperties: false
+      required: [id, position, prompt, choices]
+      properties:
+        id: { type: string }
+        position: { type: integer }
+        prompt: { type: string }
+        choices:
+          {
+            type: array,
+            items:
+              {
+                type: object,
+                additionalProperties: false,
+                required: [id, label, text],
+                properties:
+                  {
+                    id: { type: string },
+                    label: { type: string },
+                    text: { type: string },
+                  },
+              },
+          }
+    ChildBibleResponse:
+      description: Child-safe projection; answer keys, source metadata, private answers, and scores are structurally absent.
+      type: object
+      properties:
+        data:
+          type: object
+          required:
+            [available, responseStatus, quarterId, localDate, calculatedAt]
+          properties:
+            available: { type: boolean }
+            reason:
+              {
+                type: [string, "null"],
+                enum: [no_active_quarter, no_assignment, null],
+              }
+            responseStatus:
+              { type: string, enum: [not_started, draft, completed] }
+            quarterId: { type: [string, "null"] }
+            localDate: { type: string, format: date }
+            calculatedAt: { type: string, format: date-time }
+            activity:
+              {
+                type: [object, "null"],
+                properties:
+                  {
+                    id: { type: string },
+                    title: { type: string },
+                    scriptureReference: { type: string },
+                    questions:
+                      {
+                        type: array,
+                        items:
+                          { $ref: "#/components/schemas/ChildBibleQuestion" },
+                      },
+                  },
+              }
     QuarterStatus: { type: string, enum: [draft, active, closed, archived] }
     Quarter:
       type: object

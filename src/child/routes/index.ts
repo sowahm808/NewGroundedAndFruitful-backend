@@ -4,9 +4,11 @@ import { db } from "../../config/firebase.js";
 import { requireRole } from "../../middleware/authorize.js";
 import { validateBody } from "../../middleware/validate.js";
 import { ChildService } from "../service.js";
+import { responseInputSchema } from "../../bible/domain.js";
+import { BibleChildService } from "../../bible/child-service.js";
 import { activityResponseSchema, characterAssessmentSchema, checkInSchema, gratitudeSchema, milestoneSchema, projectCreateSchema, projectPatchSchema, specialActivitySubmissionSchema, surveySubmissionSchema, updateSchema } from "../schemas.js";
 
-const router=Router(), service=new ChildService(db), resourceId=z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
+const router=Router(), service=new ChildService(db), bible=new BibleChildService(db), resourceId=z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
 router.use(requireRole("child"));
 interface CreateResult<T> { data:T; created:boolean }
 const handle=(fn:(req:Request)=>Promise<unknown>):RequestHandler=>async(req,res,next)=>{try{res.status(200).json({data:await fn(req)});}catch(e){next(e);}};
@@ -22,9 +24,10 @@ router.post("/gratitude",validateBody(gratitudeSchema),create(req=>service.saveG
 router.get("/character",handle(req=>service.character(req.principal)));
 router.put("/character/draft",validateBody(characterAssessmentSchema),handle(req=>service.saveCharacter(req.principal,req.body.responses,false)));
 router.post("/character/complete",validateBody(characterAssessmentSchema),handle(req=>service.saveCharacter(req.principal,req.body.responses,true)));
-router.get("/bible",handle(req=>service.bible(req.principal)));
-router.get("/bible/:activityId",handle(req=>service.bible(req.principal,aid(req))));
-router.post("/bible/:activityId/responses",validateBody(activityResponseSchema),handle(req=>service.respond(req.principal,"bible",aid(req),req.body)));
+router.get("/bible",handle(req=>bible.today(req.principal)));
+router.get("/bible/history",handle(req=>bible.history(req.principal)));
+router.put("/bible/:activityId/draft",validateBody(responseInputSchema),handle(req=>bible.draft(req.principal,aid(req),req.body)));
+router.post("/bible/:activityId/complete",validateBody(responseInputSchema),handle(req=>bible.complete(req.principal,aid(req),req.body,req.header("Idempotency-Key")??"",req.requestId)));
 router.get("/reading",handle(req=>service.reading(req.principal)));
 router.get("/reading/:assignmentId",handle(req=>service.reading(req.principal,rid(req))));
 router.post("/reading/:assignmentId/responses",validateBody(activityResponseSchema),handle(req=>service.respond(req.principal,"reading",rid(req),req.body)));

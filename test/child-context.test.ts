@@ -58,6 +58,6 @@ it("documents every mounted child route in OpenAPI", () => {
     .map((layer) => layer.route?.path)
     .filter((path): path is string => typeof path === "string")
     .map((path) => `/child${path.replace(/:([A-Za-z]+)/g, "{$1}")}:`);
-  expect(new Set(mounted).size).toBe(25);
+  expect(new Set(mounted).size).toBe(26);
   for (const path of mounted) expect(specification).toContain(`  ${path}`);
 });
