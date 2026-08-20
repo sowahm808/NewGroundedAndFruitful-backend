@@ -89,6 +89,18 @@ export function localMidnight(date: string, timeZone: string): Date {
   return new Date(candidate);
 }
 
+/** Returns the next ISO calendar date without applying the host timezone. */
+export function nextLocalDate(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year!, month! - 1, day! + 1));
+  return next.toISOString().slice(0, 10);
+}
+
+/** Configuration end dates are inclusive; persisted end instants are exclusive. */
+export function localEndExclusive(date: string, timeZone: string): Date {
+  return localMidnight(nextLocalDate(date), timeZone);
+}
+
 export function localWeekStart(instant: Date, timeZone: string): string {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {

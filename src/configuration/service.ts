@@ -11,6 +11,7 @@ import {
 import {
   assertDateRange,
   assertQuarterTransition,
+  localEndExclusive,
   localMidnight,
   quarterOccupiesCalendar,
   rangesOverlap,
@@ -124,7 +125,7 @@ export class ConfigurationService {
         status: "draft",
         version: 1,
         startsAt: Timestamp.fromDate(localMidnight(startDate, timezone)),
-        endsAt: Timestamp.fromDate(localMidnight(endDate, timezone)),
+        endsAt: Timestamp.fromDate(localEndExclusive(endDate, timezone)),
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -220,7 +221,7 @@ export class ConfigurationService {
         status: "active",
         version: 1,
         startsAt: Timestamp.fromDate(localMidnight(startDate, timezone)),
-        endsAt: Timestamp.fromDate(localMidnight(endDate, timezone)),
+        endsAt: Timestamp.fromDate(localEndExclusive(endDate, timezone)),
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -306,7 +307,7 @@ export class ConfigurationService {
         status: "active",
         version,
         effectiveFrom: Timestamp.fromDate(localMidnight(startDate, timezone)),
-        effectiveUntil: Timestamp.fromDate(localMidnight(endDate, timezone)),
+        effectiveUntil: Timestamp.fromDate(localEndExclusive(endDate, timezone)),
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
