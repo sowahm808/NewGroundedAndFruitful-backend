@@ -1361,12 +1361,29 @@ components:
     QuarterCreate:
       type: object
       additionalProperties: false
-      required: [name, startDate, endDate]
+      required: [name]
+      oneOf:
+        - required: [startDate, endDate]
+        - required: [startsOn, endsOn]
       properties:
         name: { type: string, minLength: 1, maxLength: 120 }
         description: { type: [string, "null"], maxLength: 2000 }
         startDate: { type: string, format: date }
         endDate: { type: string, format: date }
+        startsOn:
+          {
+            type: string,
+            format: date,
+            deprecated: true,
+            description: Compatibility alias for startDate. Do not send both naming styles.,
+          }
+        endsOn:
+          {
+            type: string,
+            format: date,
+            deprecated: true,
+            description: Compatibility alias for endDate. Do not send both naming styles.,
+          }
         organizationId:
           {
             type: string,

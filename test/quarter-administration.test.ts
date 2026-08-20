@@ -35,7 +35,7 @@ describe("quarter administration validation", () => {
     expect(() => quarterListQuerySchema.parse({ status: "open" })).toThrow();
   });
 
-  it("accepts only canonical create fields and real calendar dates", () => {
+  it("accepts canonical or compatibility date fields and real calendar dates", () => {
     const valid = {
       name: "  Fall 2026 ",
       description: null,
@@ -54,6 +54,24 @@ describe("quarter administration validation", () => {
       ...organizationScoped,
       name: "Fall 2026",
     });
+    expect(
+      quarterCreateSchema.parse({
+        name: "September Quarter",
+        startsOn: "2026-09-01",
+        endsOn: "2026-11-01",
+      }),
+    ).toEqual({
+      name: "September Quarter",
+      startDate: "2026-09-01",
+      endDate: "2026-11-01",
+    });
+    expect(() =>
+      quarterCreateSchema.parse({
+        name: "Mixed fields",
+        startDate: "2026-09-01",
+        endsOn: "2026-11-01",
+      }),
+    ).toThrow();
     for (const forbidden of [
       "id",
       "status",
