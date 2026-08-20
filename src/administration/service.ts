@@ -215,6 +215,59 @@ export class AdministrationService {
       },
     };
   }
+  async listMemberships(
+    p: Principal | undefined,
+    query: {
+      organizationId?: string | undefined;
+      page: number;
+      pageSize: number;
+      sort: "updatedAt" | "-updatedAt";
+    },
+  ) {
+    const { organizationId, page, pageSize, sort } = query;
+    let membershipQuery = this.db.collection("memberships");
+    if (organizationId) {
+      this.superAdmin(p, organizationId);
+      membershipQuery = membershipQuery.where(
+        "organizationId",
+        "==",
+        organizationId,
+      ) as typeof membershipQuery;
+    } else {
+      requireSuperAdmin(p);
+    }
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof value.toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : 0;
+    const results: Array<Data & { id: string }> = (
+      await membershipQuery.get()
+    ).docs
+      .map<Data & { id: string }>((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+    const total = results.length;
+    return {
+      items: results.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
+  }
   private async scopedDocument(
     p: Principal | undefined,
     collection: string,
