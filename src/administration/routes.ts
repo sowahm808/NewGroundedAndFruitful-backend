@@ -31,10 +31,63 @@ router.post(
   validateBody(schemas.organizationCreateSchema),
   run((req) => service.createOrganization(req.principal, req.body), 201),
 );
+router.get(
+  "/organizations",
+  run((req) => service.organizations(req.principal)),
+);
+router.get(
+  "/organizations/:organizationId",
+  run((req) =>
+    service.organization(req.principal, id(req.params.organizationId)),
+  ),
+);
+router.patch(
+  "/organizations/:organizationId",
+  validateBody(schemas.organizationUpdateSchema),
+  run((req) =>
+    service.updateOrganization(
+      req.principal,
+      id(req.params.organizationId),
+      req.body,
+    ),
+  ),
+);
+router.post(
+  "/organizations/:organizationId/suspend",
+  validateBody(schemas.lifecycleVersionSchema),
+  run((req) =>
+    service.updateOrganization(
+      req.principal,
+      id(req.params.organizationId),
+      req.body,
+      "suspended",
+    ),
+  ),
+);
+router.post(
+  "/organizations/:organizationId/reactivate",
+  validateBody(schemas.lifecycleVersionSchema),
+  run((req) =>
+    service.updateOrganization(
+      req.principal,
+      id(req.params.organizationId),
+      req.body,
+      "active",
+    ),
+  ),
+);
 router.post(
   "/programs",
   validateBody(schemas.programCreateSchema),
   run((req) => service.createProgram(req.principal, req.body), 201),
+);
+router.get(
+  "/teams",
+  run((req) => service.teams(req.principal, id(req.query.organizationId))),
+);
+router.get(
+  "/teams/:teamId",
+  run((req) => service.team(req.principal, id(req.params.teamId))),
 );
 router.post(
   "/parent-onboarding",
@@ -78,6 +131,41 @@ router.delete(
     ),
   ),
 );
+router.put(
+  "/teams/:teamId/mentors",
+  validateBody(schemas.teamMentorSchema),
+  run((req) =>
+    service.assignTeamMentor(
+      req.principal,
+      id(req.params.teamId),
+      req.body.userId,
+      req.body.expiresAt,
+    ),
+  ),
+);
+router.delete(
+  "/teams/:teamId/mentors/:userId",
+  run((req) =>
+    service.assignTeamMentor(
+      req.principal,
+      id(req.params.teamId),
+      id(req.params.userId),
+      undefined,
+      true,
+    ),
+  ),
+);
+router.post(
+  "/relationships",
+  validateBody(schemas.relationshipSchema),
+  run((req) => service.createRelationship(req.principal, req.body), 201),
+);
+router.post(
+  "/relationships/:relationshipId/activate",
+  run((req) =>
+    service.activateRelationship(req.principal, id(req.params.relationshipId)),
+  ),
+);
 router.post(
   "/teams",
   validateBody(schemas.teamCreateSchema),
@@ -99,6 +187,12 @@ router.put(
       id(req.params.teamId),
       req.body.participantId,
     ),
+  ),
+);
+router.get(
+  "/organizations/:organizationId/memberships",
+  run((req) =>
+    service.memberships(req.principal, id(req.params.organizationId)),
   ),
 );
 router.delete(
@@ -165,6 +259,8 @@ router.put(
       id(req.params.userId),
       req.body.role,
       req.body.status,
+      req.body.version,
+      req.body.expiresAt,
     ),
   ),
 );

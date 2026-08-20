@@ -12,6 +12,21 @@ export const organizationCreateSchema = z
       .regex(/^[a-z0-9-]{3,50}$/),
   })
   .strict();
+export const versionSchema = z.number().int().positive();
+export const lifecycleVersionSchema = z
+  .object({ version: versionSchema })
+  .strict();
+export const organizationUpdateSchema = z
+  .object({
+    name: name.optional(),
+    slug: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9-]{3,50}$/)
+      .optional(),
+    version: versionSchema,
+  })
+  .strict();
 export const programCreateSchema = z
   .object({
     organizationId: idSchema,
@@ -27,6 +42,8 @@ export const parentOnboardingSchema = z
     organizationId: idSchema,
     displayName: name,
     acceptedPrivacyVersion: z.string().trim().min(1).max(40),
+    consentStatus: z.enum(["pending", "granted", "declined"]),
+    participantId: idSchema.optional(),
   })
   .strict();
 export const participantCreateSchema = z
@@ -39,20 +56,35 @@ export const participantCreateSchema = z
   })
   .strict();
 export const participantUpdateSchema = z
-  .object({ displayName: name.optional(), programId: idSchema.optional() })
+  .object({
+    displayName: name.optional(),
+    programId: idSchema.optional(),
+    firebaseUid: idSchema.optional(),
+    version: versionSchema,
+  })
   .strict()
   .refine((v) => Object.keys(v).length > 0);
 export const teamCreateSchema = z
-  .object({ organizationId: idSchema, programId: idSchema, name })
+  .object({
+    organizationId: idSchema,
+    programId: idSchema,
+    name,
+    capacity: z.number().int().positive().max(1000),
+  })
   .strict();
 export const teamUpdateSchema = z
   .object({
     name: name.optional(),
     status: z.enum(["active", "archived"]).optional(),
+    capacity: z.number().int().positive().max(1000).optional(),
+    version: versionSchema,
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0);
 export const teamMemberSchema = z.object({ participantId: idSchema }).strict();
+export const teamMentorSchema = z
+  .object({ userId: idSchema, expiresAt: z.string().datetime().optional() })
+  .strict();
 export const invitationCreateSchema = z
   .object({
     organizationId: idSchema,
@@ -77,5 +109,20 @@ export const roleUpdateSchema = z
   .object({
     role: canonicalRoleSchema,
     status: z.enum(["active", "suspended", "revoked"]),
+    version: versionSchema.optional(),
+    expiresAt: z.string().datetime().nullable().optional(),
   })
   .strict();
+export const relationshipSchema = z
+  .object({
+    organizationId: idSchema,
+    participantId: idSchema.optional(),
+    teamId: idSchema.optional(),
+    userId: idSchema,
+    type: z.enum(["parent", "observer"]),
+    status: z.enum(["pending", "active"]).default("pending"),
+    effectiveAt: z.string().datetime().optional(),
+    expiresAt: z.string().datetime().optional(),
+  })
+  .strict()
+  .refine((v) => Boolean(v.participantId), "participantId is required");

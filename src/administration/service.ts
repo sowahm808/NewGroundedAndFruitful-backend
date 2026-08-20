@@ -12,6 +12,8 @@ import {
 import type { Role } from "../auth/roles.js";
 
 type Data = Record<string, unknown>;
+const textValue = (value: unknown): string =>
+  typeof value === "string" ? value : "";
 export class AdministrationService {
   constructor(
     private db: Firestore,
@@ -24,11 +26,20 @@ export class AdministrationService {
     const actor = this.actor(p);
     if (
       !actor.roles.some((r) => r === "admin" || r === "super_admin") ||
-      (!actor.roles.includes("super_admin") &&
-        !actor.organizationIds.includes(organizationId))
+      !actor.organizationIds.includes(organizationId)
     )
       throw new AuthorizationError();
     return actor;
+  }
+  private async scopedDocument(
+    p: Principal | undefined,
+    collection: string,
+    id: string,
+  ) {
+    const snap = await this.db.doc(`${collection}/${id}`).get();
+    if (!snap.exists) throw new NotFoundError();
+    this.admin(p, String(snap.get("organizationId") ?? id));
+    return { id: snap.id, ...snap.data() };
   }
   private audit(
     tx: Transaction,
@@ -49,19 +60,80 @@ export class AdministrationService {
     const actor = this.actor(p);
     if (!actor.roles.includes("super_admin")) throw new AuthorizationError();
     const ref = this.db.collection("organizations").doc();
-    await this.db.runTransaction((tx) => {
+    await this.db.runTransaction(async (tx) => {
       tx.create(ref, {
         ...input,
         status: "active",
+        version: 1,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
       this.audit(tx, actor.uid, ref.id, "organization.created", {
         organizationId: ref.id,
       });
+      tx.create(this.db.doc(`memberships/${actor.uid}_${ref.id}_super_admin`), {
+        userId: actor.uid,
+        organizationId: ref.id,
+        role: "super_admin",
+        status: "active",
+        version: 1,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
       return Promise.resolve();
     });
     return { id: ref.id };
+  }
+  async organization(p: Principal | undefined, id: string) {
+    return this.scopedDocument(p, "organizations", id);
+  }
+  async organizations(p: Principal | undefined) {
+    const actor = this.actor(p);
+    if (!actor.roles.some((role) => role === "admin" || role === "super_admin"))
+      throw new AuthorizationError();
+    if (actor.organizationIds.length === 0) return [];
+    const snapshots = await Promise.all(
+      actor.organizationIds.map((id) =>
+        this.db.doc(`organizations/${id}`).get(),
+      ),
+    );
+    return snapshots
+      .filter((snap) => snap.exists)
+      .map((snap) => ({ id: snap.id, ...snap.data() }));
+  }
+  async updateOrganization(
+    p: Principal | undefined,
+    id: string,
+    input: Data,
+    status?: "active" | "suspended",
+  ) {
+    const actor = this.admin(p, id),
+      ref = this.db.doc(`organizations/${id}`);
+    await this.db.runTransaction(async (tx) => {
+      const current = await tx.get(ref);
+      if (!current.exists) throw new NotFoundError();
+      const expected = Number(input.version);
+      if (expected !== Number(current.get("version") ?? 1))
+        throw new ConflictError("Organization version is stale.");
+      const changes = { ...input };
+      delete changes.version;
+      tx.update(ref, {
+        ...changes,
+        ...(status ? { status } : {}),
+        version: expected + 1,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      this.audit(
+        tx,
+        actor.uid,
+        id,
+        status
+          ? `organization.${status === "active" ? "reactivated" : "suspended"}`
+          : "organization.updated",
+        { organizationId: id, version: expected + 1 },
+      );
+    });
+    return { id, version: Number(input.version) + 1 };
   }
   async createProgram(p: Principal | undefined, input: Data) {
     const oid = String(input.organizationId);
@@ -71,6 +143,7 @@ export class AdministrationService {
       tx.create(ref, {
         ...input,
         status: "active",
+        version: 1,
         createdAt: FieldValue.serverTimestamp(),
       });
       this.audit(tx, actor.uid, oid, "program.created", { programId: ref.id });
@@ -93,9 +166,47 @@ export class AdministrationService {
       tx.create(ref, {
         ...input,
         userId: actor.uid,
-        status: "active",
-        onboardedAt: FieldValue.serverTimestamp(),
+        status:
+          input.consentStatus === "granted"
+            ? "pending_link"
+            : "pending_consent",
+        createdAt: FieldValue.serverTimestamp(),
       });
+      tx.set(
+        this.db.doc(`memberships/${actor.uid}_${oid}_parent`),
+        {
+          userId: actor.uid,
+          organizationId: oid,
+          role: "parent",
+          status: "active",
+          version: 1,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      if (input.participantId) {
+        const participant = await tx.get(
+          this.db.doc(`participants/${textValue(input.participantId)}`),
+        );
+        if (!participant.exists || participant.get("organizationId") !== oid)
+          throw new AuthorizationError();
+        tx.create(
+          this.db.doc(
+            `parentChildLinks/${actor.uid}_${textValue(input.participantId)}`,
+          ),
+          {
+            parentUid: actor.uid,
+            participantId: input.participantId,
+            organizationId: oid,
+            status: "pending",
+            effectiveAt: FieldValue.serverTimestamp(),
+            expiresAt: null,
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+        );
+      }
       this.audit(tx, actor.uid, oid, "parent.onboarded", { userId: actor.uid });
     });
     return { id: actor.uid };
@@ -108,6 +219,7 @@ export class AdministrationService {
       tx.create(ref, {
         ...input,
         status: "active",
+        version: 1,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -120,7 +232,10 @@ export class AdministrationService {
           participantId: ref.id,
           organizationId: oid,
           status: "active",
+          effectiveAt: FieldValue.serverTimestamp(),
+          expiresAt: null,
           createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         },
       );
       this.audit(tx, actor.uid, oid, "participant.created", {
@@ -145,7 +260,15 @@ export class AdministrationService {
     const actor = this.admin(p, oid);
     await this.db.runTransaction(async (tx) => {
       const ref = this.db.doc(`participants/${id}`);
-      if (!(await tx.get(ref)).exists) throw new NotFoundError();
+      const current = await tx.get(ref);
+      if (!current.exists) throw new NotFoundError();
+      const expected = archive
+        ? Number(current.get("version") ?? 1)
+        : Number(input.version);
+      if (!archive && expected !== Number(current.get("version") ?? 1))
+        throw new ConflictError("Participant version is stale.");
+      const changes = { ...input };
+      delete changes.version;
       tx.update(
         ref,
         archive
@@ -153,8 +276,13 @@ export class AdministrationService {
               status: "archived",
               archivedAt: FieldValue.serverTimestamp(),
               updatedAt: FieldValue.serverTimestamp(),
+              version: expected + 1,
             }
-          : { ...input, updatedAt: FieldValue.serverTimestamp() },
+          : {
+              ...changes,
+              version: expected + 1,
+              updatedAt: FieldValue.serverTimestamp(),
+            },
       );
       this.audit(
         tx,
@@ -183,6 +311,8 @@ export class AdministrationService {
       tx.create(ref, {
         ...input,
         status: "active",
+        version: 1,
+        memberCount: 0,
         createdAt: FieldValue.serverTimestamp(),
       });
       this.audit(tx, actor.uid, oid, "team.created", { teamId: ref.id });
@@ -198,15 +328,43 @@ export class AdministrationService {
   async updateTeam(p: Principal | undefined, id: string, input: Data) {
     const oid = await this.teamOrganization(id);
     const actor = this.admin(p, oid);
-    await this.db.runTransaction((tx) => {
-      tx.update(this.db.doc(`teams/${id}`), {
-        ...input,
+    await this.db.runTransaction(async (tx) => {
+      const ref = this.db.doc(`teams/${id}`),
+        current = await tx.get(ref);
+      if (!current.exists) throw new NotFoundError();
+      const expected = Number(input.version);
+      if (expected !== Number(current.get("version") ?? 1))
+        throw new ConflictError("Team version is stale.");
+      if (
+        input.capacity !== undefined &&
+        Number(input.capacity) < Number(current.get("memberCount") ?? 0)
+      )
+        throw new BusinessRuleError(
+          "TEAM_CAPACITY",
+          "Capacity cannot be below the active roster size.",
+        );
+      const changes = { ...input };
+      delete changes.version;
+      tx.update(ref, {
+        ...changes,
+        version: expected + 1,
         updatedAt: FieldValue.serverTimestamp(),
       });
       this.audit(tx, actor.uid, oid, "team.updated", { teamId: id });
       return Promise.resolve();
     });
     return { id };
+  }
+  async team(p: Principal | undefined, id: string) {
+    return this.scopedDocument(p, "teams", id);
+  }
+  async teams(p: Principal | undefined, oid: string) {
+    this.admin(p, oid);
+    const snap = await this.db
+      .collection("teams")
+      .where("organizationId", "==", oid)
+      .get();
+    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   }
   async assignTeamMember(
     p: Principal | undefined,
@@ -221,7 +379,19 @@ export class AdministrationService {
     const ref = this.db.doc(
       `teamMembers/${teamId}_participant_${participantId}`,
     );
-    await this.db.runTransaction((tx) => {
+    await this.db.runTransaction(async (tx) => {
+      const teamRef = this.db.doc(`teams/${teamId}`),
+        team = await tx.get(teamRef),
+        existing = await tx.get(ref);
+      if (!team.exists || team.get("status") !== "active")
+        throw new ConflictError("Team is not active.");
+      const wasActive = existing.exists && existing.get("status") === "active";
+      const count = Number(team.get("memberCount") ?? 0);
+      if (!remove && !wasActive && count >= Number(team.get("capacity")))
+        throw new BusinessRuleError(
+          "TEAM_CAPACITY",
+          "Team capacity has been reached.",
+        );
       tx.set(
         ref,
         {
@@ -230,10 +400,20 @@ export class AdministrationService {
           organizationId: oid,
           role: "participant",
           status: remove ? "revoked" : "active",
+          effectiveAt: FieldValue.serverTimestamp(),
+          expiresAt: null,
+          createdAt: existing.exists
+            ? existing.get("createdAt")
+            : FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
+      if (wasActive !== !remove)
+        tx.update(teamRef, {
+          memberCount: FieldValue.increment(remove ? -1 : 1),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
       tx.update(this.db.doc(`participants/${participantId}`), {
         activeTeamId: remove ? FieldValue.delete() : teamId,
         updatedAt: FieldValue.serverTimestamp(),
@@ -428,8 +608,8 @@ export class AdministrationService {
     const actor = this.actor(p),
       oid = await this.participantOrganization(participantId);
     const isAdmin =
-      actor.roles.includes("super_admin") ||
-      (actor.roles.includes("admin") && actor.organizationIds.includes(oid));
+      actor.roles.some((role) => role === "admin" || role === "super_admin") &&
+      actor.organizationIds.includes(oid);
     const link = await this.db
       .doc(`parentChildLinks/${actor.uid}_${participantId}`)
       .get();
@@ -441,18 +621,168 @@ export class AdministrationService {
       .get();
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }
+  async assignTeamMentor(
+    p: Principal | undefined,
+    teamId: string,
+    userId: string,
+    expiresAt?: string,
+    remove = false,
+  ) {
+    const oid = await this.teamOrganization(teamId),
+      actor = this.admin(p, oid);
+    const membership = await this.db
+      .collection("memberships")
+      .where("userId", "==", userId)
+      .where("organizationId", "==", oid)
+      .where("status", "==", "active")
+      .get();
+    if (
+      !remove &&
+      !membership.docs.some(
+        (doc) =>
+          doc.get("role") === "mentor" ||
+          (doc.get("roles") as unknown[] | undefined)?.includes("mentor"),
+      )
+    )
+      throw new AuthorizationError();
+    const ref = this.db.doc(`teamMembers/${teamId}_mentor_${userId}`);
+    await this.db.runTransaction((tx) => {
+      tx.set(
+        ref,
+        {
+          teamId,
+          userId,
+          organizationId: oid,
+          role: "mentor",
+          status: remove ? "revoked" : "active",
+          effectiveAt: FieldValue.serverTimestamp(),
+          expiresAt: expiresAt ? Timestamp.fromDate(new Date(expiresAt)) : null,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      this.audit(
+        tx,
+        actor.uid,
+        oid,
+        remove ? "team.mentor_removed" : "team.mentor_assigned",
+        { teamId, userId },
+      );
+      return Promise.resolve();
+    });
+    return { id: ref.id };
+  }
+  async createRelationship(p: Principal | undefined, input: Data) {
+    const oid = String(input.organizationId),
+      actor = this.admin(p, oid),
+      participantId = String(input.participantId);
+    if ((await this.participantOrganization(participantId)) !== oid)
+      throw new AuthorizationError();
+    const collection =
+      input.type === "parent" ? "parentChildLinks" : "observerGrants";
+    const ref = this.db.doc(
+      `${collection}/${String(input.userId)}_${participantId}`,
+    );
+    await this.db.runTransaction(async (tx) => {
+      if ((await tx.get(ref)).exists)
+        throw new ConflictError("Relationship already exists.");
+      tx.create(ref, {
+        organizationId: oid,
+        participantId,
+        ...(input.type === "parent"
+          ? { parentUid: input.userId }
+          : { userId: input.userId }),
+        status: input.status,
+        effectiveAt: input.effectiveAt
+          ? Timestamp.fromDate(new Date(textValue(input.effectiveAt)))
+          : FieldValue.serverTimestamp(),
+        expiresAt: input.expiresAt
+          ? Timestamp.fromDate(new Date(textValue(input.expiresAt)))
+          : null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      this.audit(tx, actor.uid, oid, "relationship.created", {
+        relationshipId: ref.id,
+        type: input.type,
+        participantId,
+      });
+    });
+    return { id: ref.id, status: input.status };
+  }
+  async activateRelationship(p: Principal | undefined, id: string) {
+    const candidates = [
+      this.db.doc(`parentChildLinks/${id}`),
+      this.db.doc(`observerGrants/${id}`),
+    ];
+    const snapshots = await Promise.all(candidates.map((ref) => ref.get()));
+    const index = snapshots.findIndex((snap) => snap.exists);
+    if (index < 0) throw new NotFoundError();
+    const ref = candidates[index]!,
+      oid = String(snapshots[index]!.get("organizationId")),
+      actor = this.admin(p, oid);
+    await this.db.runTransaction(async (tx) => {
+      const current = await tx.get(ref);
+      if (current.get("status") !== "pending") throw new ConflictError();
+      tx.update(ref, {
+        status: "active",
+        activatedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      this.audit(tx, actor.uid, oid, "relationship.activated", {
+        relationshipId: id,
+      });
+    });
+    return { id, status: "active" };
+  }
+  async memberships(p: Principal | undefined, oid: string) {
+    this.admin(p, oid);
+    const snap = await this.db
+      .collection("memberships")
+      .where("organizationId", "==", oid)
+      .get();
+    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  }
   async setMembership(
     p: Principal | undefined,
     oid: string,
     userId: string,
     role: Role,
     status: string,
+    version?: number,
+    expiresAt?: string | null,
   ) {
     const actor = this.admin(p, oid);
     if (role === "super_admin" && !actor.roles.includes("super_admin"))
       throw new AuthorizationError();
     const ref = this.db.doc(`memberships/${userId}_${oid}_${role}`);
-    await this.db.runTransaction((tx) => {
+    await this.db.runTransaction(async (tx) => {
+      const current = await tx.get(ref);
+      const currentVersion = Number(current.get("version") ?? 0);
+      if (current.exists && version !== undefined && version !== currentVersion)
+        throw new ConflictError("Membership version is stale.");
+      if (
+        current.exists &&
+        status !== "active" &&
+        (role === "admin" || role === "super_admin")
+      ) {
+        const privileged = await tx.get(
+          this.db
+            .collection("memberships")
+            .where("organizationId", "==", oid)
+            .where("status", "==", "active"),
+        );
+        const remaining = privileged.docs.filter(
+          (doc) =>
+            doc.id !== ref.id &&
+            ["admin", "super_admin"].includes(String(doc.get("role"))),
+        );
+        if (remaining.length === 0)
+          throw new BusinessRuleError(
+            "LAST_TENANT_ADMIN",
+            "The last active tenant administrator cannot be removed.",
+          );
+      }
       tx.set(
         ref,
         {
@@ -460,6 +790,11 @@ export class AdministrationService {
           organizationId: oid,
           role,
           status,
+          version: currentVersion + 1,
+          expiresAt: expiresAt ? Timestamp.fromDate(new Date(expiresAt)) : null,
+          createdAt: current.exists
+            ? current.get("createdAt")
+            : FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },

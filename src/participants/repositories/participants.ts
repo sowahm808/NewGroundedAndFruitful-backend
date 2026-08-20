@@ -10,6 +10,10 @@ export class ParticipantRepository {
       id: snap.id,
       displayName: data.displayName,
       activeTeamId: data.activeTeamId,
+      status: data.status,
+      organizationId: data.organizationId,
+      programId: data.programId,
+      version: data.version,
     };
   }
 }
