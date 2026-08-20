@@ -224,11 +224,41 @@ export const quarterCreateSchema = z
   .object({
     name: quarterName,
     description: z.string().trim().max(2000).nullable().optional(),
-    startDate: quarterDate,
-    endDate: quarterDate,
+    startDate: quarterDate.optional(),
+    endDate: quarterDate.optional(),
+    startsOn: quarterDate.optional(),
+    endsOn: quarterDate.optional(),
     organizationId: idSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const canonicalDates =
+      value.startDate !== undefined || value.endDate !== undefined;
+    const dateAliases =
+      value.startsOn !== undefined || value.endsOn !== undefined;
+    if (canonicalDates && dateAliases) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Use either startDate/endDate or startsOn/endsOn, not both.",
+      });
+      return;
+    }
+    for (const field of canonicalDates
+      ? (["startDate", "endDate"] as const)
+      : (["startsOn", "endsOn"] as const)) {
+      if (value[field] === undefined)
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: "Required",
+        });
+    }
+  })
+  .transform(({ startsOn, endsOn, ...value }) => ({
+    ...value,
+    startDate: value.startDate ?? (startsOn as string),
+    endDate: value.endDate ?? (endsOn as string),
+  }));
 export const quarterUpdateSchema = z
   .object({
     name: quarterName.optional(),
