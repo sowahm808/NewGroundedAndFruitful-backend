@@ -33,6 +33,7 @@ describe("administration request contracts", () => {
       participantId: "child-1",
       policyKey: "participation",
       policyVersion: "2026-08",
+      legalTextReference: "https://legal.example/participation/2026-08",
     };
     expect(
       consentCaptureSchema.safeParse({ ...base, granted: false }).success,
