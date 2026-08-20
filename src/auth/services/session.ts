@@ -1,8 +1,5 @@
 import type { Auth, DecodedIdToken, UserRecord } from "firebase-admin/auth";
-import {
-  AuthenticationError,
-  InternalError,
-} from "../../shared/errors.js";
+import { AuthenticationError, InternalError } from "../../shared/errors.js";
 import { logger } from "../../shared/logger.js";
 import type { SessionUser } from "../models/user.js";
 import type { MembershipRepository } from "../repositories/memberships.js";
@@ -21,7 +18,9 @@ export class AuthSessionService {
     private readonly firebaseAuth: Auth,
     private readonly users: UserRepository,
     private readonly memberships: MembershipRepository,
-    private readonly enforcementMode: "compatibility" | "strict" = env.MEMBERSHIP_ENFORCEMENT_MODE,
+    private readonly enforcementMode:
+      | "compatibility"
+      | "strict" = env.MEMBERSHIP_ENFORCEMENT_MODE,
   ) {}
 
   async createSession(
@@ -62,30 +61,46 @@ export class AuthSessionService {
     const activeMemberships = memberships.filter(
       (item) => item.status === "active",
     );
-    const storedProfile = profile as unknown as { roles?: unknown; role?: unknown };
+    const storedProfile = profile as unknown as {
+      roles?: unknown;
+      role?: unknown;
+    };
     const resolution = resolveRoles(
       memberships,
       storedProfile.roles ?? storedProfile.role,
       this.enforcementMode,
     );
-    this.logInvalidRoles([...resolution.invalidLegacyRoles], decodedToken.uid, context);
+    this.logInvalidRoles(
+      [...resolution.invalidLegacyRoles],
+      decodedToken.uid,
+      context,
+    );
     const roles = [...resolution.roles];
     const disabled = authUser.disabled || profile.status === "disabled";
     const pending = memberships.some((item) => item.status === "pending");
     const childOrganizations = activeMemberships
       .filter((item) => item.roles.includes("child"))
       .map((item) => item.organizationId);
-    const hasChildContext = childOrganizations.length === 0
-      ? true
-      : await this.memberships.hasActiveChildContext(decodedToken.uid, childOrganizations);
+    const hasChildContext =
+      childOrganizations.length === 0
+        ? true
+        : await this.memberships.hasActiveChildContext(
+            decodedToken.uid,
+            childOrganizations,
+          );
 
-    const restricted = disabled || memberships.some((item) => item.status === "suspended");
+    // A suspended membership is inactive, not a global account suspension. It
+    // disables onboarding only when there is no separate active membership.
+    const suspendedOnly =
+      activeMemberships.length === 0 &&
+      memberships.some((item) => item.status === "suspended");
+    const restricted = disabled || suspendedOnly;
     if (restricted) {
       logger.warn("session_account_restricted", {
         requestId: context.requestId,
         uid: decodedToken.uid,
         disabled,
-        suspended: memberships.some((item) => item.status === "suspended"),
+        suspended: suspendedOnly,
       });
     }
     if (activeMemberships.length === 0)
@@ -117,10 +132,10 @@ export class AuthSessionService {
         : roles.includes("child") && !hasChildContext
           ? "pending"
           : roles.length > 0
-          ? "complete"
-          : pending
-            ? "pending"
-            : "role_required",
+            ? "complete"
+            : pending
+              ? "pending"
+              : "role_required",
       claimSynchronization,
       memberships,
       authorization: {
@@ -227,7 +242,11 @@ export class AuthSessionService {
 function isExpired(value: unknown): boolean {
   if (value == null) return false;
   if (value instanceof Date) return value.getTime() <= Date.now();
-  if (typeof value === "object" && "toMillis" in value && typeof value.toMillis === "function") {
+  if (
+    typeof value === "object" &&
+    "toMillis" in value &&
+    typeof value.toMillis === "function"
+  ) {
     const timestamp = value as { toMillis(): number };
     return timestamp.toMillis() <= Date.now();
   }
@@ -239,7 +258,8 @@ function membershipStatus(
   status: string,
   expiresAt: unknown,
 ): "active" | "pending" | "suspended" | "revoked" | "expired" | "invalid" {
-  if (!["active", "pending", "suspended", "revoked"].includes(status)) return "invalid";
+  if (!["active", "pending", "suspended", "revoked"].includes(status))
+    return "invalid";
   if (status === "active" && isExpired(expiresAt)) return "expired";
   return status as "active" | "pending" | "suspended" | "revoked";
 }
