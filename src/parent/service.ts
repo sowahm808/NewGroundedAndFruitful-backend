@@ -4,10 +4,12 @@ import type {
   QueryDocumentSnapshot,
 } from "firebase-admin/firestore";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { createHash } from "node:crypto";
 import { env } from "../config/env.js";
 import {
   AuthorizationError,
   BusinessRuleError,
+  ConflictError,
   NotFoundError,
 } from "../shared/errors.js";
 
@@ -22,6 +24,8 @@ type ListInput = {
     | "in_progress"
     | "resolved"
     | "closed"
+    | "approved"
+    | "rejected"
     | undefined;
   search?: string | undefined;
   childId?: string | undefined;
@@ -37,6 +41,10 @@ const iso = (value: unknown): string | null =>
         : null;
 const number = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
+const commandId = (actor: string, key: string) =>
+  createHash("sha256").update(`${actor}:${key}`).digest("hex");
+const fingerprint = (value: unknown) =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 export class ParentService {
   constructor(private readonly db: Firestore) {}
@@ -110,9 +118,11 @@ export class ParentService {
             String(b.approvedDisplayName),
           ) || a.id.localeCompare(b.id),
       );
-    const start = input.cursor
-      ? Math.max(0, sorted.findIndex((item) => item.id === input.cursor) + 1)
-      : 0;
+    const cursorIndex = input.cursor
+      ? sorted.findIndex((item) => item.id === input.cursor)
+      : -1;
+    if (input.cursor && cursorIndex < 0) throw new NotFoundError();
+    const start = cursorIndex + 1;
     const data = sorted.slice(start, start + input.limit);
     return {
       data,
@@ -390,7 +400,12 @@ export class ParentService {
           activeLinks.has(
             `${String(doc.get("organizationId"))}:${String(doc.get("participantId"))}`,
           ) &&
-          (!input.childId || doc.get("participantId") === input.childId),
+          (!input.childId || doc.get("participantId") === input.childId) &&
+          (!input.status || doc.get("moderationStatus") === input.status) &&
+          (!input.search ||
+            String(doc.get("description"))
+              .toLocaleLowerCase()
+              .includes(input.search.toLocaleLowerCase())),
       )
       .sort((a, b) => {
         const createdAtDifference = (
@@ -444,10 +459,27 @@ export class ParentService {
       description: string;
       observedAt: string;
     },
+    idempotencyKey?: string,
   ) {
     const linked = await this.link(principal, input.childId);
-    const ref = this.db.collection("characterObservations").doc();
-    await this.db.runTransaction((tx) => {
+    const ref = idempotencyKey
+      ? this.db.doc(
+          `characterObservations/${commandId(principal.uid, idempotencyKey)}`,
+        )
+      : this.db.collection("characterObservations").doc();
+    const operationFingerprint = fingerprint(input);
+    const created = await this.db.runTransaction(async (tx) => {
+      const old = await tx.get(ref);
+      if (old.exists) {
+        if (
+          old.get("parentUid") !== principal.uid ||
+          old.get("operationFingerprint") !== operationFingerprint
+        )
+          throw new ConflictError(
+            "Idempotency key was already used for another observation.",
+          );
+        return false;
+      }
       tx.create(ref, {
         parentUid: principal.uid,
         participantId: input.childId,
@@ -456,6 +488,7 @@ export class ParentService {
         description: input.description,
         observedAt: Timestamp.fromDate(new Date(input.observedAt)),
         moderationStatus: "pending",
+        operationFingerprint,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -466,9 +499,9 @@ export class ParentService {
         organizationId: linked.organizationId,
         createdAt: FieldValue.serverTimestamp(),
       });
-      return Promise.resolve();
+      return true;
     });
-    return { id: ref.id, moderationStatus: "pending" };
+    return { id: ref.id, moderationStatus: "pending", created };
   }
 
   async qualities(principal: Principal) {
@@ -487,7 +520,12 @@ export class ParentService {
           id: x.id,
           name: x.get("name"),
           description: x.get("description") ?? null,
-        })),
+        }))
+        .sort(
+          (a, b) =>
+            String(a.name).localeCompare(String(b.name)) ||
+            a.id.localeCompare(b.id),
+        ),
       meta: { nextCursor: null },
     };
   }
@@ -501,13 +539,19 @@ export class ParentService {
           childId,
           quarterId,
           qualityIds: doc.get("qualityIds") ?? [],
+          version: number(doc.get("version")),
           updatedAt: iso(doc.get("updatedAt")),
         }
-      : { childId, quarterId, qualityIds: [], updatedAt: null };
+      : { childId, quarterId, qualityIds: [], version: 0, updatedAt: null };
   }
   async setSelection(
     principal: Principal,
-    input: { childId: string; quarterId: string; qualityIds: string[] },
+    input: {
+      childId: string;
+      quarterId: string;
+      qualityIds: string[];
+      expectedVersion?: number;
+    },
   ) {
     const linked = await this.link(principal, input.childId);
     const quarter = await this.db.doc(`quarters/${input.quarterId}`).get();
@@ -538,25 +582,43 @@ export class ParentService {
         "INVALID_CHARACTER_QUALITY",
         "A selected quality is unavailable.",
       );
-    await this.db.runTransaction((tx) => {
+    await this.db.runTransaction(async (tx) => {
+      const ref = this.db.doc(
+        `characterSelections/${input.quarterId}_${input.childId}`,
+      );
+      const old = await tx.get(ref);
+      const currentVersion = old.exists ? number(old.get("version")) : 0;
+      if (
+        input.expectedVersion !== undefined &&
+        input.expectedVersion !== currentVersion
+      )
+        throw new ConflictError("Character selection version is stale.");
       tx.set(
-        this.db.doc(`characterSelections/${input.quarterId}_${input.childId}`),
+        ref,
         {
           participantId: input.childId,
           quarterId: input.quarterId,
           organizationId: linked.organizationId,
           qualityIds: input.qualityIds,
           selectedBy: principal.uid,
+          version: currentVersion + 1,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
-      return Promise.resolve();
     });
     return this.selection(principal, input.childId, input.quarterId);
   }
 
-  async familyActivities(principal: Principal, childId: string) {
+  async familyActivities(
+    principal: Principal,
+    childId: string,
+    input: {
+      limit?: number | undefined;
+      cursor?: string | undefined;
+      search?: string | undefined;
+    } = {},
+  ) {
     const linked = await this.link(principal, childId);
     const quarter = await this.currentQuarter(linked.organizationId);
     if (!quarter) return { data: [], meta: { nextCursor: null } };
@@ -574,15 +636,38 @@ export class ParentService {
         .get(),
     ]);
     const ids = new Set(completed.docs.map((x) => String(x.get("activityId"))));
+    const search = input.search?.toLocaleLowerCase();
+    const sorted = available.docs
+      .filter(
+        (x) =>
+          !search ||
+          String(x.get("title")).toLocaleLowerCase().includes(search),
+      )
+      .sort(
+        (a, b) =>
+          number(a.get("week")) - number(b.get("week")) ||
+          a.id.localeCompare(b.id),
+      );
+    const cursorIndex = input.cursor
+      ? sorted.findIndex((x) => x.id === input.cursor)
+      : -1;
+    if (input.cursor && cursorIndex < 0) throw new NotFoundError();
+    const start = cursorIndex + 1,
+      limit = input.limit ?? 20,
+      page = sorted.slice(start, start + limit);
     return {
-      data: available.docs.map((x) => ({
+      data: page.map((x) => ({
         id: x.id,
         title: x.get("title"),
         description: x.get("description") ?? null,
         week: x.get("week"),
         completed: ids.has(x.id),
       })),
-      meta: { nextCursor: null },
+      meta: {
+        nextCursor:
+          start + limit < sorted.length ? (page.at(-1)?.id ?? null) : null,
+      },
+      calculatedAt: new Date().toISOString(),
     };
   }
   async completeFamilyActivity(
@@ -630,7 +715,12 @@ export class ParentService {
           id: x.id,
           name: x.get("name"),
           description: x.get("description") ?? null,
-        })),
+        }))
+        .sort(
+          (a, b) =>
+            String(a.name).localeCompare(String(b.name)) ||
+            a.id.localeCompare(b.id),
+        ),
       meta: { nextCursor: null },
     };
   }
@@ -642,6 +732,7 @@ export class ParentService {
       subject: string;
       description: string;
     },
+    idempotencyKey?: string,
   ) {
     const linked = await this.link(principal, input.childId);
     const category = await this.db
@@ -653,8 +744,24 @@ export class ParentService {
       category.get("status") !== "active"
     )
       throw new NotFoundError();
-    const ref = this.db.collection("supportRequests").doc();
-    await this.db.runTransaction((tx) => {
+    const ref = idempotencyKey
+      ? this.db.doc(
+          `supportRequests/${commandId(principal.uid, idempotencyKey)}`,
+        )
+      : this.db.collection("supportRequests").doc();
+    const operationFingerprint = fingerprint(input);
+    const created = await this.db.runTransaction(async (tx) => {
+      const old = await tx.get(ref);
+      if (old.exists) {
+        if (
+          old.get("requesterUid") !== principal.uid ||
+          old.get("operationFingerprint") !== operationFingerprint
+        )
+          throw new ConflictError(
+            "Idempotency key was already used for another support request.",
+          );
+        return false;
+      }
       tx.create(ref, {
         participantId: input.childId,
         requesterUid: principal.uid,
@@ -666,10 +773,11 @@ export class ParentService {
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         version: 1,
+        operationFingerprint,
       });
-      return Promise.resolve();
+      return true;
     });
-    return { id: ref.id, status: "open" };
+    return { id: ref.id, status: "open", created };
   }
   async supportList(principal: Principal, input: ListInput) {
     // Keep this query index-independent, then enforce relationship, tenant and
@@ -782,6 +890,7 @@ export class ParentService {
         ? { ...child.teamProgress, notAvailable: false }
         : { notAvailable: true },
       quarterComparison: { notAvailable: true },
+      calculatedAt: new Date().toISOString(),
     };
   }
   async teamProgress(principal: Principal, teamId: string, quarterId: string) {
