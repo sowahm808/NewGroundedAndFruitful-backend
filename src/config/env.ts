@@ -38,6 +38,9 @@ const schema = z
     MEMBERSHIP_ENFORCEMENT_MODE: optionalWithDefault(
       z.enum(["compatibility", "strict"]).default("compatibility"),
     ),
+    CHILD_CREDENTIAL_MIGRATION_MODE: optionalWithDefault(
+      z.enum(["compatibility", "strict"]).default("compatibility"),
+    ),
   })
   .superRefine((value, context) => {
     const explicitCredentials = [

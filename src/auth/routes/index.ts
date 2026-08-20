@@ -39,8 +39,8 @@ router.get(
 
 router.post(
   "/child-token",
-  childCredentialRateLimit(15 * 60_000, 10),
   validateBody(childLoginSchema),
+  childCredentialRateLimit(db, 15 * 60_000, 10),
   (req, res, next) => void controller.login(req, res).catch(next),
 );
 
