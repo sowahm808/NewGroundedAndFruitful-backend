@@ -14,7 +14,7 @@ export class PointRepository {
       const old = await tx.get(ref);
       if (old.exists) {
         const entry = old.data() as PointLedgerEntry;
-        if (!sameAward(entry, input))
+        if (!sameAward(entry, input) || entry.points !== points)
           throw new ConflictError(
             "Idempotency key was already used for another completion.",
           );
@@ -81,6 +81,8 @@ function sameAward(entry: PointLedgerEntry, input: AwardRequest): boolean {
     entry.quarterId === input.quarterId &&
     entry.sourceType === input.sourceType &&
     entry.sourceId === input.sourceId &&
-    entry.awardedBy === input.awardedBy
+    entry.awardedBy === input.awardedBy &&
+    entry.reason === input.reason &&
+    new Date(entry.occurredAt).getTime() === input.occurredAt.getTime()
   );
 }

@@ -300,36 +300,17 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-  /points/completions:
+  /points/sources/{source}/completions:
     post:
       tags: [Points]
-      operationId: recordCompletion
+      operationId: recordVerifiedSourceCompletion
+      description: The implementation exposes only static, source-specific paths; arbitrary source values are not routed.
       security: [{ firebaseBearer: [] }]
-      parameters:
-        [
-          {
-            name: Idempotency-Key,
-            in: header,
-            required: true,
-            schema:
-              { type: string, maxLength: 200, pattern: "^[A-Za-z0-9:_-]+$" },
-          },
-        ]
-      requestBody:
-        {
-          required: true,
-          content:
-            {
-              application/json:
-                { schema: { $ref: "#/components/schemas/Completion" } },
-            },
-        }
       responses:
-        "201": { description: Immutable ledger entry created }
-        "200": { description: Existing entry returned for duplicate key }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "422": { $ref: "#/components/responses/Validation" }
+        "201": { description: Source completion and immutable ledger entry created atomically }
+        "200": { description: Exact idempotent retry }
+        "409": { description: Conflicting idempotency-key reuse }
+
   /points/adjustments:
     post:
       tags: [Points]
