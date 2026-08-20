@@ -141,3 +141,21 @@ export const relationshipSchema = z
   })
   .strict()
   .refine((v) => Boolean(v.participantId), "participantId is required");
+export const resourceCreateSchema = z
+  .object({
+    organizationId: idSchema,
+    name: name.optional(),
+    data: z.record(z.unknown()).default({}),
+  })
+  .strict();
+export const resourceLifecycleSchema = z
+  .object({ version: versionSchema })
+  .strict();
+export const awardIssueSchema = z
+  .object({
+    organizationId: idSchema,
+    participantId: idSchema,
+    awardDefinitionId: idSchema,
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
