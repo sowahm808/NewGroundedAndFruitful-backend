@@ -35,6 +35,20 @@ export class CompletionService {
       .doc(`participants/${input.participantId}`)
       .get();
     if (!participant.exists) throw new NotFoundError();
+    const organizationId = String(participant.get("organizationId") ?? "");
+    const organization = await this.db
+      .doc(`organizations/${organizationId}`)
+      .get();
+    if (!organization.exists) throw new NotFoundError();
+    const timezone = String(organization.get("timezone") ?? "");
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+    } catch {
+      throw new BusinessRuleError(
+        "INVALID_ORGANIZATION_TIMEZONE",
+        "The organization timezone is invalid.",
+      );
+    }
     if (participant.get("activeTeamId") !== input.teamId)
       throw new AuthorizationError();
     if (p.role === "child")
@@ -78,7 +92,7 @@ export class CompletionService {
         "This completion is not eligible for points.",
       );
     return this.points.award(
-      { ...input, awardedBy: p.uid, idempotencyKey: key },
+      { ...input, timezone, awardedBy: p.uid, idempotencyKey: key },
       points,
     );
   }

@@ -11,6 +11,7 @@ import pointRoutes from "./points/routes/index.js";
 import parentRoutes from "./parent/routes/index.js";
 import childRoutes from "./child/routes/index.js";
 import administrationRoutes from "./administration/routes.js";
+import configurationRoutes from "./configuration/routes.js";
 import { env } from "./config/env.js";
 import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
@@ -135,6 +136,12 @@ app.use(
   privateResponse,
   authenticate,
   administrationRoutes,
+);
+app.use(
+  "/api/v1/configuration",
+  privateResponse,
+  authenticate,
+  configurationRoutes,
 );
 
 app.use((_req, _res, next) => {

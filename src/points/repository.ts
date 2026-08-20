@@ -2,6 +2,7 @@ import type { Firestore, Transaction } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { ConflictError } from "../shared/errors.js";
 import type { AwardRequest, PointLedgerEntry } from "./domain.js";
+import { localWeekStart } from "../configuration/domain.js";
 export class PointRepository {
   constructor(private readonly db: Firestore) {}
   async award(
@@ -58,11 +59,7 @@ export class PointRepository {
       },
       { merge: true },
     );
-    const weekDate = new Date(input.occurredAt);
-    weekDate.setUTCHours(0, 0, 0, 0);
-    const day = weekDate.getUTCDay() || 7;
-    weekDate.setUTCDate(weekDate.getUTCDate() - day + 1);
-    const week = weekDate.toISOString().slice(0, 10);
+    const week = localWeekStart(input.occurredAt, input.timezone ?? "UTC");
     tx.set(
       this.db.doc(`teamWeeklyStats/${input.quarterId}_${input.teamId}_${week}`),
       {
