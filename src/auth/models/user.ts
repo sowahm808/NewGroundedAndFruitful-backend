@@ -5,6 +5,7 @@ export type UserStatus = "active" | "disabled";
 export type MembershipStatus = "active" | "pending" | "suspended" | "revoked";
 export type OnboardingStatus =
   | "complete"
+  | "organization_required"
   | "role_required"
   | "pending"
   | "disabled"
@@ -36,6 +37,8 @@ export interface SessionUser {
     roles: readonly Role[];
     status: MembershipStatus | "expired" | "invalid";
   }>;
+  /** Resolved only when exactly one active organization is available. */
+  activeOrganizationId?: string;
   authorization: {
     source: "membership" | "legacy_user_profile" | "none";
     migrationRequired: boolean;

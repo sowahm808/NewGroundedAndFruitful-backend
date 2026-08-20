@@ -131,17 +131,24 @@ export class AuthSessionService {
         ? "disabled"
         : roles.includes("child") && !hasChildContext
           ? "pending"
-          : roles.length > 0
+          : roles.length > 0 && activeMemberships.length > 0
             ? "complete"
-            : pending
-              ? "pending"
-              : "role_required",
+            : resolution.source === "legacy_user_profile" &&
+                resolution.migrationRequired
+              ? "organization_required"
+              : pending
+                ? "pending"
+                : "role_required",
       claimSynchronization,
       memberships,
       authorization: {
         source: resolution.source,
         migrationRequired: resolution.migrationRequired,
       },
+      ...(new Set(activeMemberships.map((item) => item.organizationId)).size ===
+      1
+        ? { activeOrganizationId: activeMemberships[0]!.organizationId }
+        : {}),
     };
     logger.info("session_resolved", {
       requestId: context.requestId,
