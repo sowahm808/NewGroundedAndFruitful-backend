@@ -46,3 +46,7 @@ export const pointAdjustmentSchema = z.discriminatedUnion("type", [
 ]);
 
 export type PointAdjustmentInput = z.infer<typeof pointAdjustmentSchema>;
+
+export const sourceAwardSchema = z.object({ participantId: z.string().min(1).max(128), sourceId: z.string().min(1).max(128) }).strict();
+export const reconciliationSchema = z.object({ organizationId: z.string().min(1).max(128), generationId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/), dryRun: z.boolean(), limit: z.number().int().min(1).max(500).default(200), checkpoint: z.string().max(200).optional() }).strict();
+export const reconciliationRollbackSchema = z.object({ organizationId: z.string().min(1).max(128), generationId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/), reason: z.string().trim().min(3).max(500) }).strict();
