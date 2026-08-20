@@ -491,6 +491,64 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "bibleActivities",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "quarterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "localDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bibleActivities",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "contentSetId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "localDate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bibleResponses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "participantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "completedAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -547,6 +605,21 @@
     {
       "collectionGroup": "projectUpdates",
       "fieldPath": "text",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "bibleResponses",
+      "fieldPath": "answers",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "bibleActivities",
+      "fieldPath": "questions",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "bibleImports",
+      "fieldPath": "items",
       "indexes": []
     }
   ]

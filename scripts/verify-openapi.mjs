@@ -12,6 +12,19 @@ const required = {
   "/admin/quarters/{quarterId}/activate": ["post"],
   "/admin/quarters/{quarterId}/close": ["post"],
   "/admin/quarters/{quarterId}/archive": ["post"],
+  "/admin/bible-imports": ["post"],
+  "/admin/bible-imports/{importId}": ["get"],
+  "/admin/bible-imports/{importId}/items/{itemId}": ["patch"],
+  "/admin/bible-imports/{importId}/validate": ["post"],
+  "/admin/bible-imports/{importId}/commit": ["post"],
+  "/admin/bible-content": ["get"],
+  "/admin/bible-content/{contentSetId}": ["get", "patch"],
+  "/admin/bible-content/{contentSetId}/publish": ["post"],
+  "/admin/bible-content/{contentSetId}/archive": ["post"],
+  "/child/bible": ["get"],
+  "/child/bible/history": ["get"],
+  "/child/bible/{activityId}/draft": ["put"],
+  "/child/bible/{activityId}/complete": ["post"],
 };
 for (const [path, methods] of Object.entries(required)) {
   for (const method of methods) {
@@ -30,4 +43,14 @@ for (const schema of [
   if (!document.components?.schemas?.[schema])
     throw new Error(`OpenAPI is missing the ${schema} schema`);
 }
+const childSchema = JSON.stringify(
+  document.components.schemas.ChildBibleResponse,
+);
+if (
+  childSchema.includes("correctChoiceId") ||
+  childSchema.includes("correctCount")
+)
+  throw new Error(
+    "Child Bible OpenAPI schema exposes protected correctness data",
+  );
 console.log("Verified the published quarter OpenAPI contract.");

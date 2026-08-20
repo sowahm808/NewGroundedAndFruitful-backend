@@ -6,10 +6,12 @@ import { ValidationError } from "../shared/errors.js";
 import { AdministrationService } from "./service.js";
 import * as schemas from "./schemas.js";
 import { QuarterAdministrationService } from "./quarters.js";
+import bibleAdminRoutes from "../bible/admin-routes.js";
 
 const router = Router(),
   service = new AdministrationService(db, auth),
   quarters = new QuarterAdministrationService(db);
+router.use(bibleAdminRoutes);
 const run =
   (
     handler: (req: Parameters<RequestHandler>[0]) => Promise<unknown>,
@@ -31,7 +33,6 @@ const configuredResources = [
   ["assignments", "assignments"],
   ["character-qualities", "characterQualities"],
   ["character-cycles", "characterCycles"],
-  ["bible-content", "bibleContent"],
   ["family-activities", "familyActivities"],
   ["books", "books"],
   ["reading-assignments", "readingAssignments"],
