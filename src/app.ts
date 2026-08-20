@@ -14,6 +14,8 @@ import administrationRoutes from "./administration/routes.js";
 import configurationRoutes from "./configuration/routes.js";
 import mentorRoutes from "./mentor/routes.js";
 import observerRoutes from "./observer/routes.js";
+import notificationRoutes from "./notifications/routes.js";
+import reportRoutes from "./reports/routes.js";
 import { env } from "./config/env.js";
 import { authenticate } from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
@@ -135,6 +137,13 @@ app.use("/api/v1/parent", privateResponse, authenticate, parentRoutes);
 app.use("/api/v1/child", privateResponse, authenticate, childRoutes);
 app.use("/api/v1/mentor", privateResponse, authenticate, mentorRoutes);
 app.use("/api/v1/observer", privateResponse, authenticate, observerRoutes);
+app.use(
+  "/api/v1/notifications",
+  privateResponse,
+  authenticate,
+  notificationRoutes,
+);
+app.use("/api/v1/reports", privateResponse, authenticate, reportRoutes);
 app.use(
   "/api/v1/administration",
   privateResponse,

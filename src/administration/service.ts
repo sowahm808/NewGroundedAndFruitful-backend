@@ -672,12 +672,28 @@ export class AdministrationService {
       .get();
     if (!link.exists || link.get("status") !== "active")
       throw new AuthorizationError();
+    const policy = await this.db
+      .doc(
+        `consentPolicies/${String(input.policyKey)}_${String(input.policyVersion)}`,
+      )
+      .get();
+    if (
+      !policy.exists ||
+      policy.get("status") !== "approved" ||
+      policy.get("organizationId") !== oid ||
+      policy.get("legalTextReference") !== input.legalTextReference
+    )
+      throw new BusinessRuleError(
+        "CONSENT_POLICY_NOT_APPROVED",
+        "Consent can only be recorded against approved legal text.",
+      );
     const ref = this.db.collection("consentEvents").doc();
     await this.db.runTransaction((tx) => {
       tx.create(ref, {
         ...input,
         guardianUserId: actor.uid,
         action: "granted",
+        effectiveAt: FieldValue.serverTimestamp(),
         occurredAt: FieldValue.serverTimestamp(),
       });
       tx.set(
@@ -689,6 +705,7 @@ export class AdministrationService {
           guardianUserId: actor.uid,
           consentEventId: ref.id,
           status: "granted",
+          effectiveAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         },
       );
@@ -725,7 +742,9 @@ export class AdministrationService {
         policyKey,
         policyVersion: snap.get("policyVersion"),
         guardianUserId: actor.uid,
+        legalTextReference: snap.get("legalTextReference"),
         action: "withdrawn",
+        effectiveAt: FieldValue.serverTimestamp(),
         occurredAt: FieldValue.serverTimestamp(),
       });
       tx.update(active, {

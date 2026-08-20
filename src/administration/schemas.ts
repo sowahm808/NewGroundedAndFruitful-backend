@@ -117,6 +117,7 @@ export const consentCaptureSchema = z
     participantId: idSchema,
     policyKey: z.string().trim().min(1).max(80),
     policyVersion: z.string().trim().min(1).max(40),
+    legalTextReference: z.string().trim().url().max(500),
     granted: z.literal(true),
   })
   .strict();
