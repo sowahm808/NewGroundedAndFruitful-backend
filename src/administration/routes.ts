@@ -25,6 +25,108 @@ const id = (value: unknown) => {
   if (!parsed.success) throw new ValidationError();
   return parsed.data;
 };
+const configuredResources = [
+  ["assignments", "assignments"],
+  ["quarters", "quarters"],
+  ["character-qualities", "characterQualities"],
+  ["character-cycles", "characterCycles"],
+  ["bible-content", "bibleContent"],
+  ["family-activities", "familyActivities"],
+  ["books", "books"],
+  ["reading-assignments", "readingAssignments"],
+  ["surveys", "surveys"],
+  ["point-rules", "pointRules"],
+] as const;
+for (const [path, collection] of configuredResources) {
+  router.get(
+    `/${path}`,
+    run((req) =>
+      service.resources(
+        req.principal,
+        collection,
+        id(req.query.organizationId),
+      ),
+    ),
+  );
+  router.get(
+    `/${path}/:resourceId`,
+    run((req) =>
+      service.resource(req.principal, collection, id(req.params.resourceId)),
+    ),
+  );
+  router.post(
+    `/${path}`,
+    validateBody(schemas.resourceCreateSchema),
+    run(
+      (req) => service.createResource(req.principal, collection, req.body),
+      201,
+    ),
+  );
+  router.post(
+    `/${path}/:resourceId/publish`,
+    validateBody(schemas.resourceLifecycleSchema),
+    run((req) =>
+      service.transitionResource(
+        req.principal,
+        collection,
+        id(req.params.resourceId),
+        req.body.version,
+        "publish",
+      ),
+    ),
+  );
+  router.post(
+    `/${path}/:resourceId/archive`,
+    validateBody(schemas.resourceLifecycleSchema),
+    run((req) =>
+      service.transitionResource(
+        req.principal,
+        collection,
+        id(req.params.resourceId),
+        req.body.version,
+        "archive",
+      ),
+    ),
+  );
+}
+router.get(
+  "/users",
+  run((req) => service.users(req.principal, id(req.query.organizationId))),
+);
+router.get(
+  "/roles",
+  run((req) =>
+    service.resources(
+      req.principal,
+      "memberships",
+      id(req.query.organizationId),
+      true,
+    ),
+  ),
+);
+router.get(
+  "/reports",
+  run((req) =>
+    service.resources(req.principal, "reports", id(req.query.organizationId)),
+  ),
+);
+router.get(
+  "/awards",
+  run((req) =>
+    service.resources(req.principal, "awards", id(req.query.organizationId)),
+  ),
+);
+router.get(
+  "/audits",
+  run((req) =>
+    service.resources(
+      req.principal,
+      "auditLogs",
+      id(req.query.organizationId),
+      true,
+    ),
+  ),
+);
 
 router.post(
   "/organizations",

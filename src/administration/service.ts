@@ -31,6 +31,142 @@ export class AdministrationService {
       throw new AuthorizationError();
     return actor;
   }
+  private superAdmin(p: Principal | undefined, organizationId: string) {
+    const actor = this.actor(p);
+    if (
+      !actor.roles.includes("super_admin") ||
+      !actor.organizationIds.includes(organizationId)
+    )
+      throw new AuthorizationError();
+    return actor;
+  }
+  async resources(
+    p: Principal | undefined,
+    collection: string,
+    organizationId: string,
+    superOnly = false,
+  ) {
+    if (superOnly) this.superAdmin(p, organizationId);
+    else this.admin(p, organizationId);
+    const snap = await this.db
+      .collection(collection)
+      .where("organizationId", "==", organizationId)
+      .get();
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  }
+  async resource(
+    p: Principal | undefined,
+    collection: string,
+    id: string,
+    superOnly = false,
+  ) {
+    const snap = await this.db.doc(`${collection}/${id}`).get();
+    if (!snap.exists) throw new NotFoundError();
+    const oid = String(snap.get("organizationId"));
+    if (superOnly) this.superAdmin(p, oid);
+    else this.admin(p, oid);
+    return { id: snap.id, ...snap.data() };
+  }
+  async createResource(
+    p: Principal | undefined,
+    collection: string,
+    input: Data,
+    superOnly = false,
+  ) {
+    const oid = String(input.organizationId),
+      actor = superOnly ? this.superAdmin(p, oid) : this.admin(p, oid),
+      ref = this.db.collection(collection).doc();
+    const reserved = new Set([
+        "status",
+        "version",
+        "createdAt",
+        "updatedAt",
+        "organizationId",
+      ]),
+      supplied = (
+        input.data && typeof input.data === "object" ? input.data : {}
+      ) as Data;
+    if (Object.keys(supplied).some((key) => reserved.has(key)))
+      throw new BusinessRuleError(
+        "RESERVED_FIELD",
+        "Lifecycle fields are server controlled.",
+      );
+    await this.db.runTransaction((tx) => {
+      tx.create(ref, {
+        ...supplied,
+        organizationId: oid,
+        ...(input.name ? { name: input.name } : {}),
+        status: "draft",
+        version: 1,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      this.audit(tx, actor.uid, oid, `${collection}.created`, { id: ref.id });
+      return Promise.resolve();
+    });
+    return { id: ref.id, status: "draft", version: 1 };
+  }
+  async transitionResource(
+    p: Principal | undefined,
+    collection: string,
+    id: string,
+    version: number,
+    action: "publish" | "archive",
+    superOnly = false,
+  ) {
+    const ref = this.db.doc(`${collection}/${id}`),
+      initial = await ref.get();
+    if (!initial.exists) throw new NotFoundError();
+    const oid = String(initial.get("organizationId")),
+      actor = superOnly ? this.superAdmin(p, oid) : this.admin(p, oid);
+    await this.db.runTransaction(async (tx) => {
+      const current = await tx.get(ref);
+      if (Number(current.get("version")) !== version)
+        throw new ConflictError("Resource version is stale.");
+      const status = String(current.get("status"));
+      if (
+        (action === "publish" && status !== "draft") ||
+        (action === "archive" &&
+          !["draft", "published", "active"].includes(status))
+      )
+        throw new ConflictError("Invalid lifecycle transition.");
+      tx.update(ref, {
+        status: action === "publish" ? "published" : "archived",
+        version: version + 1,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      this.audit(tx, actor.uid, oid, `${collection}.${action}ed`, {
+        id,
+        version: version + 1,
+      });
+    });
+    return {
+      id,
+      status: action === "publish" ? "published" : "archived",
+      version: version + 1,
+    };
+  }
+  async users(p: Principal | undefined, oid: string) {
+    this.superAdmin(p, oid);
+    const memberships = await this.db
+      .collection("memberships")
+      .where("organizationId", "==", oid)
+      .get();
+    const ids = [
+      ...new Set(memberships.docs.map((d) => String(d.get("userId")))),
+    ];
+    const users = await Promise.all(
+      ids.map((id) => this.db.doc(`users/${id}`).get()),
+    );
+    return users
+      .filter((u) => u.exists)
+      .map((u) => ({
+        id: u.id,
+        displayName: u.get("displayName") ?? "",
+        email: u.get("email") ?? null,
+        status: u.get("status") ?? "active",
+      }));
+  }
   private async scopedDocument(
     p: Principal | undefined,
     collection: string,
