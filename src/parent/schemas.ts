@@ -30,6 +30,10 @@ export const childQuerySchema = listSchema.pick({
   status: true,
   search: true,
 });
+export const notificationQuerySchema = listSchema.pick({
+  limit: true,
+  cursor: true,
+});
 export const observationQuerySchema = listSchema.omit({ status: true }).extend({
   childId: optionalQueryString(idSchema.optional()),
   status: optionalQueryString(

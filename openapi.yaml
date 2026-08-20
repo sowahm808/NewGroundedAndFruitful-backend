@@ -113,6 +113,22 @@ paths:
         "200": { description: Authorized parent dashboard }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /parent/notifications:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      description: Lists notifications addressed to the authenticated parent and scoped to an active membership organization.
+      parameters:
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 50 },
+          }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Tenant-scoped parent notifications }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /parent/children:
     get:
       tags: [Parent]

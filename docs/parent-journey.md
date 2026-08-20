@@ -11,6 +11,7 @@ Unauthorized and cross-tenant resources are not disclosed.
 | Method      | Path                                          | Contract                                                                                                                        |
 | ----------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | GET         | `/dashboard`                                  | Linked-child summary with a server `calculatedAt`.                                                                              |
+| GET         | `/notifications`                              | Tenant-scoped notifications addressed to the authenticated parent, with bounded cursor pagination.                              |
 | GET         | `/children`                                   | `limit` (1–50), opaque `cursor`, allowlisted `status`, and bounded `search`.                                                    |
 | GET         | `/children/{childId}`                         | Approved summary fields only.                                                                                                   |
 | GET / PATCH | `/character`                                  | Requires `childId` and `quarterId`; PATCH supplies five unique `qualityIds` and `expectedVersion`. A stale version returns 409. |

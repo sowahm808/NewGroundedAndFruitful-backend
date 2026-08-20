@@ -111,6 +111,68 @@ describe("ParentService observations", () => {
   });
 });
 
+describe("ParentService notifications", () => {
+  it("returns only the authenticated parent's tenant-scoped notifications", async () => {
+    const notification = (
+      id: string,
+      organizationId: string,
+      createdAt: string,
+    ) => {
+      const values: Record<string, unknown> = {
+        organizationId,
+        type: "announcement",
+        title: `Title ${id}`,
+        message: `Message ${id}`,
+        read: false,
+        createdAt: Timestamp.fromDate(new Date(createdAt)),
+        internalDeliveryData: "must not be returned",
+      };
+      return { id, get: (field: string) => values[field] };
+    };
+    const docs = [
+      notification("older", "org-1", "2026-01-01T00:00:00.000Z"),
+      notification("cross-tenant", "org-2", "2026-03-01T00:00:00.000Z"),
+      notification("newer", "org-1", "2026-02-01T00:00:00.000Z"),
+    ];
+    const query = {
+      where: () => query,
+      limit: () => query,
+      get: () => Promise.resolve({ docs }),
+    };
+    const db = { collection: () => query } as unknown as Firestore;
+    const service = new ParentService(db);
+
+    await expect(
+      service.notifications(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        { limit: 1 },
+      ),
+    ).resolves.toEqual({
+      data: [
+        {
+          id: "newer",
+          organizationId: "org-1",
+          type: "announcement",
+          title: "Title newer",
+          message: "Message newer",
+          read: false,
+          createdAt: "2026-02-01T00:00:00.000Z",
+        },
+      ],
+      meta: { nextCursor: "newer" },
+    });
+    await expect(
+      service.notifications(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        { limit: 20, cursor: "newer" },
+      ),
+    ).resolves.toMatchObject({
+      data: [{ id: "older" }],
+      meta: { nextCursor: null },
+    });
+  });
+});
+
 describe("ParentService academic-support requests", () => {
   const doc = (id: string, values: Record<string, unknown>) => ({
     id,
