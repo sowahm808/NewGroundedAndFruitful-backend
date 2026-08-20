@@ -1,6 +1,12 @@
 # Backend production audit
 
-Audit date: 2026-08-19. This is a code and configuration audit, not a claim that every product workflow is implemented or production-ready.
+Audit date: 2026-08-20. This is a code and configuration audit, not a claim that every product workflow is implemented or production-ready. The authoritative DOCX is present at `docs/Grounded_Fruitful_Product_Flow_and_Contract_Final.docx`.
+
+## 2026-08-20 baseline and focused remediation
+
+The pre-edit baseline passed `npm ci`, lint, typecheck, 381 unit/API tests, and the TypeScript build. Emulator integration and rules commands were blocked by an npm registry HTTP 403 while resolving the pinned Firebase CLI; `npm audit` was blocked by the same registry policy; Docker was unavailable in the runner; and `openapi:validate` was absent. These are recorded limitations, not passes. No production migration, deployment, or staging verification was performed.
+
+This remediation makes membership expiry fail closed in both session and protected-route role resolution, preserves malformed membership rows as a legacy-fallback boundary, and constrains session onboarding output to `complete`, `role_required`, `pending`, `disabled`, and `session_error`. Suspended or disabled accounts receive a disabled session with no roles; authorization middleware continues to deny protected resources. Tests cover expired and malformed membership behavior. OpenAPI route drift, shared rate limiting, mentor/observer APIs, policy-blocked workflows, and the other partial/absent items below remain launch blockers.
 
 > Current evidence note: the older “Missing or incomplete features” narrative below records the repository's earlier audit stage and is retained as remediation history. The authoritative mounted-route state is now `route-inventory.md`; frontend differences are in `frontend-backend-contract-comparison.md`.
 

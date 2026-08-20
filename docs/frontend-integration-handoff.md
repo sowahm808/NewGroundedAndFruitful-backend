@@ -1,6 +1,6 @@
 # Backend handoff for the separate frontend repository
 
-Audit date: 2026-08-19. This document describes backend evidence only. No frontend repository was accessed or modified.
+Audit date: 2026-08-20. This document describes backend evidence only. No frontend repository was accessed or modified.
 
 ## Connection and token contract
 
@@ -27,7 +27,7 @@ Opaque cursor behavior is incomplete. Existing parent and child list cursors are
 
 ## Session landing states
 
-Do not integrate role landing yet. The required `onboardingState` contract (`complete`, `role_required`, `pending`, `disabled`, `session_error`) is not executable: the current response field is `onboardingStatus` and can emit `profile_required`, `provisioning_required`, or `pending_approval`. This is a compatibility blocker, not permission to guess a client mapping. Once corrected and versioned, a `role_required` response must not repeatedly redirect a user already on the frontend's role-required page. Authorization must follow canonical session roles, never stale token claims or a locally selected organization.
+The executable response field remains `onboardingStatus` for compatibility and now has exactly the deterministic values `complete`, `role_required`, `pending`, `disabled`, and `session_error`. A `role_required` response must not repeatedly redirect a user already on the frontend's role-required page. `pending` covers an incomplete active child context or a pending membership; `disabled` exposes no roles and covers a disabled profile/Firebase identity or a suspended membership. `session_error` is reserved for a recoverable session-resolution failure and is not used for invalid credentials. Authorization must follow canonical session roles, never stale token claims or a locally selected organization.
 
 ## Feature flags and known blockers
 

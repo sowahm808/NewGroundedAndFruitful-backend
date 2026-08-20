@@ -1,12 +1,22 @@
 import type { Firestore } from "firebase-admin/firestore";
-import type { MembershipStatus } from "../models/user.js";
+import { z } from "zod";
+
+const membershipDocument = z.object({
+  organizationId: z.string().min(1),
+  userId: z.string().min(1),
+  roles: z.unknown().optional(),
+  role: z.unknown().optional(),
+  status: z.enum(["active", "pending", "suspended", "revoked"]),
+  expiresAt: z.unknown().optional(),
+}).passthrough();
 
 export interface StoredMembership {
   organizationId: string;
   userId: string;
   roles?: unknown;
   role?: unknown;
-  status: MembershipStatus;
+  status: string;
+  expiresAt?: unknown;
 }
 
 export class MembershipRepository {
@@ -17,7 +27,13 @@ export class MembershipRepository {
       .collection("memberships")
       .where("userId", "==", uid)
       .get();
-    return snapshot.docs.map((doc) => doc.data() as StoredMembership);
+    return snapshot.docs.map((doc): StoredMembership => {
+      const parsed = membershipDocument.safeParse(doc.data());
+      if (parsed.success) return parsed.data;
+      // Preserve an invalid row as an authorization fallback boundary. A
+      // malformed membership must never make legacy profile roles usable.
+      return { organizationId: "", userId: uid, status: "invalid" };
+    });
   }
 
   async hasActiveChildContext(uid: string, organizationIds: string[]): Promise<boolean> {

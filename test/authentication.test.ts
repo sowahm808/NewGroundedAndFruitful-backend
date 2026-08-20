@@ -103,4 +103,13 @@ describe("server-authoritative authentication role resolution", () => {
       { uid: "parent-1" } as never,
     )).rejects.toBeInstanceOf(AuthorizationError);
   });
+  it("rejects an expired active membership without falling back", async () => {
+    await expect(resolvePrincipal(
+      firestore({ status: "active", roles: ["admin"] }, [{
+        userId: "parent-1", organizationId: "org-1", roles: ["parent"],
+        status: "active", version: 1, expiresAt: new Date(Date.now() - 1_000),
+      }]) as never,
+      { uid: "parent-1" } as never,
+    )).rejects.toBeInstanceOf(AuthorizationError);
+  });
 });

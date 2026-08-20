@@ -6,9 +6,9 @@ export type MembershipStatus = "active" | "pending" | "suspended" | "revoked";
 export type OnboardingStatus =
   | "complete"
   | "role_required"
-  | "profile_required"
-  | "provisioning_required"
-  | "pending_approval";
+  | "pending"
+  | "disabled"
+  | "session_error";
 
 export interface UserProfile {
   uid: string;
@@ -34,7 +34,7 @@ export interface SessionUser {
   memberships: Array<{
     organizationId: string;
     roles: readonly Role[];
-    status: MembershipStatus;
+    status: MembershipStatus | "expired" | "invalid";
   }>;
   authorization: {
     source: "membership" | "legacy_user_profile" | "none";

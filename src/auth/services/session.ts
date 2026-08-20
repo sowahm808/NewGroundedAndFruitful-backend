@@ -1,7 +1,6 @@
 import type { Auth, DecodedIdToken, UserRecord } from "firebase-admin/auth";
 import {
   AuthenticationError,
-  AuthorizationError,
   InternalError,
 } from "../../shared/errors.js";
 import { logger } from "../../shared/logger.js";
@@ -50,16 +49,13 @@ export class AuthSessionService {
     );
     const memberships = storedMemberships
       .filter((membership) => membership.userId === decodedToken.uid)
-      .filter((membership) =>
-        ["active", "pending", "suspended", "revoked"].includes(membership.status),
-      )
       .map((membership) => {
         const normalized = normalizeRoles(membership.roles ?? membership.role);
         this.logInvalidRoles(normalized.invalid, decodedToken.uid, context);
         return {
           organizationId: membership.organizationId,
           roles: normalized.roles,
-          status: membership.status,
+          status: membershipStatus(membership.status, membership.expiresAt),
         };
       });
 
@@ -83,14 +79,14 @@ export class AuthSessionService {
       ? true
       : await this.memberships.hasActiveChildContext(decodedToken.uid, childOrganizations);
 
-    if (disabled || memberships.some((item) => item.status === "suspended")) {
+    const restricted = disabled || memberships.some((item) => item.status === "suspended");
+    if (restricted) {
       logger.warn("session_account_restricted", {
         requestId: context.requestId,
         uid: decodedToken.uid,
         disabled,
         suspended: memberships.some((item) => item.status === "suspended"),
       });
-      throw new AuthorizationError();
     }
     if (activeMemberships.length === 0)
       logger.warn("session_no_active_membership", {
@@ -103,26 +99,27 @@ export class AuthSessionService {
         uid: decodedToken.uid,
       });
 
+    const effectiveRoles = restricted ? [] : roles;
     const claimSynchronization = await this.syncRoleClaims(
       authUser,
       decodedToken,
-      roles,
+      effectiveRoles,
       context,
     );
     const session: SessionUser = {
       uid: profile.uid,
       email: profile.email ?? null,
       displayName: profile.displayName,
-      roles,
-      disabled,
-      onboardingStatus: !profile.displayName
-        ? "profile_required"
+      roles: effectiveRoles,
+      disabled: restricted,
+      onboardingStatus: restricted
+        ? "disabled"
         : roles.includes("child") && !hasChildContext
-          ? "provisioning_required"
+          ? "pending"
           : roles.length > 0
           ? "complete"
           : pending
-            ? "pending_approval"
+            ? "pending"
             : "role_required",
       claimSynchronization,
       memberships,
@@ -225,6 +222,26 @@ export class AuthSessionService {
       return { status: "retry_required", tokenRefreshRequired: false };
     }
   }
+}
+
+function isExpired(value: unknown): boolean {
+  if (value == null) return false;
+  if (value instanceof Date) return value.getTime() <= Date.now();
+  if (typeof value === "object" && "toMillis" in value && typeof value.toMillis === "function") {
+    const timestamp = value as { toMillis(): number };
+    return timestamp.toMillis() <= Date.now();
+  }
+  // An unreadable expiry on an otherwise active membership fails closed.
+  return true;
+}
+
+function membershipStatus(
+  status: string,
+  expiresAt: unknown,
+): "active" | "pending" | "suspended" | "revoked" | "expired" | "invalid" {
+  if (!["active", "pending", "suspended", "revoked"].includes(status)) return "invalid";
+  if (status === "active" && isExpired(expiresAt)) return "expired";
+  return status as "active" | "pending" | "suspended" | "revoked";
 }
 
 function firebaseErrorCode(error: unknown): string {
