@@ -368,6 +368,46 @@ export class ParentService {
     };
   }
 
+  async notifications(principal: Principal, input: ListInput) {
+    const snapshot = await this.db
+      .collection("notifications")
+      .where("recipientUid", "==", principal.uid)
+      .limit(200)
+      .get();
+    const sorted = snapshot.docs
+      .filter((doc) =>
+        principal.organizationIds.includes(doc.get("organizationId")),
+      )
+      .map((doc) => ({
+        id: doc.id,
+        organizationId: String(doc.get("organizationId")),
+        type: typeof doc.get("type") === "string" ? doc.get("type") : null,
+        title: typeof doc.get("title") === "string" ? doc.get("title") : null,
+        message:
+          typeof doc.get("message") === "string" ? doc.get("message") : null,
+        read: doc.get("read") === true,
+        createdAt: iso(doc.get("createdAt")),
+      }))
+      .sort(
+        (a, b) =>
+          (b.createdAt ?? "").localeCompare(a.createdAt ?? "") ||
+          a.id.localeCompare(b.id),
+      );
+    const start = input.cursor
+      ? Math.max(0, sorted.findIndex((item) => item.id === input.cursor) + 1)
+      : 0;
+    const data = sorted.slice(start, start + input.limit);
+    return {
+      data,
+      meta: {
+        nextCursor:
+          start + input.limit < sorted.length && data.length > 0
+            ? data.at(-1)!.id
+            : null,
+      },
+    };
+  }
+
   async observations(principal: Principal, input: ListInput) {
     if (input.childId) await this.link(principal, input.childId);
     const [snapshot, linkSnapshot] = await Promise.all([

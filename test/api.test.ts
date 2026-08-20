@@ -87,6 +87,7 @@ describe("HTTP safety contract", () => {
   it("requires authentication for every parent workflow", async () => {
     for (const path of [
       "dashboard",
+      "notifications",
       "children",
       "observations",
       "academic-support/configuration",
