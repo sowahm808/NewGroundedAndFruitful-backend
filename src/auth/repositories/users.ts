@@ -1,8 +1,27 @@
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
+import { z } from "zod";
 import type { UserProfile } from "../models/user.js";
+import { canonicalRoleSchema } from "../roles.js";
 
 const collection = "users";
+const userProfileDocument = z.object({
+  uid: z.string().min(1),
+  email: z.string().email().nullable(),
+  displayName: z.string(),
+  roles: z.array(canonicalRoleSchema),
+  status: z.enum(["active", "disabled"]),
+  createdAt: z.unknown().optional(),
+  updatedAt: z.unknown().optional(),
+}).passthrough();
+
+const parseUserProfile = (value: unknown): UserProfile => {
+  const parsed = userProfileDocument.parse(value);
+  return {
+    uid: parsed.uid, email: parsed.email, displayName: parsed.displayName,
+    roles: parsed.roles, status: parsed.status,
+  };
+};
 
 export interface ProvisionUserProfileInput {
   uid: string;
@@ -16,7 +35,7 @@ export class UserRepository {
   async getUserByUid(uid: string): Promise<UserProfile | null> {
     const snapshot = await this.db.doc(`${collection}/${uid}`).get();
     if (!snapshot.exists) return null;
-    return snapshot.data() as UserProfile;
+    return parseUserProfile(snapshot.data());
   }
 
   async provisionUserProfile(
@@ -45,7 +64,7 @@ export class UserRepository {
         };
       }
 
-      const current = snapshot.data() as UserProfile;
+      const current = parseUserProfile(snapshot.data());
       const patch: Record<string, unknown> = {};
       if (current.uid !== input.uid) patch.uid = input.uid;
       if (typeof current.email === "undefined") patch.email = input.email;
