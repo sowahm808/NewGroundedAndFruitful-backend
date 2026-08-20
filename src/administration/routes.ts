@@ -101,6 +101,17 @@ router.get(
   }),
 );
 router.get(
+  "/memberships",
+  run((req) => {
+    const query = schemas.membershipListQuerySchema.safeParse(req.query);
+    if (!query.success)
+      throw new ValidationError("Invalid membership list query.", {
+        fieldErrors: query.error.flatten().fieldErrors,
+      });
+    return service.listMemberships(req.principal, query.data);
+  }),
+);
+router.get(
   "/roles",
   run((req) =>
     service.resources(
