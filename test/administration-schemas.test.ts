@@ -8,6 +8,19 @@ import {
 } from "../src/administration/schemas.js";
 
 describe("administration request contracts", () => {
+  it("accepts the frontend resource list pagination contract", () => {
+    expect(
+      resourceListQuerySchema.parse({
+        page: "1",
+        pageSize: "25",
+        sort: "-updatedAt",
+      }),
+    ).toEqual({ page: 1, pageSize: 25, sort: "-updatedAt" });
+    expect(
+      resourceListQuerySchema.safeParse({ page: "0", pageSize: "101" }).success,
+    ).toBe(false);
+  });
+
   it("requires a guardian and a valid birth date when creating participants", () => {
     expect(
       participantCreateSchema.safeParse({

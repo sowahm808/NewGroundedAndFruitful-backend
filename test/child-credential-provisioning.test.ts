@@ -9,6 +9,7 @@ import {
   generateFamilyCode,
   generatePin,
 } from "../src/auth/services/child-credential-provisioning.js";
+import { childLoginSchema } from "../src/auth/schemas/child-login.js";
 
 describe("child credential primitives", () => {
   it("normalizes NFKC identifiers and computes the specified lookup HMAC", () => {
@@ -21,5 +22,17 @@ describe("child credential primitives", () => {
   it("generates conservative family codes and cryptographic six digit PINs", () => {
     expect(generateFamilyCode()).toMatch(/^[a-z0-9_-]{8,24}$/);
     expect(generatePin()).toMatch(/^\d{6}$/);
+  });
+  it("accepts only the provisioned six-digit PIN format at login", () => {
+    const base = { familyCode: "familycode", handle: "sprout" };
+    expect(childLoginSchema.safeParse({ ...base, pin: "123456" }).success).toBe(
+      true,
+    );
+    expect(childLoginSchema.safeParse({ ...base, pin: "12345" }).success).toBe(
+      false,
+    );
+    expect(childLoginSchema.safeParse({ ...base, pin: "12345a" }).success).toBe(
+      false,
+    );
   });
 });
