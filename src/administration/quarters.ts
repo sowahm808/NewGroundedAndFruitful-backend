@@ -60,6 +60,28 @@ export class QuarterAdministrationService {
       );
   }
 
+  private async creationOrganization(
+    actor: Principal,
+    requestedOrganizationId?: string,
+  ) {
+    if (requestedOrganizationId) return requestedOrganizationId;
+    if (actor.organizationIds.length === 1) return actor.organizationIds[0];
+
+    // A global administrator commonly has no organization membership. Keep
+    // organization selection explicit in multi-tenant environments, but avoid
+    // making the only tenant in a single-organization deployment redundant
+    // client knowledge.
+    if (actor.roles.includes("super_admin")) {
+      const organizations = await this.db
+        .collection("organizations")
+        .limit(2)
+        .get();
+      if (organizations.size === 1) return organizations.docs[0]?.id;
+    }
+
+    return undefined;
+  }
+
   private serialize(doc: DocumentSnapshot | QueryDocumentSnapshot) {
     return {
       id: doc.id,
@@ -196,16 +218,15 @@ export class QuarterAdministrationService {
     requestId: string,
   ) {
     const actor = this.actor(principal);
-    const organizationId =
-      input.organizationId ??
-      (actor.organizationIds.length === 1
-        ? actor.organizationIds[0]
-        : undefined);
+    const organizationId = await this.creationOrganization(
+      actor,
+      input.organizationId,
+    );
     if (!organizationId)
       throw quarterError(
         422,
         "QUARTER_ORGANIZATION_REQUIRED",
-        "organizationId is required when the administrator does not have exactly one organization.",
+        "organizationId is required when the target organization cannot be inferred unambiguously.",
       );
     this.scope(actor, organizationId);
     this.dateRange(input.startDate, input.endDate);
