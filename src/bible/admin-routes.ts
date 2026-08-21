@@ -90,7 +90,7 @@ const multipart: RequestHandler = async (req, _res, next) => {
   }
 };
 router.post(
-  "/bible-imports",
+  ["/bible-content/imports", "/bible-imports"],
   multipart,
   run((req) => {
     const body = importMetadataSchema.safeParse(req.body);
@@ -109,11 +109,14 @@ router.post(
   }, 201),
 );
 router.get(
-  "/bible-imports/:importId",
+  ["/bible-content/imports/:importId", "/bible-imports/:importId"],
   run((req) => service.get(req.principal, id(req.params.importId))),
 );
 router.patch(
-  "/bible-imports/:importId/items/:itemId",
+  [
+    "/bible-content/imports/:importId/items/:itemId",
+    "/bible-imports/:importId/items/:itemId",
+  ],
   validateBody(itemPatchSchema),
   run((req) =>
     service.patchItem(
@@ -126,13 +129,19 @@ router.patch(
   ),
 );
 router.post(
-  "/bible-imports/:importId/validate",
+  [
+    "/bible-content/imports/:importId/validate",
+    "/bible-imports/:importId/validate",
+  ],
   run((req) =>
     service.validate(req.principal, id(req.params.importId), req.requestId),
   ),
 );
 router.post(
-  "/bible-imports/:importId/commit",
+  [
+    "/bible-content/imports/:importId/commit",
+    "/bible-imports/:importId/commit",
+  ],
   validateBody(lifecycleSchema),
   run((req) =>
     service.commit(
