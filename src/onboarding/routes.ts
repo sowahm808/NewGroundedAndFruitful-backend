@@ -27,7 +27,7 @@ const run =
   };
 
 router.post(
-  "/personal-workspace",
+  ["/personal-workspace", "/personal"],
   validateBody(personalWorkspaceBootstrapSchema),
   run(async (req, res) => {
     const actor = requireAuthenticated(req.principal);
