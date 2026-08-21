@@ -2198,6 +2198,7 @@ components:
                     platformRoles,
                     disabled,
                     onboardingStatus,
+                    nextStep,
                     memberships,
                     authorization,
                     claimSynchronization,
@@ -2263,6 +2264,11 @@ components:
                         enum:
                           [
                             complete,
+                            registration_intent_required,
+                            personal_workspace_required,
+                            organization_setup_required,
+                            invitation_required,
+                            account_recovery_required,
                             organization_required,
                             role_required,
                             pending,
@@ -2277,10 +2283,37 @@ components:
                         type: string,
                         enum:
                           [
+                            choose_account_type,
                             personal_workspace_setup,
                             organization_setup,
+                            accept_invitation,
+                            await_role_assignment,
+                            account_recovery,
                             dashboard,
                           ],
+                      },
+                    accountStateReason:
+                      {
+                        type: string,
+                        description: "Stable, non-sensitive reason for the projected recovery state.",
+                        enum:
+                          [
+                            registration_intent_missing,
+                            organization_role_not_assigned,
+                            legacy_account_unclassified,
+                            account_disabled,
+                          ],
+                      },
+                    pendingInvitation:
+                      {
+                        type: boolean,
+                        description: "True when a matching, unexpired invitation can be accepted; invitation secrets and tenant data are omitted.",
+                      },
+                    recoveryReference:
+                      {
+                        type: string,
+                        description: "Stable opaque reference suitable for a support request.",
+                        pattern: "^AR-[A-F0-9]{12}$",
                       },
                     activeWorkspaceId: { type: string },
                     activeWorkspace:
