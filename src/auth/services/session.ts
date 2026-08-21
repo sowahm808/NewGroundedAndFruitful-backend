@@ -207,7 +207,9 @@ export class AuthSessionService {
       onboardingStatus: restricted
         ? "disabled"
         : profile.onboardingStatus === "personal_setup" ||
-            profile.onboardingStatus === "organization_setup"
+            profile.onboardingStatus === "organization_setup" ||
+            profile.onboardingStatus === "personal_workspace_required" ||
+            profile.onboardingStatus === "organization_setup_required"
           ? profile.onboardingStatus
           : roles.includes("child") && !hasChildContext
             ? "pending"
@@ -221,6 +223,15 @@ export class AuthSessionService {
                   : pending
                     ? "pending"
                     : "role_required",
+      ...(profile.registrationIntent
+        ? {
+            registrationIntent: profile.registrationIntent,
+            nextStep:
+              profile.registrationIntent === "organization"
+                ? ("organization_setup" as const)
+                : ("personal_workspace_setup" as const),
+          }
+        : {}),
       claimSynchronization,
       tokenRefreshRequired: claimSynchronization.tokenRefreshRequired,
       memberships,

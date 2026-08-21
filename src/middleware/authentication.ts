@@ -2,7 +2,12 @@ import type { NextFunction, Request, Response } from "express";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import type { Firestore } from "firebase-admin/firestore";
 import { auth, db } from "../config/firebase.js";
-import { AuthenticationError, AuthorizationError } from "../shared/errors.js";
+import {
+  AccountDisabledError,
+  AppError,
+  AuthenticationError,
+  AuthorizationError,
+} from "../shared/errors.js";
 import { type Role } from "../auth/authorization.js";
 import { normalizeRoles } from "../auth/roles.js";
 import type { ActiveMembership } from "../auth/policy.js";
@@ -19,6 +24,7 @@ export async function resolvePrincipal(
   firestore: Firestore,
   token: DecodedIdToken,
   mode: "compatibility" | "strict" = env.MEMBERSHIP_ENFORCEMENT_MODE,
+  allowRoleless = false,
 ): Promise<{
   roles: Role[];
   platformRoles: Array<"super_admin">;
@@ -28,7 +34,7 @@ export async function resolvePrincipal(
 }> {
   const user = await firestore.doc(`users/${token.uid}`).get();
   if (user.exists && user.get("status") === "disabled")
-    throw new AuthorizationError();
+    throw new AccountDisabledError();
   const membershipSnapshot = await firestore
     .collection("memberships")
     .where("userId", "==", token.uid)
@@ -106,7 +112,7 @@ export async function resolvePrincipal(
   // A profile is optional identity metadata and can be provisioned by the
   // session endpoint after sign-in. Do not reject a valid Firebase identity
   // whose active, server-owned membership already grants application access.
-  if (roles.length === 0) throw new AuthorizationError();
+  if (roles.length === 0 && !allowRoleless) throw new AuthorizationError();
   return {
     roles,
     platformRoles,
@@ -196,7 +202,50 @@ export async function authenticate(
     next();
   } catch (error) {
     next(
-      error instanceof AuthorizationError
+      error instanceof AppError
+        ? error
+        : new AuthenticationError("INVALID_AUTHENTICATION_TOKEN"),
+    );
+  }
+}
+
+/** Authentication-only boundary for pre-membership registration state. */
+export async function authenticateRegistrationActor(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
+  try {
+    const header = req.header("authorization");
+    if (!header) return next();
+    const match = /^Bearer\s+([^\s]+)$/i.exec(header.trim());
+    if (!match?.[1])
+      throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
+    const token = await auth.verifyIdToken(match[1], true);
+    const firebaseUser = await auth.getUser(token.uid);
+    if (firebaseUser.disabled) throw new AccountDisabledError();
+    const resolved = await resolvePrincipal(
+      db,
+      token,
+      env.MEMBERSHIP_ENFORCEMENT_MODE,
+      true,
+    );
+    req.principal = {
+      uid: token.uid,
+      role: resolved.roles[0]!,
+      roles: resolved.roles,
+      baseRoles: resolved.roles,
+      effectiveRoles: resolved.roles,
+      capabilities: [],
+      platformRoles: resolved.platformRoles,
+      organizationIds: resolved.organizationIds,
+      memberships: resolved.memberships,
+      token,
+    };
+    next();
+  } catch (error) {
+    next(
+      error instanceof AppError
         ? error
         : new AuthenticationError("INVALID_AUTHENTICATION_TOKEN"),
     );

@@ -7,6 +7,8 @@ export type MembershipStatus = "active" | "pending" | "suspended" | "revoked";
 export type OnboardingStatus =
   | "personal_setup"
   | "organization_setup"
+  | "personal_workspace_required"
+  | "organization_setup_required"
   | "complete"
   | "organization_required"
   | "role_required"
@@ -23,7 +25,12 @@ export interface UserProfile {
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   activeWorkspaceId?: string;
-  onboardingStatus?: "personal_setup" | "organization_setup";
+  onboardingStatus?:
+    | "personal_setup"
+    | "organization_setup"
+    | "personal_workspace_required"
+    | "organization_setup_required";
+  registrationIntent?: "personal" | "organization";
 }
 
 export interface SessionUser {
@@ -34,6 +41,8 @@ export interface SessionUser {
   platformRoles: readonly PlatformRole[];
   disabled: boolean;
   onboardingStatus: OnboardingStatus;
+  registrationIntent?: "personal" | "organization";
+  nextStep?: "personal_workspace_setup" | "organization_setup";
   claimSynchronization: {
     status: "synchronized" | "refresh_required" | "retry_required";
     tokenRefreshRequired: boolean;

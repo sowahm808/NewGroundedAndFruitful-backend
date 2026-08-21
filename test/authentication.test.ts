@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { AuthorizationError } from "../src/shared/errors.js";
+import {
+  AccountDisabledError,
+  AuthorizationError,
+} from "../src/shared/errors.js";
 import { isRole, resolvePrincipal } from "../src/middleware/authentication.js";
 
 function firestore(
@@ -80,6 +83,30 @@ describe("server-authoritative authentication role resolution", () => {
         { uid: "user-1" } as never,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+  it("allows a roleless identity only at the explicit registration boundary", async () => {
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "active" }) as never,
+        { uid: "new-user" } as never,
+        "strict",
+        true,
+      ),
+    ).resolves.toMatchObject({
+      roles: [],
+      memberships: [],
+      organizationIds: [],
+    });
+  });
+  it("returns the stable disabled-account policy error", async () => {
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "disabled" }) as never,
+        { uid: "disabled-user" } as never,
+        "strict",
+        true,
+      ),
+    ).rejects.toBeInstanceOf(AccountDisabledError);
   });
   it("authorizes a transitional profile role without membership only in compatibility mode", async () => {
     await expect(

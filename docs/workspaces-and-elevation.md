@@ -4,7 +4,11 @@
 
 ## Registration and sessions
 
-Clients submit `POST /api/v1/auth/registration` with intent `personal` or `organization`; `POST /api/v1/auth/registration-intent` is maintained as a compatibility alias for clients using that route name. Personal registration creates a deterministic private workspace and owner membership in one transaction and proceeds to personal/family setup. Organization intent records setup state; `POST /onboarding/organization` creates the organization and initial membership without changing platform roles. Login resolves identity first and returns every authorized workspace. A single workspace is selected automatically; otherwise clients must call `PUT /api/v1/auth/session/workspace`. Selection is persisted convenience state, not authorization, and every resource request is still checked against active server-owned membership.
+Clients submit `POST /api/v1/auth/registration-intent` with intent `personal` or `organization`. This authentication-only boundary obtains the UID from a revocation-aware Firebase token, rejects disabled accounts, and records no client-supplied authority. It does not require or create a role, membership, organization, or workspace. The legacy `POST /api/v1/auth/registration` flow remains separate.
+
+The canonical transition is `new_authenticated_user -> registration_intent_selected -> personal_workspace_required | organization_setup_required -> onboarding_complete`. An identical retry returns the stored transition without another write. A user may change intent before bootstrap; once any membership/workspace exists, an incompatible change returns `409` and never deletes data. Trusted bootstrap logic—not intent selection—creates the workspace and membership and assigns any workspace-scoped role. `POST /onboarding/organization` remains authenticated and creates the organization and initial membership without changing platform roles.
+
+Login resolves identity first and returns every authorized workspace. A single workspace is selected automatically; otherwise clients must call `PUT /api/v1/auth/session/workspace`. Selection is persisted convenience state, not authorization, and every resource request is still checked against active server-owned membership.
 
 ## Temporary elevation
 

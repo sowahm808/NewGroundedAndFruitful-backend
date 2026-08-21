@@ -16,8 +16,14 @@ const userProfileDocument = z
     updatedAt: z.unknown().optional(),
     activeWorkspaceId: z.string().optional(),
     onboardingStatus: z
-      .enum(["personal_setup", "organization_setup"])
+      .enum([
+        "personal_setup",
+        "organization_setup",
+        "personal_workspace_required",
+        "organization_setup_required",
+      ])
       .optional(),
+    registrationIntent: z.enum(["personal", "organization"]).optional(),
   })
   .passthrough();
 
@@ -34,6 +40,9 @@ const parseUserProfile = (value: unknown): UserProfile => {
       : {}),
     ...(parsed.onboardingStatus
       ? { onboardingStatus: parsed.onboardingStatus }
+      : {}),
+    ...(parsed.registrationIntent
+      ? { registrationIntent: parsed.registrationIntent }
       : {}),
   };
 };

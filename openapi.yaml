@@ -23,7 +23,9 @@ paths:
       tags: [Auth]
       operationId: registerAccountIntentCompatibility
       summary: Idempotently begin personal or organization registration
-      description: Compatibility alias for `POST /auth/registration`.
+      description: >-
+        Records the authenticated Firebase user's own intent without requiring a
+        role or membership. It never creates a workspace, membership, or role.
       security: [{ firebaseBearer: [] }]
       requestBody:
         required: true
@@ -48,7 +50,34 @@ paths:
                     properties: { intent: { const: organization } },
                   }
       responses:
-        "201": { description: Registration intent accepted }
+        "201":
+          description: Registration intent selected (including an exact retry)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required:
+                      [registrationIntent, onboardingStatus, nextStep, version]
+                    properties:
+                      registrationIntent: { enum: [personal, organization] }
+                      onboardingStatus:
+                        enum:
+                          [
+                            personal_workspace_required,
+                            organization_setup_required,
+                          ]
+                      nextStep:
+                        enum: [personal_workspace_setup, organization_setup]
+                      version: { type: integer, minimum: 1 }
+        "401": { description: Missing, invalid, expired, or revoked token }
+        "403": { description: Account is disabled }
+        "409": { description: Intent conflicts with bootstrapped state }
+        "422": { description: Intent is missing or invalid }
+        "429": { description: Rate limited }
   /auth/registration:
     post:
       tags: [Auth]
