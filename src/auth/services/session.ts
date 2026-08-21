@@ -209,7 +209,8 @@ export class AuthSessionService {
         : profile.onboardingStatus === "personal_setup" ||
             profile.onboardingStatus === "organization_setup" ||
             profile.onboardingStatus === "personal_workspace_required" ||
-            profile.onboardingStatus === "organization_setup_required"
+            profile.onboardingStatus === "organization_setup_required" ||
+            profile.onboardingStatus === "registration_intent_required"
           ? profile.onboardingStatus
           : roles.includes("child") && !hasChildContext
             ? "pending"

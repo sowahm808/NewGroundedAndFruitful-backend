@@ -14,16 +14,20 @@ const userProfileDocument = z
     status: z.enum(["active", "disabled"]),
     createdAt: z.unknown().optional(),
     updatedAt: z.unknown().optional(),
-    activeWorkspaceId: z.string().optional(),
+    activeWorkspaceId: z.string().nullable().optional(),
     onboardingStatus: z
       .enum([
         "personal_setup",
         "organization_setup",
         "personal_workspace_required",
         "organization_setup_required",
+        "registration_intent_required",
       ])
       .optional(),
-    registrationIntent: z.enum(["personal", "organization"]).optional(),
+    registrationIntent: z
+      .enum(["personal", "organization"])
+      .nullable()
+      .optional(),
   })
   .passthrough();
 
@@ -76,6 +80,10 @@ export class UserRepository {
           displayName: input.displayName,
           roles: [],
           status: "active",
+          registrationIntent: null,
+          onboardingStatus: "registration_intent_required",
+          memberships: [],
+          activeWorkspaceId: null,
           createdAt: now,
           updatedAt: now,
         });
@@ -85,6 +93,7 @@ export class UserRepository {
           displayName: input.displayName,
           roles: [],
           status: "active",
+          onboardingStatus: "registration_intent_required",
         };
       }
 
