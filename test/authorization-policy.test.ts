@@ -15,7 +15,7 @@ function context(role: UserRole, overrides: Partial<AuthorizationContext> = {}):
 }
 
 describe("central authorization policy", () => {
-  for (const role of ["child", "parent", "mentor", "observer", "admin", "super_admin"] as const) {
+  for (const role of ["child", "parent", "mentor", "observer", "admin", "super_admin", "platform_super_admin"] as const) {
     for (const permission of permissions) {
       const expected = rolePermissions[role].includes(permission);
       it(`${role} ${expected ? "allows" : "denies"} ${permission}`, async () => {
@@ -52,9 +52,13 @@ describe("central authorization policy", () => {
   it("denies super-admin cross-tenant access", async () => {
     await expect(policy.authorize(context("super_admin"), "organization.manage", { organizationId: "org-2" })).rejects.toBeInstanceOf(AuthorizationError);
   });
-  it("permits a scoped compatibility parent only for an explicitly linked child", async () => {
+  it("allows only the explicit platform operator to cross tenants", async () => {
+    const platform = context("platform_super_admin", { memberships: [], organizationIds: [] });
+    await expect(policy.authorize(platform, "organization.manage", { organizationId: "org-2" })).resolves.toBeUndefined();
+  });
+  it("denies legacy compatibility roles without canonical membership scope", async () => {
     const legacy = context("parent", { memberships: [], authorizationSource: "legacy_user_profile" });
-    await expect(policy.authorize(legacy, "child.linked.read", scope)).resolves.toBeUndefined();
+    await expect(policy.authorize(legacy, "child.linked.read", scope)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(policy.authorize(legacy, "child.linked.read", { ...scope, participantId: "other" })).rejects.toBeInstanceOf(AuthorizationError);
   });
   it("denies a compatibility admin outside explicit organization scope", async () => {

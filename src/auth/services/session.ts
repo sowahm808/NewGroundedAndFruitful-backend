@@ -76,6 +76,10 @@ export class AuthSessionService {
       context,
     );
     const roles = [...resolution.roles];
+    const platformClaim = normalizeRoles(
+      authUser.customClaims?.roles ?? decodedToken.roles,
+    ).roles.includes("platform_super_admin");
+    if (platformClaim) roles.push("platform_super_admin");
     const disabled = authUser.disabled || profile.status === "disabled";
     const pending = memberships.some((item) => item.status === "pending");
     const childOrganizations = activeMemberships
@@ -131,6 +135,8 @@ export class AuthSessionService {
         ? "disabled"
         : roles.includes("child") && !hasChildContext
           ? "pending"
+          : roles.includes("platform_super_admin")
+            ? "complete"
           : roles.length > 0 && activeMemberships.length > 0
             ? "complete"
             : resolution.source === "legacy_user_profile" &&

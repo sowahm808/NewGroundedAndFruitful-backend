@@ -14,11 +14,25 @@ service cloud.firestore {
       return signedIn() && exists(membershipPath(organizationId)) &&
         get(membershipPath(organizationId)).data.userId == request.auth.uid &&
         get(membershipPath(organizationId)).data.organizationId == organizationId &&
-        get(membershipPath(organizationId)).data.status == "active";
+        get(membershipPath(organizationId)).data.status == "active" &&
+        get(membershipPath(organizationId)).data.roles is list;
     }
 
     function hasRole(organizationId, role) {
-      return role in get(membershipPath(organizationId)).data.roles;
+      return activeMember(organizationId) &&
+        role in get(membershipPath(organizationId)).data.roles;
+    }
+
+    function isPlatformSuperAdmin() {
+      return signedIn() && request.auth.token.roles is list &&
+        "platform_super_admin" in request.auth.token.roles;
+    }
+
+    function canAdminister(organizationId) {
+      return isPlatformSuperAdmin() ||
+        (activeMember(organizationId) &&
+          (hasRole(organizationId, "admin") ||
+           hasRole(organizationId, "super_admin")));
     }
 
     function ownsParticipant(participantId, participant) {
@@ -47,21 +61,23 @@ service cloud.firestore {
     // Participant profiles contain only the relationship-safe projection. Notes,
     // reflections, credentials, and responses live in server-only collections.
     match /participants/{participantId} {
-      allow get: if signedIn() && activeMember(resource.data.organizationId) &&
-        ((hasRole(resource.data.organizationId, "child") && ownsParticipant(participantId, resource.data)) ||
+      allow get: if signedIn() && (canAdminister(resource.data.organizationId) ||
+        (activeMember(resource.data.organizationId) &&
+         (hasRole(resource.data.organizationId, "child") && ownsParticipant(participantId, resource.data)) ||
          (hasRole(resource.data.organizationId, "parent") && linkedParent(participantId, resource.data)) ||
-         (hasRole(resource.data.organizationId, "observer") && observerGrant(participantId, resource.data)));
+         (hasRole(resource.data.organizationId, "observer") && observerGrant(participantId, resource.data))));
       allow list, write: if false;
     }
 
     match /teams/{teamId} {
-      allow get: if signedIn() && activeMember(resource.data.organizationId) &&
+      allow get: if signedIn() && (canAdminister(resource.data.organizationId) ||
+        (activeMember(resource.data.organizationId) &&
         hasRole(resource.data.organizationId, "mentor") &&
         get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.mentorUid == request.auth.uid &&
         get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.teamId == teamId &&
         get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.organizationId == resource.data.organizationId &&
         get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.status == "active" &&
-        get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.revokedAt == null;
+        get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.revokedAt == null));
       allow list, write: if false;
     }
 

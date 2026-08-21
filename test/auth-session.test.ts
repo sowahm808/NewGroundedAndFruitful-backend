@@ -84,6 +84,15 @@ describe("auth session bootstrap", () => {
     },
   );
 
+  it("recognizes an explicitly provisioned platform operator without tenant scope", async () => {
+    const { subject } = service({ auth: { customClaims: { roles: ["platform_super_admin"] } } });
+    await expect(subject.createSession("token-1")).resolves.toMatchObject({
+      roles: ["platform_super_admin"],
+      onboardingStatus: "complete",
+      memberships: [],
+    });
+  });
+
   it("creates a missing profile without assigning a default role", async () => {
     const { subject, users } = service({ profile: null });
     await expect(subject.createSession("token-1")).resolves.toMatchObject({

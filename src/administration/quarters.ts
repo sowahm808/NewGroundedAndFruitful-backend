@@ -7,7 +7,7 @@ import type {
 } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import type { Principal } from "../auth/authorization.js";
-import { requireAdmin } from "../auth/authorization.js";
+import { requireAuthenticated, requireOrganizationRole } from "../auth/authorization.js";
 import { AppError, NotFoundError } from "../shared/errors.js";
 import type { z } from "zod";
 import type {
@@ -41,43 +41,43 @@ export class QuarterAdministrationService {
   constructor(private readonly db: Firestore) {}
 
   private actor(principal: Principal | undefined) {
-    return requireAdmin(principal);
+    return requireAuthenticated(principal);
   }
 
   private canAccess(actor: Principal, organizationId: string) {
     return (
-      actor.roles.includes("super_admin") ||
-      actor.organizationIds.includes(organizationId)
+      actor.roles.includes("platform_super_admin") ||
+      actor.memberships?.some(
+        (membership) =>
+          membership.organizationId === organizationId &&
+          membership.userId === actor.uid &&
+          membership.roles.some((role) => role === "admin" || role === "super_admin"),
+      ) === true
     );
   }
 
   private scope(actor: Principal, organizationId: string) {
-    if (!this.canAccess(actor, organizationId))
+    try {
+      requireOrganizationRole(actor, organizationId, ["admin", "super_admin"]);
+    } catch {
       throw quarterError(
         403,
         "QUARTER_SCOPE_FORBIDDEN",
         "Quarter management is not permitted for this organization.",
       );
+    }
   }
 
-  private async creationOrganization(
+  private creationOrganization(
     actor: Principal,
     requestedOrganizationId?: string,
   ) {
     if (requestedOrganizationId) return requestedOrganizationId;
-    if (actor.organizationIds.length === 1) return actor.organizationIds[0];
-
-    // A global administrator commonly has no organization membership. Keep
-    // organization selection explicit in multi-tenant environments, but avoid
-    // making the only tenant in a single-organization deployment redundant
-    // client knowledge.
-    if (actor.roles.includes("super_admin")) {
-      const organizations = await this.db
-        .collection("organizations")
-        .limit(2)
-        .get();
-      if (organizations.size === 1) return organizations.docs[0]?.id;
-    }
+    const organizationIds = [...new Set((actor.memberships ?? [])
+      .filter((membership) => membership.userId === actor.uid &&
+        membership.roles.some((role) => role === "admin" || role === "super_admin"))
+      .map((membership) => membership.organizationId))];
+    if (organizationIds.length === 1) return organizationIds[0];
 
     return undefined;
   }
@@ -218,7 +218,7 @@ export class QuarterAdministrationService {
     requestId: string,
   ) {
     const actor = this.actor(principal);
-    const organizationId = await this.creationOrganization(
+    const organizationId = this.creationOrganization(
       actor,
       input.organizationId,
     );
