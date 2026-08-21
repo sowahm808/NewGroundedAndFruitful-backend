@@ -26,6 +26,8 @@ export interface PersonalWorkspaceBootstrapResult {
     workspaceId: string;
     organizationId: string;
     roles: ["owner"];
+    workspaceRoles: ["owner"];
+    personas: ["parent"];
     status: "active";
   };
   activeWorkspaceId: string;
@@ -194,6 +196,7 @@ export class PersonalWorkspaceBootstrapService {
           workspaceId,
           roles: ["owner"],
           workspaceRoles: ["owner"],
+          personas: ["parent"],
           status: "active",
           version: 1,
           createdAt: now,
@@ -266,6 +269,8 @@ export class PersonalWorkspaceBootstrapService {
         workspaceId,
         organizationId: workspaceId,
         roles: ["owner"],
+        workspaceRoles: ["owner"],
+        personas: ["parent"],
         status: "active",
       },
       activeWorkspaceId: workspaceId,

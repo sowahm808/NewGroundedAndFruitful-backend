@@ -4,6 +4,7 @@ import { AuthenticationError, AuthorizationError } from "../shared/errors.js";
 import type { Role } from "./roles.js";
 import type { ActiveMembership } from "./policy.js";
 import type { PlatformRole } from "./claims.js";
+import type { ProductPersona } from "./capabilities.js";
 export type { Role } from "./roles.js";
 export interface Principal {
   uid: string;
@@ -13,6 +14,8 @@ export interface Principal {
   baseRoles?: readonly Role[];
   effectiveRoles?: readonly string[];
   capabilities?: readonly string[];
+  personas?: readonly ProductPersona[];
+  workspaceRoles?: readonly string[];
   activeWorkspaceId?: string;
   organizationIds: readonly string[];
   /** Populated by authentication; optional only for legacy internal call sites. */
@@ -39,6 +42,14 @@ export function requireAnyRole(
   if (!a.roles.some((role) => roles.includes(role)))
     throw new AuthorizationError();
   return a;
+}
+export function requireCapability(
+  p: Principal | undefined,
+  capability: string,
+): Principal {
+  const actor = requireAuthenticated(p);
+  if (!actor.capabilities?.includes(capability)) throw new AuthorizationError();
+  return actor;
 }
 export const requireAdmin = (p: Principal | undefined) =>
   requireAnyRole(p, ["admin", "super_admin"]);

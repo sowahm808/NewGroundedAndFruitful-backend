@@ -96,6 +96,44 @@ describe("auth session bootstrap", () => {
     });
   });
 
+  it("keeps personal ownership separate from its parent persona and capabilities", async () => {
+    const { subject } = service({
+      profile: {
+        ...activeProfile,
+        registrationIntent: "personal",
+        onboardingStatus: "complete",
+        activeWorkspaceId: "personal-1",
+      },
+      memberships: [
+        {
+          userId: "uid-1",
+          organizationId: "personal-1",
+          workspaceId: "personal-1",
+          roles: ["owner"],
+          workspaceRoles: ["owner"],
+          personas: ["parent"],
+          status: "active",
+        },
+      ],
+    });
+    const session = await subject.createSession("token-1");
+    expect(session).toMatchObject({
+      workspaceRoles: ["owner"],
+      personas: ["parent"],
+      effectiveRoles: ["owner", "parent"],
+      capabilities: expect.arrayContaining([
+        "parent.children.read",
+        "support.requests.create",
+      ]),
+    });
+    expect(session.capabilities).not.toEqual(
+      expect.arrayContaining(["admin.quarters.manage"]),
+    );
+    expect(session.effectiveRoles).not.toEqual(
+      expect.arrayContaining(["admin", "super_admin"]),
+    );
+  });
+
   it.each(["child", "parent", "mentor", "observer", "admin", "super_admin"])(
     "returns canonical %s membership role",
     async (role) => {

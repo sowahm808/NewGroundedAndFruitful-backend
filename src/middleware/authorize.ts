@@ -3,6 +3,7 @@ import {
   requireAnyRole as assertAny,
   requireAuthenticated as assertAuthenticated,
   type Role,
+  requireCapability as assertCapability,
 } from "../auth/authorization.js";
 export const requireAuthenticated: RequestHandler = (req, _res, next) => {
   try {
@@ -25,3 +26,13 @@ export const requireAnyRole =
 export const requireRole = (role: Role) => requireAnyRole(role);
 export const requireAdmin = requireAnyRole("admin", "super_admin");
 export const requireSuperAdmin = requireRole("super_admin");
+export const requireCapability =
+  (capability: string): RequestHandler =>
+  (req, _res, next) => {
+    try {
+      assertCapability(req.principal, capability);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };

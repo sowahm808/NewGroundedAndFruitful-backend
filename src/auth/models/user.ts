@@ -1,6 +1,7 @@
 import type { Timestamp } from "firebase-admin/firestore";
 import type { Role } from "../authorization.js";
 import type { PlatformRole } from "../claims.js";
+import type { ProductPersona } from "../capabilities.js";
 
 export type UserStatus = "active" | "disabled";
 export type MembershipStatus = "active" | "pending" | "suspended" | "revoked";
@@ -55,12 +56,22 @@ export interface SessionUser {
     organizationId: string;
     workspaceId?: string;
     workspaceRoles?: readonly string[];
+    personas?: readonly ProductPersona[];
     roles: readonly Role[];
     status: MembershipStatus | "expired" | "invalid";
   }>;
   /** Resolved only when exactly one active organization is available. */
   activeOrganizationId?: string;
   activeWorkspaceId?: string;
+  activeWorkspace?: {
+    id: string;
+    type: "personal" | "organization";
+    name: string;
+    status: string;
+  };
+  workspaceRoles?: readonly string[];
+  personas?: readonly ProductPersona[];
+  capabilities?: readonly string[];
   workspaces?: Array<{
     id: string;
     type: "personal" | "organization";
