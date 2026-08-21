@@ -45,7 +45,7 @@ export interface SessionUser {
   disabled: boolean;
   onboardingStatus: OnboardingStatus;
   registrationIntent?: "personal" | "organization";
-  nextStep?: "personal_workspace_setup" | "organization_setup";
+  nextStep?: "personal_workspace_setup" | "organization_setup" | "dashboard";
   claimSynchronization: {
     status: "synchronized" | "refresh_required" | "retry_required";
     tokenRefreshRequired: boolean;

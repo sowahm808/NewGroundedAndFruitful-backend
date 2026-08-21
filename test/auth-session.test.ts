@@ -69,6 +69,33 @@ describe("auth session bootstrap", () => {
     expect(bearerToken("bearer token-2")).toBe("token-2");
   });
 
+  it("projects a completed organization registration to the dashboard", async () => {
+    const { subject } = service({
+      profile: {
+        ...activeProfile,
+        registrationIntent: "organization",
+        onboardingStatus: "complete",
+        activeWorkspaceId: "org-1",
+      },
+      memberships: [
+        {
+          userId: "uid-1",
+          organizationId: "org-1",
+          workspaceId: "org-1",
+          roles: ["owner", "admin"],
+          status: "active",
+        },
+      ],
+    });
+    await expect(subject.createSession("token-1")).resolves.toMatchObject({
+      registrationIntent: "organization",
+      onboardingStatus: "complete",
+      nextStep: "dashboard",
+      activeWorkspaceId: "org-1",
+      effectiveRoles: ["owner", "admin"],
+    });
+  });
+
   it.each(["child", "parent", "mentor", "observer", "admin", "super_admin"])(
     "returns canonical %s membership role",
     async (role) => {
