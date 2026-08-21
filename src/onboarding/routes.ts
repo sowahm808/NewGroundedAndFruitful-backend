@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 
 import { OrganizationBootstrapService } from "./service.js";
-import { organizationCreateSchema } from "../administration/schemas.js";
+import { organizationBootstrapSchema } from "./schemas.js";
 import { requireAuthenticated } from "../auth/authorization.js";
 import { db } from "../config/firebase.js";
 import { validateBody } from "../middleware/validate.js";
@@ -21,7 +21,7 @@ const run =
 
 router.post(
   "/organization",
-  validateBody(organizationCreateSchema),
+  validateBody(organizationBootstrapSchema),
   run(async (req, res) => {
     const actor = requireAuthenticated(req.principal);
     const idempotencyKey = req.header("idempotency-key")?.trim();

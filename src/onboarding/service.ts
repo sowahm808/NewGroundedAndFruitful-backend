@@ -48,6 +48,31 @@ const validTimezone = (timezone: string) => {
   }
 };
 
+type BootstrapUserState = {
+  exists: boolean;
+  disabled: boolean;
+  registrationIntent: unknown;
+  onboardingStatus: unknown;
+};
+
+/**
+ * Dedicated first-workspace policy. In particular, it does not inspect roles,
+ * memberships, or an active workspace: those are outputs of this operation.
+ */
+export function requireOrganizationBootstrapEligibility(
+  user: BootstrapUserState,
+): void {
+  if (user.disabled) throw new AccountDisabledError();
+  if (!user.exists || user.registrationIntent !== "organization")
+    throw new OrganizationBootstrapError("ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE");
+  if (user.onboardingStatus === "complete")
+    throw new OrganizationBootstrapError(
+      "ORGANIZATION_BOOTSTRAP_ALREADY_COMPLETED",
+    );
+  if (user.onboardingStatus !== "organization_setup_required")
+    throw new OrganizationBootstrapError("ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE");
+}
+
 /** Dedicated policy and atomic workflow for a registrant's first workspace. */
 export class OrganizationBootstrapService {
   constructor(private readonly db: Firestore) {}
@@ -88,11 +113,6 @@ export class OrganizationBootstrapService {
                 .limit(1),
             ),
           ]);
-        if (!user.exists || user.get("registrationIntent") !== "organization")
-          throw new OrganizationBootstrapError(
-            "ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE",
-          );
-        if (user.get("status") === "disabled") throw new AccountDisabledError();
         if (marker.exists) {
           if (
             marker.get("payloadHash") !== payloadHash ||
@@ -109,14 +129,13 @@ export class OrganizationBootstrapService {
             );
           return this.result(workspaceId, membershipId, input);
         }
-        if (user.get("onboardingStatus") === "complete")
-          throw new OrganizationBootstrapError(
-            "ORGANIZATION_BOOTSTRAP_ALREADY_COMPLETED",
-          );
-        if (user.get("onboardingStatus") !== "organization_setup_required")
-          throw new OrganizationBootstrapError(
-            "ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE",
-          );
+        requireOrganizationBootstrapEligibility({
+          exists: user.exists,
+          disabled:
+            user.get("status") === "disabled" || user.get("disabled") === true,
+          registrationIntent: user.get("registrationIntent"),
+          onboardingStatus: user.get("onboardingStatus"),
+        });
         if (workspace.exists || membership.exists)
           throw new OrganizationBootstrapError(
             "ORGANIZATION_BOOTSTRAP_CONFLICT",
