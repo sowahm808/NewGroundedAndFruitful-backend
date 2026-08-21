@@ -129,6 +129,17 @@ describe("HTTP safety contract", () => {
       error: { code: "AUTHENTICATION_REQUIRED" },
     });
   });
+  it("publishes the nested Bible content import route", async () => {
+    const response = await fetch(
+      `${base}/api/v1/admin/bible-content/imports`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(415);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "BIBLE_IMPORT_FILE_INVALID" },
+    });
+  });
   it("publishes the authenticated organization onboarding route", async () => {
     const response = await fetch(`${base}/api/v1/onboarding/organization`, {
       method: "POST",

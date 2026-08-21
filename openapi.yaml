@@ -1518,7 +1518,7 @@ paths:
           "409": { $ref: "#/components/responses/QuarterConflict" },
           "422": { $ref: "#/components/responses/Validation" },
         }
-  /admin/bible-imports:
+  /admin/bible-content/imports:
     post:
       tags: [Bible]
       operationId: createBibleImport
@@ -1535,7 +1535,7 @@ paths:
           "415": { $ref: "#/components/responses/Validation" },
           "422": { $ref: "#/components/responses/Validation" },
         }
-  /admin/bible-imports/{importId}:
+  /admin/bible-content/imports/{importId}:
     get:
       tags: [Bible]
       operationId: getBibleImport
@@ -1546,7 +1546,7 @@ paths:
           "200": { description: Tenant-scoped safe preview },
           "404": { $ref: "#/components/responses/NotFound" },
         }
-  /admin/bible-imports/{importId}/items/{itemId}:
+  /admin/bible-content/imports/{importId}/items/{itemId}:
     patch:
       tags: [Bible]
       operationId: correctBibleImportItem
@@ -1571,14 +1571,14 @@ paths:
           "200": { description: Corrected preview },
           "409": { $ref: "#/components/responses/Conflict" },
         }
-  /admin/bible-imports/{importId}/validate:
+  /admin/bible-content/imports/{importId}/validate:
     post:
       tags: [Bible]
       operationId: validateBibleImport
       security: [{ firebaseBearer: [] }]
       parameters: [{ $ref: "#/components/parameters/ImportId" }]
       responses: { "200": { description: Validation errors and warnings } }
-  /admin/bible-imports/{importId}/commit:
+  /admin/bible-content/imports/{importId}/commit:
     post:
       tags: [Bible]
       operationId: commitBibleImport
