@@ -211,7 +211,16 @@ function parse(paragraphs: Paragraph[]): RawItem[] {
         "BIBLE_IMPORT_PARSE_FAILED",
         "Content appears before an activity heading.",
       );
-    const cm = choice.exec(p.text);
+    let cm = choice.exec(p.text);
+    // Real Word documents occasionally omit the separator after the final
+    // choice ("eNone" / "ea & b"). Only accept that spelling when it is the
+    // next sequential choice, otherwise ordinary questions beginning with a-e
+    // would be misclassified.
+    if (!cm && q) {
+      const expected = String.fromCharCode(97 + q.choices.length);
+      const loose = /^([a-e])\s*(.+)$/i.exec(p.text);
+      if (loose?.[1]?.toLowerCase() === expected) cm = loose;
+    }
     if (cm) {
       if (!q)
         throw fail(
