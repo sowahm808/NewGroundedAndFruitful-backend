@@ -141,6 +141,7 @@ export const rolePermissions: Readonly<
   parent,
   mentor,
   observer,
+  owner: [...admin, ...tenant],
   admin,
   super_admin: [...admin, ...tenant],
   platform_super_admin: [...admin, ...tenant],

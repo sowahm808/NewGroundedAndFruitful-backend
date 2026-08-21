@@ -22,6 +22,7 @@ const userProfileDocument = z
         "personal_workspace_required",
         "organization_setup_required",
         "registration_intent_required",
+        "complete",
       ])
       .optional(),
     registrationIntent: z
