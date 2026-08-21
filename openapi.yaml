@@ -248,6 +248,32 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Validation" }
+  /onboarding/personal:
+    post:
+      tags: [Onboarding]
+      operationId: onboardPersonalWorkspaceCompatibility
+      summary: Frontend-compatible personal workspace onboarding
+      description: >-
+        Compatibility alias for POST /auth/onboarding/personal-workspace. It
+        atomically creates the authenticated personal registrant's tenant and
+        owner-only membership.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [timezone]
+              properties:
+                timezone: { type: string, description: Valid IANA timezone }
+      responses:
+        "201": { description: Personal workspace onboarding completed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
   /auth/onboarding/organization:
     post:
       tags: [Onboarding]
