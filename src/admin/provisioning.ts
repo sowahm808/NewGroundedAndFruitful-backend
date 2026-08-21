@@ -123,6 +123,7 @@ export async function bootstrapLegacyAdministrator(
     const org = db.doc(`organizations/${organizationId}`);
     const membership = db.doc(`memberships/${membershipId}`);
     tx.create(org, {
+      type: "organization",
       name: input.name,
       slug: input.slug,
       timezone: input.timezone,
@@ -133,9 +134,19 @@ export async function bootstrapLegacyAdministrator(
       updatedAt: now,
       updatedBy: input.actor,
     });
+    tx.create(db.doc(`workspaces/${organizationId}`), {
+      type: "organization",
+      name: input.name,
+      status: "active",
+      timezone: input.timezone,
+      organizationId,
+      createdAt: now,
+      updatedAt: now,
+    });
     tx.create(membership, {
       userId: input.uid,
       organizationId,
+      workspaceId: organizationId,
       roles: ["admin"],
       status: "active",
       version: VERSION,

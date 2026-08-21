@@ -58,6 +58,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /workspaces/{workspaceId} {
+      allow get: if activeMember(workspaceId);
+      allow list, write: if false;
+    }
+
+    // Elevations and their immutable audit trail are evaluated by the Admin SDK.
+    // Browser claims are deliberately never accepted as temporary elevation.
+    match /elevationGrants/{grantId} { allow read, write: if false; }
+    match /auditLogs/{auditId} { allow read, write: if false; }
+
     // Participant profiles contain only the relationship-safe projection. Notes,
     // reflections, credentials, and responses live in server-only collections.
     match /participants/{participantId} {

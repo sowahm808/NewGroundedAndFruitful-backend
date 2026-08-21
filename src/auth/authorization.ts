@@ -10,6 +10,10 @@ export interface Principal {
   role: Role;
   roles: readonly Role[];
   platformRoles?: readonly PlatformRole[];
+  baseRoles?: readonly Role[];
+  effectiveRoles?: readonly string[];
+  capabilities?: readonly string[];
+  activeWorkspaceId?: string;
   organizationIds: readonly string[];
   /** Populated by authentication; optional only for legacy internal call sites. */
   memberships?: readonly ActiveMembership[];

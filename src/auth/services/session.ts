@@ -1,4 +1,5 @@
 import type { Auth, DecodedIdToken, UserRecord } from "firebase-admin/auth";
+import type { Firestore } from "firebase-admin/firestore";
 import { AuthenticationError, InternalError } from "../../shared/errors.js";
 import { logger } from "../../shared/logger.js";
 import type { SessionUser } from "../models/user.js";
@@ -14,6 +15,7 @@ import {
   trustedPlatformRoles,
   type PlatformRole,
 } from "../claims.js";
+import { ElevationService } from "../elevations.js";
 
 export interface SessionContext {
   requestId?: string;
@@ -60,6 +62,12 @@ export class AuthSessionService {
         this.logInvalidRoles(normalized.invalid, decodedToken.uid, context);
         return {
           organizationId: membership.organizationId,
+          ...(membership.workspaceId
+            ? { workspaceId: membership.workspaceId }
+            : {}),
+          ...((membership.workspaceRoles?.length ?? 0) > 0
+            ? { workspaceRoles: membership.workspaceRoles }
+            : {}),
           roles: normalized.roles,
           status: membershipStatus(membership.status, membership.expiresAt),
         };
@@ -68,6 +76,55 @@ export class AuthSessionService {
     const activeMemberships = memberships.filter(
       (item) => item.status === "active",
     );
+    const workspaceIds = [
+      ...new Set(
+        activeMemberships.map((m) => m.workspaceId ?? m.organizationId),
+      ),
+    ];
+    const sessionDb = (this.users as unknown as { firestore?: Firestore })
+      .firestore;
+    const workspaceDocuments = sessionDb
+      ? await Promise.all(
+          workspaceIds.map(async (id) => {
+            const workspace = await sessionDb.doc(`workspaces/${id}`).get();
+            if (workspace.exists) return workspace;
+            return sessionDb.doc(`organizations/${id}`).get();
+          }),
+        )
+      : [];
+    const workspaces = workspaceDocuments.flatMap((doc, index) =>
+      !doc.exists
+        ? []
+        : [
+            {
+              id: workspaceIds[index]!,
+              type:
+                doc.get("type") === "personal"
+                  ? ("personal" as const)
+                  : ("organization" as const),
+              name: String(doc.get("name") ?? "Workspace"),
+              status: String(doc.get("status") ?? "active"),
+              roles:
+                activeMemberships.find(
+                  (m) =>
+                    (m.workspaceId ?? m.organizationId) === workspaceIds[index],
+                )?.workspaceRoles ??
+                activeMemberships.find(
+                  (m) =>
+                    (m.workspaceId ?? m.organizationId) === workspaceIds[index],
+                )?.roles ??
+                [],
+            },
+          ],
+    );
+    const storedActiveWorkspaceId = profile.activeWorkspaceId;
+    const activeWorkspaceId = workspaceIds.includes(
+      storedActiveWorkspaceId ?? "",
+    )
+      ? storedActiveWorkspaceId
+      : workspaceIds.length === 1
+        ? workspaceIds[0]
+        : undefined;
     const storedProfile = profile as unknown as {
       roles?: unknown;
       role?: unknown;
@@ -106,6 +163,13 @@ export class AuthSessionService {
       activeMemberships.length === 0 &&
       memberships.some((item) => item.status === "suspended");
     const restricted = disabled || suspendedOnly;
+    const activeElevations =
+      restricted || !sessionDb
+        ? []
+        : await new ElevationService(sessionDb).activeForUser(
+            decodedToken.uid,
+            activeWorkspaceId,
+          );
     if (restricted) {
       logger.warn("session_account_restricted", {
         requestId: context.requestId,
@@ -142,21 +206,34 @@ export class AuthSessionService {
       disabled: restricted,
       onboardingStatus: restricted
         ? "disabled"
-        : roles.includes("child") && !hasChildContext
-          ? "pending"
-          : platformRoles.includes("super_admin")
-            ? "complete"
-            : roles.length > 0 && activeMemberships.length > 0
+        : profile.onboardingStatus === "personal_setup" ||
+            profile.onboardingStatus === "organization_setup"
+          ? profile.onboardingStatus
+          : roles.includes("child") && !hasChildContext
+            ? "pending"
+            : platformRoles.includes("super_admin")
               ? "complete"
-              : resolution.source === "legacy_user_profile" &&
-                  resolution.migrationRequired
-                ? "organization_required"
-                : pending
-                  ? "pending"
-                  : "role_required",
+              : roles.length > 0 && activeMemberships.length > 0
+                ? "complete"
+                : resolution.source === "legacy_user_profile" &&
+                    resolution.migrationRequired
+                  ? "organization_required"
+                  : pending
+                    ? "pending"
+                    : "role_required",
       claimSynchronization,
       tokenRefreshRequired: claimSynchronization.tokenRefreshRequired,
       memberships,
+      workspaces,
+      baseRoles: effectiveRoles,
+      effectiveRoles: [
+        ...new Set([
+          ...effectiveRoles,
+          ...activeElevations.flatMap((grant) => grant.roles),
+        ]),
+      ],
+      activeElevations,
+      ...(activeWorkspaceId ? { activeWorkspaceId } : {}),
       authorization: {
         source:
           platformRoles.length > 0
