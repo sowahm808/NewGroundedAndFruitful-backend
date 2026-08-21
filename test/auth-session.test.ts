@@ -85,9 +85,18 @@ describe("auth session bootstrap", () => {
   );
 
   it("recognizes an explicitly provisioned platform operator without tenant scope", async () => {
-    const { subject } = service({ auth: { customClaims: { roles: ["platform_super_admin"] } } });
+    const { subject } = service({
+      profile: { ...activeProfile, roles: ["super_admin"] },
+      auth: {
+        customClaims: {
+          platformRoles: ["super_admin"],
+          roles: ["super_admin"],
+        },
+      },
+    });
     await expect(subject.createSession("token-1")).resolves.toMatchObject({
-      roles: ["platform_super_admin"],
+      platformRoles: ["super_admin"],
+      roles: ["super_admin"],
       onboardingStatus: "complete",
       memberships: [],
     });
@@ -306,7 +315,7 @@ describe("auth session bootstrap", () => {
 
   it("does not rewrite synchronized stored claims merely because the token is stale", async () => {
     const { subject, firebaseAuth } = service({
-      auth: { customClaims: { roles: ["parent"] } },
+      auth: { customClaims: { platformRoles: [], roles: ["parent"] } },
       token: { roles: ["admin"] },
       memberships: [membership("parent")],
     });

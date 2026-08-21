@@ -3,11 +3,13 @@ import type { Firestore } from "firebase-admin/firestore";
 import { AuthenticationError, AuthorizationError } from "../shared/errors.js";
 import type { Role } from "./roles.js";
 import type { ActiveMembership } from "./policy.js";
+import type { PlatformRole } from "./claims.js";
 export type { Role } from "./roles.js";
 export interface Principal {
   uid: string;
   role: Role;
   roles: readonly Role[];
+  platformRoles?: readonly PlatformRole[];
   organizationIds: readonly string[];
   /** Populated by authentication; optional only for legacy internal call sites. */
   memberships?: readonly ActiveMembership[];
@@ -39,7 +41,11 @@ export const requireAdmin = (p: Principal | undefined) =>
 export const requireSuperAdmin = (p: Principal | undefined) =>
   requireRole(p, "super_admin");
 export const requirePlatformSuperAdmin = (p: Principal | undefined) =>
-  requireRole(p, "platform_super_admin");
+  requireAuthenticated(p).platformRoles?.includes("super_admin")
+    ? requireAuthenticated(p)
+    : (() => {
+        throw new AuthorizationError();
+      })();
 
 /** Membership documents are the sole source of tenant scope. */
 export function requireOrganizationRole(
@@ -48,7 +54,6 @@ export function requireOrganizationRole(
   roles: readonly Role[],
 ): Principal {
   const actor = requireAuthenticated(p);
-  if (actor.roles.includes("platform_super_admin")) return actor;
   const authorized = actor.memberships?.some(
     (membership) =>
       membership.userId === actor.uid &&
