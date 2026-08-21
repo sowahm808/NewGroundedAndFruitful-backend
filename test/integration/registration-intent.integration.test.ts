@@ -82,7 +82,7 @@ describe("registration intent HTTP policy", () => {
       timezone: "America/Chicago",
     };
     const bootstrap = () =>
-      fetch(`${base}/api/v1/onboarding/organization`, {
+      fetch(`${base}/api/v1/auth/onboarding/organization`, {
         method: "POST",
         headers: {
           authorization: `Bearer ${identity.idToken}`,
@@ -152,6 +152,64 @@ describe("registration intent HTTP policy", () => {
     expect(response.status).toBe(422);
     expect((await db.collection("organizations").get()).empty).toBe(true);
     expect((await db.collection("memberships").get()).empty).toBe(true);
+  });
+  it("rejects missing intent and completed onboarding with stable policy errors", async () => {
+    const missing = await createIdentity("missing-intent@example.test");
+    const payload = {
+      name: "Missing Intent",
+      slug: "missing-intent",
+      timezone: "UTC",
+    };
+    const request = (token: string, body = payload) =>
+      fetch(`${base}/api/v1/auth/onboarding/organization`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    const missingResponse = await request(missing.idToken);
+    expect(missingResponse.status).toBe(403);
+    expect(await missingResponse.json()).toMatchObject({
+      error: { code: "ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE" },
+    });
+
+    const completed = await createIdentity("completed@example.test");
+    await db.doc(`users/${completed.localId}`).set({
+      uid: completed.localId,
+      roles: [],
+      status: "active",
+      registrationIntent: "organization",
+      onboardingStatus: "complete",
+    });
+    const completedResponse = await request(completed.idToken, {
+      ...payload,
+      name: "Completed",
+      slug: "completed",
+    });
+    expect(completedResponse.status).toBe(409);
+    expect(await completedResponse.json()).toMatchObject({
+      error: { code: "ORGANIZATION_BOOTSTRAP_ALREADY_COMPLETED" },
+    });
+  });
+
+  it("keeps ordinary administrator organization creation role-protected", async () => {
+    const identity = await createIdentity("roleless-admin@example.test");
+    const response = await fetch(`${base}/api/v1/admin/organizations`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${identity.idToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Must Not Exist",
+        slug: "must-not-exist",
+        timezone: "UTC",
+      }),
+    });
+    expect(response.status).toBe(403);
+    expect((await db.collection("organizations").get()).empty).toBe(true);
   });
   it("allows an idempotent organization intent for a roleless Firebase user", async () => {
     const identity = await createIdentity("roleless@example.test");

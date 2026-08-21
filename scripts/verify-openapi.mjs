@@ -7,6 +7,7 @@ const source = await readFile(
 );
 const document = parse(source);
 const required = {
+  "/auth/onboarding/organization": ["post"],
   "/admin/quarters": ["get", "post"],
   "/admin/quarters/{quarterId}": ["get", "patch"],
   "/admin/quarters/{quarterId}/activate": ["post"],
