@@ -37,6 +37,55 @@ describe("persona capability policy", () => {
   it("does not give an organization admin parent access without a persona", () => {
     const capabilities = deriveCapabilities([], ["admin"], ["admin"]);
     expect(capabilities).toContain("admin.quarters.manage");
+    expect(capabilities).toEqual(
+      expect.arrayContaining([
+        "admin.dashboard.read",
+        "admin.participants.read",
+        "admin.teams.read",
+        "admin.assignments.read",
+        "admin.character_content.read",
+        "admin.bible_content.read",
+        "admin.family_activities.read",
+        "admin.books.read",
+        "admin.projects.read",
+        "admin.surveys.read",
+        "admin.point_rules.read",
+        "admin.reports.read",
+        "admin.awards.read",
+        "admin.audit_summaries.read",
+      ]),
+    );
+    expect(
+      capabilities.some((capability) => capability.startsWith("tenant.")),
+    ).toBe(false);
     expect(capabilities).not.toContain("parent.children.read");
+  });
+
+  it("gives a tenant super admin explicit operations and tenant controls", () => {
+    const capabilities = deriveCapabilities([], [], ["super_admin"]);
+    expect(capabilities).toEqual(
+      expect.arrayContaining([
+        "admin.dashboard.read",
+        "admin.participants.manage",
+        "tenant.memberships.manage",
+        "tenant.configuration.manage",
+        "tenant.administrators.manage",
+        "tenant.lifecycle.manage",
+        "tenant.operations.manage",
+        "tenant.audit.read",
+      ]),
+    );
+    expect(capabilities).not.toContain("*");
+  });
+
+  it("combines personas without duplicate capabilities", () => {
+    const capabilities = deriveCapabilities(
+      ["admin", "parent", "mentor"],
+      ["admin"],
+      ["admin"],
+    );
+    expect(capabilities).toContain("parent.children.read");
+    expect(capabilities).toContain("mentor.teams.read");
+    expect(new Set(capabilities).size).toBe(capabilities.length);
   });
 });

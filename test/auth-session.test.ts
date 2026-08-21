@@ -83,6 +83,8 @@ describe("auth session bootstrap", () => {
           organizationId: "org-1",
           workspaceId: "org-1",
           roles: ["owner", "admin"],
+          workspaceRoles: ["owner", "admin"],
+          personas: ["admin"],
           status: "active",
         },
       ],
@@ -93,6 +95,16 @@ describe("auth session bootstrap", () => {
       nextStep: "dashboard",
       activeWorkspaceId: "org-1",
       effectiveRoles: ["owner", "admin"],
+      workspaceRoles: ["owner", "admin"],
+      personas: ["admin"],
+      capabilities: expect.arrayContaining([
+        "admin.dashboard.read",
+        "admin.participants.read",
+        "admin.teams.read",
+        "admin.quarters.read",
+        "admin.bible_content.read",
+        "admin.reports.read",
+      ]),
     });
   });
 
@@ -148,6 +160,26 @@ describe("auth session bootstrap", () => {
       });
     },
   );
+
+  it("scopes tenant super-admin capabilities to its active membership", async () => {
+    const session = await service({
+      memberships: [
+        {
+          ...membership("super_admin"),
+          workspaceRoles: ["super_admin"],
+        },
+      ],
+    }).subject.createSession("token-1");
+    expect(session.capabilities).toEqual(
+      expect.arrayContaining([
+        "admin.dashboard.read",
+        "admin.quarters.read",
+        "tenant.memberships.manage",
+        "tenant.audit.read",
+      ]),
+    );
+    expect(session.activeWorkspaceId).toBe("org-1");
+  });
 
   it("recognizes an explicitly provisioned platform operator without tenant scope", async () => {
     const { subject } = service({

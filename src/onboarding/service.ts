@@ -59,6 +59,8 @@ export interface OrganizationBootstrapResult {
     workspaceId: string;
     organizationId: string;
     roles: string[];
+    workspaceRoles: ["owner", "admin"];
+    personas: ["admin"];
     status: "active";
   };
   onboardingStatus: "complete";
@@ -489,6 +491,8 @@ export class OrganizationBootstrapService {
           organizationId: workspaceId,
           workspaceId,
           roles: ["owner", "admin"],
+          workspaceRoles: ["owner", "admin"],
+          personas: ["admin"],
           status: "active",
           version: 1,
           createdAt: now,
@@ -619,6 +623,8 @@ export class OrganizationBootstrapService {
         organizationId: state.workspaceId,
         workspaceId: state.workspaceId,
         roles: ["owner", "admin"],
+        workspaceRoles: ["owner", "admin"],
+        personas: ["admin"],
         status: "active",
         version: 1,
         createdAt: now,
@@ -660,6 +666,8 @@ export class OrganizationBootstrapService {
         workspaceId,
         organizationId: workspaceId,
         roles: ["owner", "admin"],
+        workspaceRoles: ["owner", "admin"],
+        personas: ["admin"],
         status: "active",
       },
       onboardingStatus: "complete",
