@@ -19,6 +19,7 @@
     "emulators": "npx --yes firebase-tools@14.12.1 emulators:start",
     "seed": "node scripts/guard-production.mjs --require-emulator && tsx scripts/seed.ts",
     "admin:assign-role": "tsx scripts/assign-role.ts",
+    "auth:repair-role": "tsx scripts/repair-role.ts",
     "admin:bootstrap-organization": "tsx scripts/bootstrap-organization.ts",
     "admin:provision-child": "tsx scripts/provision-child.ts",
     "admin:provision-child-credential": "tsx scripts/provision-child-credential.ts",

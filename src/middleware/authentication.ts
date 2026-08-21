@@ -11,6 +11,7 @@ import {
   type AuthorizationSource,
 } from "../auth/role-resolution.js";
 import { env } from "../config/env.js";
+import { trustedPlatformRoles } from "../auth/claims.js";
 export { isRole } from "../auth/roles.js";
 
 export async function resolvePrincipal(
@@ -19,6 +20,7 @@ export async function resolvePrincipal(
   mode: "compatibility" | "strict" = env.MEMBERSHIP_ENFORCEMENT_MODE,
 ): Promise<{
   roles: Role[];
+  platformRoles: Array<"super_admin">;
   organizationIds: string[];
   memberships: ActiveMembership[];
   authorizationSource: AuthorizationSource;
@@ -82,12 +84,12 @@ export async function resolvePrincipal(
     user.exists ? (user.get("roles") ?? user.get("role")) : undefined,
     mode,
   );
-  const tokenRoles = normalizeRoles(token.roles).roles;
   const roles = [...resolution.roles];
-  // The platform role is the sole global claim. Tenant roles in claims never
-  // create scope; this role must be provisioned through the operator workflow.
-  if (tokenRoles.includes("platform_super_admin"))
-    roles.push("platform_super_admin");
+  const platformRoles = trustedPlatformRoles(
+    token,
+    user.exists ? (user.get("roles") ?? user.get("role")) : undefined,
+  );
+  roles.push(...platformRoles);
   if (resolution.source === "legacy_user_profile" && user.exists) {
     const explicitIds = user.get("organizationIds");
     if (Array.isArray(explicitIds))
@@ -106,6 +108,7 @@ export async function resolvePrincipal(
   if (roles.length === 0) throw new AuthorizationError();
   return {
     roles,
+    platformRoles,
     organizationIds: [...new Set(organizationIds)],
     memberships,
     authorizationSource: resolution.source,
@@ -151,6 +154,7 @@ export async function authenticate(
       uid: token.uid,
       role: resolved.roles[0]!,
       roles: resolved.roles,
+      platformRoles: resolved.platformRoles,
       organizationIds: resolved.organizationIds,
       memberships: resolved.memberships,
       ...(resolved.authorizationSource !== "none"

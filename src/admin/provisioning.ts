@@ -9,6 +9,12 @@ import {
   ValidationError,
 } from "../shared/errors.js";
 import { normalizeRoles } from "../auth/roles.js";
+import {
+  authorizedClaims,
+  effectiveRoles,
+  synchronizeClaims,
+  trustedPlatformRoles,
+} from "../auth/claims.js";
 
 const VERSION = 1;
 const safeId = (...parts: string[]) =>
@@ -181,25 +187,30 @@ export async function bootstrapLegacyAdministrator(
       outcome: result,
       claims: "not_attempted",
     };
-  const current = normalizeRoles(authUser.customClaims?.roles).roles;
+  const synchronizedProfile = await db.doc(`users/${input.uid}`).get();
   let claims: LegacyAdministratorBootstrapReport["claims"] = "synchronized";
-  if (current.length !== 1 || current[0] !== "admin") {
-    await auth.setCustomUserClaims(input.uid, {
-      ...authUser.customClaims,
-      roles: ["admin"],
-    });
+  const synchronized = await synchronizeClaims(auth, input.uid, (fresh) => {
+    const platformRoles = trustedPlatformRoles(
+      fresh.customClaims ?? {},
+      synchronizedProfile.get("roles") ?? synchronizedProfile.get("role"),
+    );
+    return authorizedClaims(
+      fresh.customClaims ?? {},
+      platformRoles,
+      effectiveRoles(platformRoles, ["admin"]),
+    );
+  });
+  if (synchronized.changed) {
     claims = "refresh_required";
-    await db
-      .collection("auditLogs")
-      .add({
-        event: "claims.synchronized",
-        actorId: input.actor,
-        targetUid: input.uid,
-        organizationId,
-        membershipId,
-        requestId: input.requestId,
-        createdAt: FieldValue.serverTimestamp(),
-      });
+    await db.collection("auditLogs").add({
+      event: "claims.synchronized",
+      actorId: input.actor,
+      targetUid: input.uid,
+      organizationId,
+      membershipId,
+      requestId: input.requestId,
+      createdAt: FieldValue.serverTimestamp(),
+    });
   }
   return {
     uid: input.uid,
@@ -541,30 +552,26 @@ export async function provisionChild(
       ...authUser.customClaims,
       roles: [...new Set([...roles, "child"])],
     });
-    await db
-      .doc(`users/${input.uid}`)
-      .set(
-        {
-          provisioningState: "complete",
-          claimsSynchronizedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-          updatedBy: input.actor,
-        },
-        { merge: true },
-      );
+    await db.doc(`users/${input.uid}`).set(
+      {
+        provisioningState: "complete",
+        claimsSynchronizedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: input.actor,
+      },
+      { merge: true },
+    );
   } catch {
     claims = "retry_required";
-    await db
-      .doc(`users/${input.uid}`)
-      .set(
-        {
-          provisioningState: "claims_pending",
-          claimSyncRetryRequired: true,
-          updatedAt: FieldValue.serverTimestamp(),
-          updatedBy: input.actor,
-        },
-        { merge: true },
-      );
+    await db.doc(`users/${input.uid}`).set(
+      {
+        provisioningState: "claims_pending",
+        claimSyncRetryRequired: true,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: input.actor,
+      },
+      { merge: true },
+    );
   }
   return report(
     changes.length === 0 ? "unchanged" : "reconciled",

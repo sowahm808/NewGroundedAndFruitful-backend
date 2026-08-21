@@ -1861,10 +1861,13 @@ components:
                     email,
                     displayName,
                     roles,
+                    platformRoles,
                     disabled,
                     onboardingStatus,
                     memberships,
                     authorization,
+                    claimSynchronization,
+                    tokenRefreshRequired,
                   ],
                 properties:
                   {
@@ -1886,6 +1889,37 @@ components:
                                 admin,
                                 super_admin,
                               ],
+                          },
+                      },
+                    platformRoles:
+                      {
+                        type: array,
+                        description: "Trusted global roles provisioned only by an approved server-side process.",
+                        items: { type: string, enum: [super_admin] },
+                      },
+                    activeOrganizationId:
+                      {
+                        type: string,
+                        description: "Present only when exactly one active membership supplies tenant context.",
+                      },
+                    tokenRefreshRequired: { type: boolean },
+                    claimSynchronization:
+                      {
+                        type: object,
+                        required: [status, tokenRefreshRequired],
+                        properties:
+                          {
+                            status:
+                              {
+                                type: string,
+                                enum:
+                                  [
+                                    synchronized,
+                                    refresh_required,
+                                    retry_required,
+                                  ],
+                              },
+                            tokenRefreshRequired: { type: boolean },
                           },
                       },
                     disabled: { type: boolean },
@@ -1932,7 +1966,15 @@ components:
                                 status:
                                   {
                                     type: string,
-                                    enum: [active, pending, suspended, revoked],
+                                    enum:
+                                      [
+                                        active,
+                                        pending,
+                                        suspended,
+                                        revoked,
+                                        expired,
+                                        invalid,
+                                      ],
                                   },
                               },
                           },
@@ -1946,7 +1988,13 @@ components:
                             source:
                               {
                                 type: string,
-                                enum: [membership, legacy_user_profile, none],
+                                enum:
+                                  [
+                                    platform_claims_and_memberships,
+                                    membership,
+                                    legacy_user_profile,
+                                    none,
+                                  ],
                               },
                             migrationRequired: { type: boolean },
                           },

@@ -1,5 +1,6 @@
 import type { Timestamp } from "firebase-admin/firestore";
 import type { Role } from "../authorization.js";
+import type { PlatformRole } from "../claims.js";
 
 export type UserStatus = "active" | "disabled";
 export type MembershipStatus = "active" | "pending" | "suspended" | "revoked";
@@ -26,12 +27,14 @@ export interface SessionUser {
   email: string | null;
   displayName: string;
   roles: readonly Role[];
+  platformRoles: readonly PlatformRole[];
   disabled: boolean;
   onboardingStatus: OnboardingStatus;
   claimSynchronization: {
     status: "synchronized" | "refresh_required" | "retry_required";
     tokenRefreshRequired: boolean;
   };
+  tokenRefreshRequired: boolean;
   memberships: Array<{
     organizationId: string;
     roles: readonly Role[];
@@ -40,7 +43,11 @@ export interface SessionUser {
   /** Resolved only when exactly one active organization is available. */
   activeOrganizationId?: string;
   authorization: {
-    source: "membership" | "legacy_user_profile" | "none";
+    source:
+      | "platform_claims_and_memberships"
+      | "membership"
+      | "legacy_user_profile"
+      | "none";
     migrationRequired: boolean;
   };
 }

@@ -7,6 +7,13 @@ import type { UserRepository } from "../repositories/users.js";
 import { normalizeRoles, type Role } from "../roles.js";
 import { resolveRoles } from "../role-resolution.js";
 import { env } from "../../config/env.js";
+import {
+  authorizedClaims,
+  effectiveRoles as aggregateRoles,
+  synchronizeClaims,
+  trustedPlatformRoles,
+  type PlatformRole,
+} from "../claims.js";
 
 export interface SessionContext {
   requestId?: string;
@@ -75,11 +82,11 @@ export class AuthSessionService {
       decodedToken.uid,
       context,
     );
-    const roles = [...resolution.roles];
-    const platformClaim = normalizeRoles(
-      authUser.customClaims?.roles ?? decodedToken.roles,
-    ).roles.includes("platform_super_admin");
-    if (platformClaim) roles.push("platform_super_admin");
+    const platformRoles = trustedPlatformRoles(
+      authUser.customClaims ?? {},
+      storedProfile.roles ?? storedProfile.role,
+    );
+    const roles = aggregateRoles(platformRoles, resolution.roles);
     const disabled = authUser.disabled || profile.status === "disabled";
     const pending = memberships.some((item) => item.status === "pending");
     const childOrganizations = activeMemberships
@@ -121,8 +128,9 @@ export class AuthSessionService {
     const effectiveRoles = restricted ? [] : roles;
     const claimSynchronization = await this.syncRoleClaims(
       authUser,
-      decodedToken,
       effectiveRoles,
+      platformRoles,
+      storedProfile.roles ?? storedProfile.role,
       context,
     );
     const session: SessionUser = {
@@ -130,25 +138,30 @@ export class AuthSessionService {
       email: profile.email ?? null,
       displayName: profile.displayName,
       roles: effectiveRoles,
+      platformRoles: restricted ? [] : platformRoles,
       disabled: restricted,
       onboardingStatus: restricted
         ? "disabled"
         : roles.includes("child") && !hasChildContext
           ? "pending"
-          : roles.includes("platform_super_admin")
+          : platformRoles.includes("super_admin")
             ? "complete"
-          : roles.length > 0 && activeMemberships.length > 0
-            ? "complete"
-            : resolution.source === "legacy_user_profile" &&
-                resolution.migrationRequired
-              ? "organization_required"
-              : pending
-                ? "pending"
-                : "role_required",
+            : roles.length > 0 && activeMemberships.length > 0
+              ? "complete"
+              : resolution.source === "legacy_user_profile" &&
+                  resolution.migrationRequired
+                ? "organization_required"
+                : pending
+                  ? "pending"
+                  : "role_required",
       claimSynchronization,
+      tokenRefreshRequired: claimSynchronization.tokenRefreshRequired,
       memberships,
       authorization: {
-        source: resolution.source,
+        source:
+          platformRoles.length > 0
+            ? "platform_claims_and_memberships"
+            : resolution.source,
         migrationRequired: resolution.migrationRequired,
       },
       ...(new Set(activeMemberships.map((item) => item.organizationId)).size ===
@@ -217,27 +230,41 @@ export class AuthSessionService {
 
   private async syncRoleClaims(
     authUser: UserRecord,
-    decodedToken: DecodedIdToken,
     roles: Role[],
+    platformRoles: PlatformRole[],
+    profileRoles: unknown,
     context: SessionContext,
   ): Promise<SessionUser["claimSynchronization"]> {
-    const currentClaims = authUser.customClaims ?? {};
-    const current = normalizeRoles(
-      currentClaims.roles ?? decodedToken.roles,
-    ).roles;
-    if (
-      current.length === roles.length &&
-      roles.every((role) => current.includes(role))
-    )
-      return { status: "synchronized", tokenRefreshRequired: false };
-    logger.info("session_claim_roles_out_of_sync", {
-      requestId: context.requestId,
-      uid: authUser.uid,
-    });
     try {
-      await this.firebaseAuth.setCustomUserClaims(authUser.uid, {
-        ...currentClaims,
-        roles,
+      const result = await synchronizeClaims(
+        this.firebaseAuth,
+        authUser.uid,
+        (fresh) => {
+          const freshPlatformRoles = trustedPlatformRoles(
+            fresh.customClaims ?? {},
+            profileRoles,
+          );
+          // Explicit revocation wins: never resurrect a role from the stale token.
+          const authorizedPlatformRoles = platformRoles.filter((role) =>
+            freshPlatformRoles.includes(role),
+          );
+          return authorizedClaims(
+            fresh.customClaims ?? {},
+            authorizedPlatformRoles,
+            aggregateRoles(
+              authorizedPlatformRoles,
+              roles.filter((role) => role !== "super_admin"),
+            ),
+          );
+        },
+      );
+      if (!result.changed)
+        return { status: "synchronized", tokenRefreshRequired: false };
+      logger.info("session_claim_roles_synchronized", {
+        requestId: context.requestId,
+        uid: authUser.uid,
+        beforeRoles: normalizeRoles(result.before.roles).roles,
+        afterRoles: normalizeRoles(result.after.roles).roles,
       });
       return { status: "refresh_required", tokenRefreshRequired: true };
     } catch {
