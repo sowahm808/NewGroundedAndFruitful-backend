@@ -33,6 +33,7 @@ import {
   RateLimitError,
 } from "./shared/errors.js";
 import { logger } from "./shared/logger.js";
+import { storageReadiness } from "./config/storage-readiness.js";
 
 export const app = express();
 
@@ -76,13 +77,19 @@ app.get("/", (_req, res) => {
   res.status(200).json(healthResponse);
 });
 
-app.get("/health", (_req, res) => {
-  res.status(200).json(healthResponse);
-});
+const readiness = (_req: Request, res: Response) => {
+  const dependency = storageReadiness();
+  const ready = env.APP_ENV !== "production" || dependency.status === "ready";
+  res.status(ready ? 200 : 503).json({
+    ...healthResponse,
+    status: ready ? "ok" : "unavailable",
+    dependencies: { bibleImportStorage: { status: dependency.status } },
+  });
+};
 
-app.get("/api/v1/health", (_req, res) => {
-  res.status(200).json(healthResponse);
-});
+app.get("/health", readiness);
+
+app.get("/api/v1/health", readiness);
 
 /*
  * Do not expose internal API documentation in production unless it is

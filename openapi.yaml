@@ -1524,6 +1524,12 @@ paths:
       operationId: createBibleImport
       description: Admin-only two-file preview import. Parsing never publishes content.
       security: [{ firebaseBearer: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Stable 8-128 character key. An exact tenant-scoped retry returns the existing import without uploading again.
+          schema: { type: string, pattern: "^[A-Za-z0-9_-]{8,128}$" }
       requestBody:
         required: true
         description: Use the text parts `organizationId`, `quarterId`, and `title`, and exactly one DOCX file part each named `quizFile` and `answerKeyFile`.
@@ -2183,8 +2189,27 @@ components:
         required: [status, environment],
         properties:
           {
-            status: { type: string, const: ok },
+            status: { type: string, enum: [ok, unavailable] },
             environment: { type: string },
+            dependencies:
+              {
+                type: object,
+                properties:
+                  {
+                    bibleImportStorage:
+                      {
+                        type: object,
+                        properties:
+                          {
+                            status:
+                              {
+                                type: string,
+                                enum: [checking, ready, unavailable],
+                              },
+                          },
+                      },
+                  },
+              },
           },
       }
     Error:

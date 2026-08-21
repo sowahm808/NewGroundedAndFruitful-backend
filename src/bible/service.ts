@@ -10,7 +10,6 @@ import { requireAdmin } from "../auth/authorization.js";
 import {
   AppError,
   AuthorizationError,
-  ServiceUnavailableError,
   ValidationError,
 } from "../shared/errors.js";
 import { parseBibleDocxPair } from "./docx.js";
@@ -43,6 +42,40 @@ interface ImportStorage {
     delete(options?: Record<string, unknown>): Promise<unknown>;
   };
 }
+const storageFailure = (cause: unknown) => {
+  const code =
+    cause && typeof cause === "object" && "code" in cause
+      ? String(cause.code)
+      : undefined;
+  const permissionDenied = code === "401" || code === "403";
+  const unavailable =
+    code === "404" ||
+    code === "ENOTFOUND" ||
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "503";
+  return {
+    code: permissionDenied
+      ? "BIBLE_IMPORT_STORAGE_PERMISSION_DENIED"
+      : unavailable
+        ? "BIBLE_IMPORT_STORAGE_UNAVAILABLE"
+        : "BIBLE_IMPORT_STORAGE_UPLOAD_FAILED",
+    message: permissionDenied
+      ? "Bible import storage permission was denied."
+      : unavailable
+        ? "Bible import storage is temporarily unavailable."
+        : "Bible import source upload failed.",
+    providerCode: code,
+  } as const;
+};
+const firstApplicationFrame = (cause: unknown) =>
+  cause instanceof Error
+    ? cause.stack
+        ?.split("\n")
+        .slice(1)
+        .map((line) => line.trim())
+        .find((line) => line.includes("/src/"))
+    : undefined;
 export interface Upload {
   name: string;
   mime: string;
@@ -99,6 +132,7 @@ export class BibleAdministrationService {
     quiz: Upload,
     key: Upload,
     requestId: string,
+    idempotencyKey?: string,
   ) {
     const startedAt = Date.now();
     const phase = (event: string, fields: Record<string, unknown> = {}) =>
@@ -192,11 +226,30 @@ export class BibleAdministrationService {
       );
     phase("reconciliation_completed", { activityCount: result.items.length });
     if (!this.bucket)
-      throw new ServiceUnavailableError("Bible import storage is unavailable.");
+      throw new AppError(
+        503,
+        "BIBLE_IMPORT_STORAGE_NOT_CONFIGURED",
+        "Bible import storage is not configured.",
+      );
+    if (idempotencyKey && !/^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey))
+      throw new ValidationError("Invalid idempotency key.", {
+        fieldErrors: {
+          idempotencyKey: ["Use 8-128 letters, numbers, '_' or '-'."],
+        },
+      });
+    if (idempotencyKey) {
+      const previous = await this.db
+        .collection("bibleImports")
+        .where("organizationId", "==", metadata.organizationId)
+        .where("idempotencyKey", "==", idempotencyKey)
+        .limit(1)
+        .get();
+      if (!previous.empty) return this.get(principal, previous.docs[0]!.id);
+    }
     const ref = this.db.collection("bibleImports").doc(),
-      objectPrefix = `bible-imports/${ref.id}`,
-      quizPath = `${objectPrefix}/${randomUUID()}.docx`,
-      keyPath = `${objectPrefix}/${randomUUID()}.docx`,
+      objectPrefix = `organizations/${metadata.organizationId}/bible-imports/${ref.id}/source`,
+      quizPath = `${objectPrefix}/questions.docx`,
+      keyPath = `${objectPrefix}/answer-key.docx`,
       stored: string[] = [];
     try {
       for (const [path, file] of [
@@ -206,7 +259,14 @@ export class BibleAdministrationService {
         await this.bucket.file(path).save(file.buffer, {
           resumable: false,
           contentType: file.mime,
-          metadata: { cacheControl: "private, no-store" },
+          predefinedAcl: "private",
+          metadata: {
+            cacheControl: "private, no-store",
+            metadata: {
+              originalFilename: safeName(file.name),
+              sourceSize: String(file.buffer.length),
+            },
+          },
         });
         stored.push(path);
       }
@@ -215,12 +275,15 @@ export class BibleAdministrationService {
         objectCount: stored.length,
       });
       await this.db.runTransaction(async (tx) => {
-        const duplicate = await tx.get(
-          this.db
-            .collection("bibleImports")
-            .where("requestId", "==", requestId),
-        );
-        if (!duplicate.empty)
+        const duplicate = idempotencyKey
+          ? await tx.get(
+              this.db
+                .collection("bibleImports")
+                .where("organizationId", "==", metadata.organizationId)
+                .where("idempotencyKey", "==", idempotencyKey),
+            )
+          : undefined;
+        if (duplicate && !duplicate.empty)
           throw error(
             409,
             "BIBLE_IMPORT_IDEMPOTENCY_CONFLICT",
@@ -243,6 +306,7 @@ export class BibleAdministrationService {
             storagePath: keyPath,
           },
           requestId,
+          idempotencyKey: idempotencyKey ?? null,
           sourceChecksums: result.checksums,
           parserVersion: result.parserVersion,
           items: result.items,
@@ -285,12 +349,37 @@ export class BibleAdministrationService {
       });
       phase("persistence_completed", { importId: ref.id });
     } catch (cause) {
-      await Promise.allSettled(
+      const cleanup = await Promise.allSettled(
         stored.map((path) =>
           this.bucket!.file(path).delete({ ignoreNotFound: true }),
         ),
       );
+      const failedCleanupPaths = cleanup.flatMap((entry, index) =>
+        entry.status === "rejected" ? [stored[index]!] : [],
+      );
+      if (failedCleanupPaths.length) {
+        await this.db.collection("bibleImportCleanupJobs").add({
+          organizationId: metadata.organizationId,
+          importId: ref.id,
+          storagePaths: failedCleanupPaths,
+          status: "pending",
+          attempts: 0,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        logger.error("bible_import.cleanup_pending", {
+          requestId,
+          importId: ref.id,
+          failedObjectCount: failedCleanupPaths.length,
+          safeErrorCode: "BIBLE_IMPORT_STORAGE_CLEANUP_PENDING",
+        });
+        throw new AppError(
+          503,
+          "BIBLE_IMPORT_STORAGE_CLEANUP_PENDING",
+          "Bible import storage cleanup is pending.",
+        );
+      }
       if (cause instanceof AppError) throw cause;
+      const failure = stored.length < 2 ? storageFailure(cause) : undefined;
       logger.error("bible_import.failed", {
         requestId,
         actorId: actor.uid,
@@ -300,18 +389,18 @@ export class BibleAdministrationService {
         phase: stored.length < 2 ? "storage" : "persistence",
         durationMs: Date.now() - startedAt,
         errorType: cause instanceof Error ? cause.name : "unknown",
+        providerMessage:
+          cause instanceof Error ? cause.message.slice(0, 500) : undefined,
+        safeProviderCode: failure?.providerCode,
+        firstApplicationFrame: firstApplicationFrame(cause),
         safeErrorCode:
-          stored.length < 2
-            ? "BIBLE_IMPORT_STORAGE_UNAVAILABLE"
-            : "BIBLE_IMPORT_PERSISTENCE_FAILED",
+          stored.length < 2 ? failure!.code : "BIBLE_IMPORT_PERSISTENCE_FAILED",
       });
       throw error(
         stored.length < 2 ? 503 : 500,
+        stored.length < 2 ? failure!.code : "BIBLE_IMPORT_PERSISTENCE_FAILED",
         stored.length < 2
-          ? "BIBLE_IMPORT_STORAGE_UNAVAILABLE"
-          : "BIBLE_IMPORT_PERSISTENCE_FAILED",
-        stored.length < 2
-          ? "Bible import storage is temporarily unavailable."
+          ? failure!.message
           : "Bible import persistence failed.",
       );
     }
