@@ -178,7 +178,12 @@ describe("registration intent HTTP policy", () => {
     expect(body).toMatchObject({
       data: {
         workspace: { type: "organization", ...payload, status: "active" },
-        membership: { roles: ["owner", "admin"], status: "active" },
+        membership: {
+          roles: ["owner", "admin"],
+          workspaceRoles: ["owner", "admin"],
+          personas: ["admin"],
+          status: "active",
+        },
         onboardingStatus: "complete",
         nextStep: "dashboard",
         tokenRefreshRequired: true,

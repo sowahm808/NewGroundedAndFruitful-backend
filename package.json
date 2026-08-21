@@ -26,6 +26,7 @@
     "admin:provision-child-credential": "tsx scripts/provision-child-credential.ts",
     "migrate:memberships": "tsx scripts/migrate-memberships.ts",
     "migrate:memberships:verify": "tsx scripts/migrate-memberships.ts --verify",
+    "migrate:role-model": "tsx scripts/migrate-role-model.ts",
     "migrate:personal-workspaces": "tsx scripts/migrate-personal-workspaces.ts",
     "migrate:child-credentials": "tsx scripts/migrate-child-credentials.ts",
     "format": "prettier --write .",
