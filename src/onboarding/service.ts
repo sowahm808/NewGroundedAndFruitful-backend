@@ -4,7 +4,35 @@ import { FieldValue } from "firebase-admin/firestore";
 import {
   AccountDisabledError,
   OrganizationBootstrapError,
+  PersonalWorkspaceBootstrapError,
 } from "../shared/errors.js";
+
+export interface PersonalWorkspaceBootstrapInput {
+  uid: string;
+  requestId: string;
+  timezone: string;
+}
+
+export interface PersonalWorkspaceBootstrapResult {
+  workspace: {
+    id: string;
+    type: "personal";
+    name: string;
+    timezone: string;
+    status: "active";
+  };
+  membership: {
+    id: string;
+    workspaceId: string;
+    organizationId: string;
+    roles: ["owner"];
+    status: "active";
+  };
+  activeWorkspaceId: string;
+  onboardingStatus: "complete";
+  nextStep: "dashboard";
+  tokenRefreshRequired: true;
+}
 
 export interface OrganizationBootstrapInput {
   uid: string;
@@ -54,6 +82,199 @@ type BootstrapUserState = {
   registrationIntent: unknown;
   onboardingStatus: unknown;
 };
+
+export function requirePersonalWorkspaceBootstrapEligibility(
+  user: BootstrapUserState,
+): void {
+  if (user.disabled) throw new AccountDisabledError();
+  if (!user.exists || user.registrationIntent !== "personal")
+    throw new PersonalWorkspaceBootstrapError(
+      "PERSONAL_WORKSPACE_NOT_ELIGIBLE",
+    );
+  if (user.onboardingStatus === "complete")
+    throw new PersonalWorkspaceBootstrapError(
+      "PERSONAL_WORKSPACE_BOOTSTRAP_CONFLICT",
+    );
+  if (user.onboardingStatus !== "personal_workspace_required")
+    throw new PersonalWorkspaceBootstrapError(
+      "PERSONAL_WORKSPACE_NOT_ELIGIBLE",
+    );
+}
+
+export function personalWorkspaceName(
+  displayName: unknown,
+  email: unknown,
+): string {
+  const display = typeof displayName === "string" ? displayName.trim() : "";
+  const address = typeof email === "string" ? email.trim() : "";
+  return !display || display.toLocaleLowerCase() === address.toLocaleLowerCase()
+    ? "Personal"
+    : `Personal — ${display}`;
+}
+
+/** Atomic, identity-only bootstrap for a personal registrant's single tenant. */
+export class PersonalWorkspaceBootstrapService {
+  constructor(private readonly db: Firestore) {}
+
+  async bootstrap(
+    input: PersonalWorkspaceBootstrapInput,
+  ): Promise<PersonalWorkspaceBootstrapResult> {
+    if (!validTimezone(input.timezone))
+      throw new PersonalWorkspaceBootstrapError(
+        "PERSONAL_WORKSPACE_TIMEZONE_INVALID",
+      );
+    const workspaceId = `personal-${hash(input.uid).slice(0, 24)}`;
+    const membershipId = `${workspaceId}_${input.uid}`;
+    const markerRef = this.db.doc(`personalWorkspaceBootstraps/${input.uid}`);
+    const workspaceRef = this.db.doc(`workspaces/${workspaceId}`);
+    // Personal tenants retain an organization-compatible record for legacy scopes.
+    const organizationRef = this.db.doc(`organizations/${workspaceId}`);
+    const membershipRef = this.db.doc(`memberships/${membershipId}`);
+    const userRef = this.db.doc(`users/${input.uid}`);
+    try {
+      return await this.db.runTransaction(async (tx) => {
+        const [user, marker, workspace, membership] = await Promise.all([
+          tx.get(userRef),
+          tx.get(markerRef),
+          tx.get(workspaceRef),
+          tx.get(membershipRef),
+        ]);
+        if (marker.exists) {
+          if (
+            marker.get("status") !== "complete" ||
+            marker.get("timezone") !== input.timezone ||
+            !workspace.exists ||
+            !membership.exists ||
+            workspace.get("ownerUserId") !== input.uid ||
+            membership.get("userId") !== input.uid
+          )
+            throw new PersonalWorkspaceBootstrapError(
+              "PERSONAL_WORKSPACE_BOOTSTRAP_CONFLICT",
+            );
+          return this.result(
+            workspaceId,
+            membershipId,
+            String(workspace.get("name")),
+            input.timezone,
+          );
+        }
+        requirePersonalWorkspaceBootstrapEligibility({
+          exists: user.exists,
+          disabled:
+            user.get("status") === "disabled" || user.get("disabled") === true,
+          registrationIntent: user.get("registrationIntent"),
+          onboardingStatus: user.get("onboardingStatus"),
+        });
+        if (workspace.exists || membership.exists)
+          throw new PersonalWorkspaceBootstrapError(
+            "PERSONAL_WORKSPACE_ALREADY_EXISTS",
+          );
+        const now = FieldValue.serverTimestamp();
+        const name = personalWorkspaceName(
+          user.get("displayName"),
+          user.get("email"),
+        );
+        const tenant = {
+          type: "personal",
+          name,
+          ownerUserId: input.uid,
+          timezone: input.timezone,
+          status: "active",
+          version: 1,
+          createdAt: now,
+          createdBy: input.uid,
+          updatedAt: now,
+          updatedBy: input.uid,
+        };
+        tx.create(organizationRef, tenant);
+        tx.create(workspaceRef, { ...tenant, organizationId: workspaceId });
+        tx.create(membershipRef, {
+          userId: input.uid,
+          organizationId: workspaceId,
+          workspaceId,
+          roles: ["owner"],
+          workspaceRoles: ["owner"],
+          status: "active",
+          version: 1,
+          createdAt: now,
+          createdBy: input.uid,
+          updatedAt: now,
+          updatedBy: input.uid,
+        });
+        tx.update(userRef, {
+          onboardingStatus: "complete",
+          activeWorkspaceId: workspaceId,
+          personalWorkspaceBootstrapId: markerRef.id,
+          updatedAt: now,
+          updatedBy: input.uid,
+        });
+        tx.create(markerRef, {
+          uid: input.uid,
+          organizationId: workspaceId,
+          workspaceId,
+          membershipId,
+          timezone: input.timezone,
+          status: "complete",
+          requestId: input.requestId,
+          createdAt: now,
+        });
+        for (const event of [
+          "personal_workspace.bootstrap_completed",
+          "workspace.created",
+          "membership.created",
+          "onboarding.completed",
+        ])
+          tx.create(this.db.collection("auditLogs").doc(), {
+            event,
+            actorId: input.uid,
+            organizationId: workspaceId,
+            workspaceId,
+            membershipId,
+            requestId: input.requestId,
+            createdAt: now,
+          });
+        return this.result(workspaceId, membershipId, name, input.timezone);
+      });
+    } catch (error) {
+      if (
+        error instanceof PersonalWorkspaceBootstrapError ||
+        error instanceof AccountDisabledError
+      )
+        throw error;
+      throw new PersonalWorkspaceBootstrapError(
+        "PERSONAL_WORKSPACE_BOOTSTRAP_FAILED",
+      );
+    }
+  }
+
+  private result(
+    workspaceId: string,
+    membershipId: string,
+    name: string,
+    timezone: string,
+  ): PersonalWorkspaceBootstrapResult {
+    return {
+      workspace: {
+        id: workspaceId,
+        type: "personal",
+        name,
+        timezone,
+        status: "active",
+      },
+      membership: {
+        id: membershipId,
+        workspaceId,
+        organizationId: workspaceId,
+        roles: ["owner"],
+        status: "active",
+      },
+      activeWorkspaceId: workspaceId,
+      onboardingStatus: "complete",
+      nextStep: "dashboard",
+      tokenRefreshRequired: true,
+    };
+  }
+}
 
 /**
  * Dedicated first-workspace policy. In particular, it does not inspect roles,

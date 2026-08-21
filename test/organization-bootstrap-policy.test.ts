@@ -2,9 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   AccountDisabledError,
   OrganizationBootstrapError,
+  PersonalWorkspaceBootstrapError,
 } from "../src/shared/errors.js";
-import { requireOrganizationBootstrapEligibility } from "../src/onboarding/service.js";
-import { organizationBootstrapSchema } from "../src/onboarding/schemas.js";
+import {
+  personalWorkspaceName,
+  requireOrganizationBootstrapEligibility,
+  requirePersonalWorkspaceBootstrapEligibility,
+} from "../src/onboarding/service.js";
+import {
+  organizationBootstrapSchema,
+  personalWorkspaceBootstrapSchema,
+} from "../src/onboarding/schemas.js";
 
 describe("first-organization bootstrap policy", () => {
   it("allows an enabled roleless registrant without membership or workspace inputs", () => {
@@ -82,6 +90,62 @@ describe("first-organization bootstrap policy", () => {
       expect(
         organizationBootstrapSchema.safeParse({ ...valid, [field]: "evil" })
           .success,
+      ).toBe(false);
+  });
+});
+
+describe("personal-workspace bootstrap policy", () => {
+  it("allows an enabled roleless personal registrant", () => {
+    expect(() =>
+      requirePersonalWorkspaceBootstrapEligibility({
+        exists: true,
+        disabled: false,
+        registrationIntent: "personal",
+        onboardingStatus: "personal_workspace_required",
+      }),
+    ).not.toThrow();
+  });
+  it("rejects organization intent with a stable eligibility error", () => {
+    expect(() =>
+      requirePersonalWorkspaceBootstrapEligibility({
+        exists: true,
+        disabled: false,
+        registrationIntent: "organization",
+        onboardingStatus: "organization_setup_required",
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<PersonalWorkspaceBootstrapError>>({
+        code: "PERSONAL_WORKSPACE_NOT_ELIGIBLE",
+      }),
+    );
+  });
+  it("does not expose an email as the workspace name", () => {
+    expect(
+      personalWorkspaceName("person@example.test", "person@example.test"),
+    ).toBe("Personal");
+    expect(personalWorkspaceName("Ada", "ada@example.test")).toBe(
+      "Personal — Ada",
+    );
+  });
+  it("accepts only timezone input", () => {
+    expect(
+      personalWorkspaceBootstrapSchema.parse({ timezone: "America/Chicago" }),
+    ).toEqual({ timezone: "America/Chicago" });
+    for (const field of [
+      "uid",
+      "ownerUserId",
+      "workspaceId",
+      "organizationId",
+      "roles",
+      "permissions",
+      "status",
+      "createdAt",
+    ])
+      expect(
+        personalWorkspaceBootstrapSchema.safeParse({
+          timezone: "UTC",
+          [field]: "untrusted",
+        }).success,
       ).toBe(false);
   });
 });

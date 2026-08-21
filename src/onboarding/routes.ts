@@ -1,13 +1,20 @@
 import { Router, type RequestHandler } from "express";
 
-import { OrganizationBootstrapService } from "./service.js";
-import { organizationBootstrapSchema } from "./schemas.js";
+import {
+  OrganizationBootstrapService,
+  PersonalWorkspaceBootstrapService,
+} from "./service.js";
+import {
+  organizationBootstrapSchema,
+  personalWorkspaceBootstrapSchema,
+} from "./schemas.js";
 import { requireAuthenticated } from "../auth/authorization.js";
 import { db } from "../config/firebase.js";
 import { validateBody } from "../middleware/validate.js";
 
 const router = Router();
 const service = new OrganizationBootstrapService(db);
+const personalWorkspaceService = new PersonalWorkspaceBootstrapService(db);
 
 const run =
   (handler: RequestHandler): RequestHandler =>
@@ -18,6 +25,20 @@ const run =
       next(error);
     }
   };
+
+router.post(
+  "/personal-workspace",
+  validateBody(personalWorkspaceBootstrapSchema),
+  run(async (req, res) => {
+    const actor = requireAuthenticated(req.principal);
+    const result = await personalWorkspaceService.bootstrap({
+      uid: actor.uid,
+      requestId: req.requestId,
+      timezone: req.body.timezone,
+    });
+    res.status(201).json({ data: result });
+  }),
+);
 
 router.post(
   "/organization",
