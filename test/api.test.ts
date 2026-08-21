@@ -130,14 +130,64 @@ describe("HTTP safety contract", () => {
     });
   });
   it("publishes the nested Bible content import route", async () => {
-    const response = await fetch(
-      `${base}/api/v1/admin/bible-content/imports`,
-      { method: "POST" },
-    );
+    const response = await fetch(`${base}/api/v1/admin/bible-content/imports`, {
+      method: "POST",
+    });
     expect(response.status).toBe(415);
     expect(response.status).not.toBe(404);
     expect(await response.json()).toMatchObject({
       error: { code: "BIBLE_IMPORT_FILE_INVALID" },
+    });
+  });
+  it("parses the documented Bible import text and file part names", async () => {
+    const form = new FormData();
+    form.set("organizationId", "org-1");
+    form.set("quarterId", "quarter-1");
+    form.set("title", "Quarter 1 Bible Quiz");
+    const docxType =
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    form.set(
+      "quizFile",
+      new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], {
+        type: docxType,
+      }),
+      "quiz.docx",
+    );
+    form.set(
+      "answerKeyFile",
+      new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], {
+        type: docxType,
+      }),
+      "answers.docx",
+    );
+    const response = await fetch(`${base}/api/v1/admin/bible-content/imports`, {
+      method: "POST",
+      body: form,
+    });
+    // Passing multipart validation reaches the established authorization gate.
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("returns fieldErrors for missing multipart import parts", async () => {
+    const form = new FormData();
+    form.set("organizationId", "org-1");
+    form.set("title", "Quarter 1 Bible Quiz");
+    const response = await fetch(`${base}/api/v1/admin/bible-content/imports`, {
+      method: "POST",
+      body: form,
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "VALIDATION_ERROR",
+        fieldErrors: {
+          quarterId: expect.any(Array),
+          quizFile: ["quizFile is required."],
+          answerKeyFile: ["answerKeyFile is required."],
+        },
+      },
     });
   });
   it("publishes the authenticated organization onboarding route", async () => {

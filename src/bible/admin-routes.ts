@@ -1,7 +1,9 @@
 import { Router, type RequestHandler } from "express";
-import { db } from "../config/firebase.js";
+import { db, storage } from "../config/firebase.js";
+import { env } from "../config/env.js";
 import { validateBody } from "../middleware/validate.js";
 import { AppError, ValidationError } from "../shared/errors.js";
+import { logger } from "../shared/logger.js";
 import { idSchema } from "../shared/validation.js";
 import {
   importMetadataSchema,
@@ -11,8 +13,16 @@ import {
 import { BibleAdministrationService, type Upload } from "./service.js";
 
 const router = Router(),
-  service = new BibleAdministrationService(db),
-  MAX = 10 * 1024 * 1024 + 64 * 1024;
+  service = new BibleAdministrationService(
+    db,
+    env.FIREBASE_STORAGE_BUCKET
+      ? storage.bucket(env.FIREBASE_STORAGE_BUCKET)
+      : undefined,
+  ),
+  MAX_FILE = 5 * 1024 * 1024,
+  MAX_REQUEST = MAX_FILE * 2 + 64 * 1024,
+  FILE_FIELDS = ["quizFile", "answerKeyFile"] as const,
+  TEXT_FIELDS = ["organizationId", "quarterId", "title"] as const;
 const run =
   (
     fn: (req: Parameters<RequestHandler>[0]) => Promise<unknown>,
@@ -46,11 +56,11 @@ const multipart: RequestHandler = async (req, _res, next) => {
     for await (const part of req) {
       const b = Buffer.isBuffer(part) ? part : Buffer.from(part as Uint8Array);
       size += b.length;
-      if (size > MAX)
+      if (size > MAX_REQUEST)
         throw new AppError(
           413,
           "BIBLE_IMPORT_FILE_INVALID",
-          "Upload request exceeds 10 MiB.",
+          "Upload request exceeds the multipart size limit.",
         );
       chunks.push(b);
     }
@@ -71,7 +81,19 @@ const multipart: RequestHandler = async (req, _res, next) => {
         name = /name="([^"]+)"/.exec(headers)?.[1],
         filename = /filename="([^"]*)"/.exec(headers)?.[1];
       if (name) {
-        if (filename !== undefined)
+        if (filename !== undefined) {
+          if (!(FILE_FIELDS as readonly string[]).includes(name))
+            throw new ValidationError("Invalid multipart fields.", {
+              fieldErrors: { [name]: ["Unexpected file field."] },
+            });
+          if (files[name])
+            throw new ValidationError("Invalid multipart fields.", {
+              fieldErrors: { [name]: ["Only one file is allowed."] },
+            });
+          if (content.length > MAX_FILE)
+            throw new ValidationError("Invalid multipart fields.", {
+              fieldErrors: { [name]: ["File must not exceed 5 MiB."] },
+            });
           files[name] = {
             name: filename,
             mime:
@@ -79,7 +101,13 @@ const multipart: RequestHandler = async (req, _res, next) => {
               "application/octet-stream",
             buffer: content,
           };
-        else fields[name] = content.toString("utf8");
+        } else {
+          if (!(TEXT_FIELDS as readonly string[]).includes(name))
+            throw new ValidationError("Invalid multipart fields.", {
+              fieldErrors: { [name]: ["Unexpected text field."] },
+            });
+          fields[name] = content.toString("utf8");
+        }
       }
       start = next + delimiter.length;
     }
@@ -95,10 +123,30 @@ router.post(
   run((req) => {
     const body = importMetadataSchema.safeParse(req.body);
     const files = (req.body as { __files?: Record<string, Upload> }).__files;
+    const fieldErrors: Record<string, string[]> = body.success
+      ? {}
+      : body.error.flatten().fieldErrors;
+    if (!files?.quizFile) fieldErrors.quizFile = ["quizFile is required."];
+    if (!files?.answerKeyFile)
+      fieldErrors.answerKeyFile = ["answerKeyFile is required."];
+    if (Object.keys(fieldErrors).length) {
+      logger.warn("bible_import_multipart_rejected", {
+        requestId: req.requestId,
+        actorId: req.principal?.uid,
+        receivedTextFields: TEXT_FIELDS.filter(
+          (field) => typeof req.body?.[field] === "string",
+        ),
+        receivedFileFields: FILE_FIELDS.filter((field) =>
+          Boolean(files?.[field]),
+        ),
+        invalidFields: Object.keys(fieldErrors),
+      });
+      throw new ValidationError("Invalid Bible import fields.", {
+        fieldErrors,
+      });
+    }
     if (!body.success || !files?.quizFile || !files.answerKeyFile)
-      throw new ValidationError(
-        "organizationId, quarterId, title, quizFile, and answerKeyFile are required.",
-      );
+      throw new ValidationError("Invalid Bible import fields.");
     return service.create(
       req.principal,
       body.data,

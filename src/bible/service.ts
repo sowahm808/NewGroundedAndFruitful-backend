@@ -7,7 +7,12 @@ import {
 } from "firebase-admin/firestore";
 import type { Principal } from "../auth/authorization.js";
 import { requireAdmin } from "../auth/authorization.js";
-import { AppError } from "../shared/errors.js";
+import {
+  AppError,
+  AuthorizationError,
+  ServiceUnavailableError,
+  ValidationError,
+} from "../shared/errors.js";
 import { parseBibleDocxPair } from "./docx.js";
 import type { BiblePreviewItem } from "./domain.js";
 
@@ -18,14 +23,35 @@ const iso = (v: unknown) =>
     ? (v as { toDate(): Date }).toDate().toISOString()
     : (v ?? null);
 const safeName = (name: string) =>
-  name.replace(/[^A-Za-z0-9._ -]/g, "_").slice(0, 120);
+  name
+    .normalize("NFKC")
+    .replace(/[/\\]/g, "_")
+    .split("")
+    .map((character) =>
+      character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127
+        ? "_"
+        : character,
+    )
+    .join("")
+    .replace(/[^A-Za-z0-9._ -]/g, "_")
+    .replace(/^\.+/, "")
+    .slice(0, 120) || "document.docx";
+interface ImportStorage {
+  file(path: string): {
+    save(data: Buffer, options: Record<string, unknown>): Promise<unknown>;
+    delete(options?: Record<string, unknown>): Promise<unknown>;
+  };
+}
 export interface Upload {
   name: string;
   mime: string;
   buffer: Buffer;
 }
 export class BibleAdministrationService {
-  constructor(private readonly db: Firestore) {}
+  constructor(
+    private readonly db: Firestore,
+    private readonly bucket?: ImportStorage,
+  ) {}
   private actor(principal: Principal | undefined, organizationId?: string) {
     const actor = requireAdmin(principal);
     if (
@@ -73,97 +99,164 @@ export class BibleAdministrationService {
     key: Upload,
     requestId: string,
   ) {
-    const actor = this.actor(principal, metadata.organizationId);
-    for (const file of [quiz, key])
+    const actor = requireAdmin(principal);
+    if (
+      !actor.roles.includes("super_admin") &&
+      !actor.organizationIds.includes(metadata.organizationId)
+    )
+      throw new AuthorizationError();
+    const fileErrors: Record<string, string[]> = {};
+    for (const [field, file] of [
+      ["quizFile", quiz],
+      ["answerKeyFile", key],
+    ] as const) {
+      const errors: string[] = [];
+      if (!file.name.toLowerCase().endsWith(".docx"))
+        errors.push("File extension must be .docx.");
       if (
-        !file.name.toLowerCase().endsWith(".docx") ||
-        file.name.toLowerCase().endsWith(".docm") ||
-        ![
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          "application/octet-stream",
-        ].includes(file.mime)
+        file.mime !==
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       )
-        throw error(
-          415,
-          "BIBLE_IMPORT_FILE_INVALID",
-          "Both uploads must be DOCX files.",
-        );
+        errors.push("File MIME type must be the DOCX media type.");
+      if (file.buffer.length > 5 * 1024 * 1024)
+        errors.push("File must not exceed 5 MiB.");
+      if (
+        file.buffer.length < 4 ||
+        file.buffer[0] !== 0x50 ||
+        file.buffer[1] !== 0x4b ||
+        ![0x03, 0x05, 0x07].includes(file.buffer[2]!) ||
+        ![0x04, 0x06, 0x08].includes(file.buffer[3]!)
+      )
+        errors.push("File signature is not a ZIP-based DOCX package.");
+      if (errors.length) fileErrors[field] = errors;
+    }
+    if (Object.keys(fileErrors).length)
+      throw new ValidationError("Invalid Bible import fields.", {
+        fieldErrors: fileErrors,
+      });
     const [org, quarter] = await Promise.all([
       this.db.doc(`organizations/${metadata.organizationId}`).get(),
       this.db.doc(`quarters/${metadata.quarterId}`).get(),
     ]);
-    if (
-      !org.exists ||
-      !quarter.exists ||
-      quarter.get("organizationId") !== metadata.organizationId
-    )
-      throw error(
-        422,
-        "BIBLE_IMPORT_VALIDATION_FAILED",
-        "Organization or quarter could not be resolved.",
-      );
+    if (!org.exists)
+      throw new ValidationError("Invalid Bible import fields.", {
+        fieldErrors: { organizationId: ["Organization does not exist."] },
+      });
+    if (!quarter.exists)
+      throw error(404, "BIBLE_QUARTER_NOT_FOUND", "Quarter not found.");
+    if (quarter.get("organizationId") !== metadata.organizationId)
+      throw new ValidationError("Invalid Bible import fields.", {
+        fieldErrors: {
+          quarterId: ["Quarter does not belong to the organization."],
+        },
+      });
     const startDate = String(quarter.get("startDate")),
       endDate = String(quarter.get("endDate"));
     const result = parseBibleDocxPair(quiz.buffer, key.buffer, {
       startDate,
       endDate,
     });
-    const ref = this.db.collection("bibleImports").doc();
-    await this.db.runTransaction(async (tx) => {
-      tx.create(ref, {
-        organizationId: metadata.organizationId,
-        quarterId: metadata.quarterId,
-        title: metadata.title,
-        status: "needs_review",
-        timezone: String(org.get("timezone") ?? "UTC"),
-        quizFile: {
-          displayName: safeName(quiz.name),
-          size: quiz.buffer.length,
-        },
-        answerKeyFile: {
-          displayName: safeName(key.name),
-          size: key.buffer.length,
-        },
-        sourceChecksums: result.checksums,
-        parserVersion: result.parserVersion,
-        items: result.items,
-        warnings: result.warnings,
-        errors: result.errors,
-        validationSummary: {
-          activityCount: result.items.length,
-          errorCount: result.errors.length,
-          warningCount: result.warnings.length,
-        },
-        version: 1,
-        createdBy: actor.uid,
-        updatedBy: actor.uid,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      this.audit(
-        tx,
-        "bible.import.created",
-        actor.uid,
-        metadata.organizationId,
-        ref.id,
-        requestId,
-        { status: "needs_review", version: 1 },
-      );
-      this.audit(
-        tx,
-        "bible.import.parsed",
-        actor.uid,
-        metadata.organizationId,
-        ref.id,
-        requestId,
-        {
-          activityCount: result.items.length,
-          errorCount: result.errors.length,
-          warningCount: result.warnings.length,
+    if (!this.bucket)
+      throw new ServiceUnavailableError("Bible import storage is unavailable.");
+    const ref = this.db.collection("bibleImports").doc(),
+      objectPrefix = `bible-imports/${ref.id}`,
+      quizPath = `${objectPrefix}/${randomUUID()}.docx`,
+      keyPath = `${objectPrefix}/${randomUUID()}.docx`,
+      stored: string[] = [];
+    try {
+      for (const [path, file] of [
+        [quizPath, quiz],
+        [keyPath, key],
+      ] as const) {
+        await this.bucket.file(path).save(file.buffer, {
+          resumable: false,
+          contentType: file.mime,
+          metadata: { cacheControl: "private, no-store" },
+        });
+        stored.push(path);
+      }
+      await this.db.runTransaction(async (tx) => {
+        const duplicate = await tx.get(
+          this.db
+            .collection("bibleImports")
+            .where("requestId", "==", requestId),
+        );
+        if (!duplicate.empty)
+          throw error(
+            409,
+            "BIBLE_IMPORT_IDEMPOTENCY_CONFLICT",
+            "An import already exists for this request ID.",
+          );
+        tx.create(ref, {
+          organizationId: metadata.organizationId,
+          quarterId: metadata.quarterId,
+          title: metadata.title,
+          status: "needs_review",
+          timezone: String(org.get("timezone") ?? "UTC"),
+          quizFile: {
+            displayName: safeName(quiz.name),
+            size: quiz.buffer.length,
+            storagePath: quizPath,
+          },
+          answerKeyFile: {
+            displayName: safeName(key.name),
+            size: key.buffer.length,
+            storagePath: keyPath,
+          },
+          requestId,
+          sourceChecksums: result.checksums,
           parserVersion: result.parserVersion,
-        },
+          items: result.items,
+          warnings: result.warnings,
+          errors: result.errors,
+          validationSummary: {
+            activityCount: result.items.length,
+            errorCount: result.errors.length,
+            warningCount: result.warnings.length,
+          },
+          version: 1,
+          createdBy: actor.uid,
+          updatedBy: actor.uid,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        this.audit(
+          tx,
+          "bible.import.created",
+          actor.uid,
+          metadata.organizationId,
+          ref.id,
+          requestId,
+          { status: "needs_review", version: 1 },
+        );
+        this.audit(
+          tx,
+          "bible.import.parsed",
+          actor.uid,
+          metadata.organizationId,
+          ref.id,
+          requestId,
+          {
+            activityCount: result.items.length,
+            errorCount: result.errors.length,
+            warningCount: result.warnings.length,
+            parserVersion: result.parserVersion,
+          },
+        );
+      });
+    } catch (cause) {
+      await Promise.allSettled(
+        stored.map((path) =>
+          this.bucket!.file(path).delete({ ignoreNotFound: true }),
+        ),
       );
-    });
+      if (cause instanceof AppError) throw cause;
+      throw error(
+        500,
+        "BIBLE_IMPORT_CREATE_FAILED",
+        "Bible import creation failed.",
+      );
+    }
     return this.get(principal, ref.id);
   }
   async get(principal: Principal | undefined, id: string) {

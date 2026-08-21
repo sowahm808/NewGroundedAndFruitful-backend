@@ -1526,14 +1526,32 @@ paths:
       security: [{ firebaseBearer: [] }]
       requestBody:
         required: true
+        description: Use the text parts `organizationId`, `quarterId`, and `title`, and exactly one DOCX file part each named `quizFile` and `answerKeyFile`.
         content:
           multipart/form-data:
             schema: { $ref: "#/components/schemas/BibleImportUpload" }
+            encoding:
+              organizationId: { contentType: text/plain }
+              quarterId: { contentType: text/plain }
+              title: { contentType: text/plain }
+              quizFile:
+                {
+                  contentType: application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+                }
+              answerKeyFile:
+                {
+                  contentType: application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+                }
       responses:
         {
           "201": { description: Draft preview },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
           "415": { $ref: "#/components/responses/Validation" },
           "422": { $ref: "#/components/responses/Validation" },
+          "500": { $ref: "#/components/responses/Internal" },
+          "503": { $ref: "#/components/responses/Internal" },
         }
   /admin/bible-content/imports/{importId}:
     get:
@@ -1903,13 +1921,24 @@ components:
   schemas:
     BibleImportUpload:
       type: object
+      additionalProperties: false
       required: [organizationId, quarterId, title, quizFile, answerKeyFile]
       properties:
-        organizationId: { type: string }
-        quarterId: { type: string }
-        title: { type: string, maxLength: 200 }
-        quizFile: { type: string, format: binary }
-        answerKeyFile: { type: string, format: binary }
+        organizationId: { type: string, minLength: 1, maxLength: 128 }
+        quarterId: { type: string, minLength: 1, maxLength: 128 }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        quizFile:
+          {
+            type: string,
+            format: binary,
+            description: DOCX quiz document; maximum 5 MiB,
+          }
+        answerKeyFile:
+          {
+            type: string,
+            format: binary,
+            description: DOCX answer-key document; maximum 5 MiB,
+          }
     BibleLifecycle:
       type: object
       required: [expectedVersion]
