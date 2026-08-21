@@ -24,6 +24,12 @@ export const workspaceSelectionSchema = z
 export type WorkspaceType = "personal" | "organization";
 export type RegistrationIntent = WorkspaceType;
 
+function expired(value: unknown): boolean {
+  if (!value || typeof value !== "object" || !("toMillis" in value))
+    return true;
+  return (value as { toMillis(): number }).toMillis() <= Date.now();
+}
+
 export class RegistrationIntentService {
   constructor(private readonly db: Firestore) {}
 
@@ -35,9 +41,17 @@ export class RegistrationIntentService {
   ) {
     const userRef = this.db.doc(`users/${uid}`);
     return this.db.runTransaction(async (tx) => {
-      const [profile, memberships] = await Promise.all([
+      const normalizedEmail = identity.email?.trim().toLowerCase();
+      const [profile, memberships, invitations] = await Promise.all([
         tx.get(userRef),
         tx.get(this.db.collection("memberships").where("userId", "==", uid)),
+        normalizedEmail
+          ? tx.get(
+              this.db
+                .collection("adultInvitations")
+                .where("email", "==", normalizedEmail),
+            )
+          : Promise.resolve(undefined),
       ]);
       if (profile.exists && profile.get("status") === "disabled")
         throw new AccountDisabledError();
@@ -51,6 +65,15 @@ export class RegistrationIntentService {
         !memberships.empty ||
         typeof profile.get("personalWorkspaceId") === "string" ||
         previousStatus === "complete";
+      const hasPendingInvitation =
+        invitations?.docs.some(
+          (invitation) =>
+            invitation.get("status") === "pending" &&
+            (!invitation.get("intendedUid") ||
+              invitation.get("intendedUid") === uid) &&
+            !expired(invitation.get("expiresAt")),
+        ) ?? false;
+      if (hasPendingInvitation) throw new RegistrationIntentConflictError();
       if (bootstrapped && previousIntent !== intent)
         throw new RegistrationIntentConflictError(
           previousStatus === "complete"

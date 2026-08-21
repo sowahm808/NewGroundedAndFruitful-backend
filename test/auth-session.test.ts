@@ -171,7 +171,9 @@ describe("auth session bootstrap", () => {
     const { subject, users } = service({ profile: null });
     await expect(subject.createSession("token-1")).resolves.toMatchObject({
       roles: [],
-      onboardingStatus: "role_required",
+      onboardingStatus: "registration_intent_required",
+      nextStep: "choose_account_type",
+      accountStateReason: "registration_intent_missing",
     });
     expect(users.provisionUserProfile).toHaveBeenCalledWith(
       expect.not.objectContaining({ roles: expect.anything() }),
@@ -184,7 +186,8 @@ describe("auth session bootstrap", () => {
     });
     await expect(subject.createSession("token-1")).resolves.toMatchObject({
       roles: ["parent"],
-      onboardingStatus: "organization_required",
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
       memberships: [],
       authorization: { source: "legacy_user_profile", migrationRequired: true },
     });
@@ -210,7 +213,8 @@ describe("auth session bootstrap", () => {
     );
     await expect(strict.createSession("token-1")).resolves.toMatchObject({
       roles: [],
-      onboardingStatus: "role_required",
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
       authorization: { source: "none", migrationRequired: false },
     });
   });
@@ -220,7 +224,8 @@ describe("auth session bootstrap", () => {
     fixture.memberships.hasActiveChildContext.mockResolvedValue(false);
     await expect(fixture.subject.createSession("token")).resolves.toMatchObject(
       {
-        onboardingStatus: "pending",
+        onboardingStatus: "role_required",
+        nextStep: "await_role_assignment",
       },
     );
   });
@@ -251,7 +256,8 @@ describe("auth session bootstrap", () => {
       }).subject.createSession("t"),
     ).resolves.toMatchObject({
       roles: [],
-      onboardingStatus: "pending",
+      onboardingStatus: "role_required",
+      nextStep: "await_role_assignment",
     });
     await expect(
       service({
@@ -291,7 +297,8 @@ describe("auth session bootstrap", () => {
       }).subject.createSession("t"),
     ).resolves.toMatchObject({
       roles: [],
-      onboardingStatus: "role_required",
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
       memberships: [{ status: "expired" }],
       authorization: { source: "none" },
     });
@@ -307,7 +314,8 @@ describe("auth session bootstrap", () => {
       }).subject.createSession("t"),
     ).resolves.toMatchObject({
       roles: [],
-      onboardingStatus: "role_required",
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
       authorization: { source: "none" },
     });
   });
@@ -329,6 +337,7 @@ describe("auth session bootstrap", () => {
     ).resolves.toMatchObject({
       roles: [],
       onboardingStatus: "role_required",
+      nextStep: "await_role_assignment",
       authorization: { source: "none" },
     });
   });

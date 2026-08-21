@@ -156,6 +156,24 @@ describe("registration intent state machine", () => {
     ]);
   });
 
+  it("does not allow account-type selection to bypass a pending invitation", async () => {
+    const { memory, service } = serviceFor();
+    // userId mirrors the query value in this deliberately minimal Firestore fake.
+    memory.records.set("adultInvitations/invite-1", {
+      userId: identity.email,
+      email: identity.email,
+      status: "pending",
+      expiresAt: { toMillis: () => Date.now() + 60_000 },
+    });
+    await expect(
+      service.select("verified-uid", identity, "personal", "request-1"),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "REGISTRATION_INTENT_CONFLICT",
+    });
+    expect(memory.records.has("users/verified-uid")).toBe(false);
+  });
+
   it("records only safe audit fields", async () => {
     const { memory, service } = serviceFor();
     await service.select("uid", identity, "organization", "safe-request");

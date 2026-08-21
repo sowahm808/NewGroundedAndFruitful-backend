@@ -11,6 +11,8 @@ export type OnboardingStatus =
   | "personal_workspace_required"
   | "organization_setup_required"
   | "registration_intent_required"
+  | "invitation_required"
+  | "account_recovery_required"
   | "complete"
   | "organization_required"
   | "role_required"
@@ -46,7 +48,21 @@ export interface SessionUser {
   disabled: boolean;
   onboardingStatus: OnboardingStatus;
   registrationIntent?: "personal" | "organization";
-  nextStep?: "personal_workspace_setup" | "organization_setup" | "dashboard";
+  nextStep:
+    | "choose_account_type"
+    | "personal_workspace_setup"
+    | "organization_setup"
+    | "accept_invitation"
+    | "await_role_assignment"
+    | "account_recovery"
+    | "dashboard";
+  accountStateReason?:
+    | "registration_intent_missing"
+    | "organization_role_not_assigned"
+    | "legacy_account_unclassified"
+    | "account_disabled";
+  pendingInvitation?: boolean;
+  recoveryReference?: string;
   claimSynchronization: {
     status: "synchronized" | "refresh_required" | "retry_required";
     tokenRefreshRequired: boolean;

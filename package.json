@@ -20,6 +20,7 @@
     "seed": "node scripts/guard-production.mjs --require-emulator && tsx scripts/seed.ts",
     "admin:assign-role": "tsx scripts/assign-role.ts",
     "auth:repair-role": "tsx scripts/repair-role.ts",
+    "auth:classify-roleless": "tsx scripts/classify-roleless-accounts.ts",
     "admin:bootstrap-organization": "tsx scripts/bootstrap-organization.ts",
     "admin:provision-child": "tsx scripts/provision-child.ts",
     "admin:provision-child-credential": "tsx scripts/provision-child-credential.ts",

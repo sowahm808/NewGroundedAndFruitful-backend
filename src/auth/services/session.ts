@@ -2,7 +2,7 @@ import type { Auth, DecodedIdToken, UserRecord } from "firebase-admin/auth";
 import type { Firestore } from "firebase-admin/firestore";
 import { AuthenticationError, InternalError } from "../../shared/errors.js";
 import { logger } from "../../shared/logger.js";
-import type { SessionUser } from "../models/user.js";
+import type { SessionUser, UserProfile } from "../models/user.js";
 import type { MembershipRepository } from "../repositories/memberships.js";
 import type { UserRepository } from "../repositories/users.js";
 import { normalizeRoles, type Role } from "../roles.js";
@@ -17,6 +17,7 @@ import {
 } from "../claims.js";
 import { ElevationService } from "../elevations.js";
 import { deriveCapabilities, normalizePersonas } from "../capabilities.js";
+import { createHash } from "node:crypto";
 
 export interface SessionContext {
   requestId?: string;
@@ -162,6 +163,13 @@ export class AuthSessionService {
     const roles = aggregateRoles(platformRoles, resolution.roles);
     const disabled = authUser.disabled || profile.status === "disabled";
     const pending = memberships.some((item) => item.status === "pending");
+    const pendingInvitation = sessionDb
+      ? await this.hasPendingInvitation(
+          sessionDb,
+          decodedToken.uid,
+          authUser.email ?? decodedToken.email,
+        )
+      : false;
     const childOrganizations = activeMemberships
       .filter((item) => item.roles.includes("child"))
       .map((item) => item.organizationId);
@@ -213,6 +221,19 @@ export class AuthSessionService {
       storedProfile.roles ?? storedProfile.role,
       context,
     );
+    const accountState = this.projectAccountState({
+      profile,
+      profileExisted: Boolean(existing),
+      restricted,
+      pendingInvitation,
+      pendingMembership: pending,
+      activeMemberships,
+      roles,
+      platformRoles,
+      resolution,
+      hasChildContext,
+      uid: decodedToken.uid,
+    });
     const session: SessionUser = {
       uid: profile.uid,
       email: profile.email ?? null,
@@ -220,36 +241,9 @@ export class AuthSessionService {
       roles: effectiveRoles,
       platformRoles: restricted ? [] : platformRoles,
       disabled: restricted,
-      onboardingStatus: restricted
-        ? "disabled"
-        : profile.onboardingStatus === "personal_setup" ||
-            profile.onboardingStatus === "organization_setup" ||
-            profile.onboardingStatus === "personal_workspace_required" ||
-            profile.onboardingStatus === "organization_setup_required" ||
-            profile.onboardingStatus === "registration_intent_required"
-          ? profile.onboardingStatus
-          : roles.includes("child") && !hasChildContext
-            ? "pending"
-            : platformRoles.includes("super_admin")
-              ? "complete"
-              : roles.length > 0 && activeMemberships.length > 0
-                ? "complete"
-                : resolution.source === "legacy_user_profile" &&
-                    resolution.migrationRequired
-                  ? "organization_required"
-                  : pending
-                    ? "pending"
-                    : "role_required",
+      ...accountState,
       ...(profile.registrationIntent
-        ? {
-            registrationIntent: profile.registrationIntent,
-            nextStep:
-              profile.onboardingStatus === "complete"
-                ? ("dashboard" as const)
-                : profile.registrationIntent === "organization"
-                  ? ("organization_setup" as const)
-                  : ("personal_workspace_setup" as const),
-          }
+        ? { registrationIntent: profile.registrationIntent }
         : {}),
       claimSynchronization,
       tokenRefreshRequired: claimSynchronization.tokenRefreshRequired,
@@ -304,6 +298,106 @@ export class AuthSessionService {
       disabled,
     });
     return session;
+  }
+
+  private projectAccountState(input: {
+    profile: SessionUser | UserProfile;
+    profileExisted: boolean;
+    restricted: boolean;
+    pendingInvitation: boolean;
+    pendingMembership: boolean;
+    activeMemberships: SessionUser["memberships"];
+    roles: readonly Role[];
+    platformRoles: readonly PlatformRole[];
+    resolution: ReturnType<typeof resolveRoles>;
+    hasChildContext: boolean;
+    uid: string;
+  }): Pick<
+    SessionUser,
+    | "onboardingStatus"
+    | "nextStep"
+    | "accountStateReason"
+    | "pendingInvitation"
+    | "recoveryReference"
+  > {
+    if (input.restricted)
+      return {
+        onboardingStatus: "disabled",
+        nextStep: "account_recovery",
+        accountStateReason: "account_disabled",
+        recoveryReference: recoveryReference(input.uid),
+      };
+    if (input.pendingInvitation)
+      return {
+        onboardingStatus: "invitation_required",
+        nextStep: "accept_invitation",
+        pendingInvitation: true,
+      };
+    if (
+      input.profile.registrationIntent === "personal" &&
+      input.profile.onboardingStatus !== "complete"
+    )
+      return {
+        onboardingStatus: "personal_workspace_required",
+        nextStep: "personal_workspace_setup",
+      };
+    if (
+      input.profile.registrationIntent === "organization" &&
+      input.profile.onboardingStatus !== "complete"
+    )
+      return {
+        onboardingStatus: "organization_setup_required",
+        nextStep: "organization_setup",
+      };
+    if (
+      input.platformRoles.includes("super_admin") ||
+      (input.roles.length > 0 &&
+        input.activeMemberships.length > 0 &&
+        input.hasChildContext)
+    )
+      return { onboardingStatus: "complete", nextStep: "dashboard" };
+    if (input.activeMemberships.length > 0 || input.pendingMembership)
+      return {
+        onboardingStatus: "role_required",
+        nextStep: "await_role_assignment",
+        accountStateReason: "organization_role_not_assigned",
+      };
+    if (
+      !input.profileExisted ||
+      input.profile.onboardingStatus === "registration_intent_required"
+    )
+      return {
+        onboardingStatus: "registration_intent_required",
+        nextStep: "choose_account_type",
+        accountStateReason: "registration_intent_missing",
+      };
+    return {
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
+      accountStateReason: "legacy_account_unclassified",
+      recoveryReference: recoveryReference(input.uid),
+    };
+  }
+
+  private async hasPendingInvitation(
+    db: Firestore,
+    uid: string,
+    email: string | undefined,
+  ): Promise<boolean> {
+    const normalized = email?.trim().toLowerCase();
+    if (!normalized) return false;
+    const invitations = await db
+      .collection("adultInvitations")
+      .where("email", "==", normalized)
+      .where("status", "==", "pending")
+      .get();
+    return invitations.docs.some((invitation) => {
+      const intendedUid = invitation.get("intendedUid");
+      return (
+        (!intendedUid || intendedUid === uid) &&
+        !isExpired(invitation.get("expiresAt"))
+      );
+    });
   }
 
   private async verifyIdToken(idToken: string): Promise<DecodedIdToken> {
@@ -398,6 +492,10 @@ export class AuthSessionService {
       return { status: "retry_required", tokenRefreshRequired: false };
     }
   }
+}
+
+function recoveryReference(uid: string): string {
+  return `AR-${createHash("sha256").update(uid).digest("hex").slice(0, 12).toUpperCase()}`;
 }
 
 function isExpired(value: unknown): boolean {
