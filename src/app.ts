@@ -226,12 +226,17 @@ app.use(
       message: safeError.status === 401 ? "Sign-in failed" : safeError.message,
       requestId: req.requestId,
     };
-    const fieldErrors =
+    const errorDetails =
       safeError.details &&
       typeof safeError.details === "object" &&
       "fieldErrors" in safeError.details
-        ? { fieldErrors: safeError.details.fieldErrors }
+        ? {
+            fieldErrors: safeError.details.fieldErrors,
+            ...("details" in safeError.details
+              ? { details: safeError.details.details }
+              : {}),
+          }
         : {};
-    res.status(safeError.status).json({ error: { ...body, ...fieldErrors } });
+    res.status(safeError.status).json({ error: { ...body, ...errorDetails } });
   },
 );
