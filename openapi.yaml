@@ -18,6 +18,37 @@ tags:
     { name: Onboarding },
   ]
 paths:
+  /auth/registration-intent:
+    post:
+      tags: [Auth]
+      operationId: registerAccountIntentCompatibility
+      summary: Idempotently begin personal or organization registration
+      description: Compatibility alias for `POST /auth/registration`.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - {
+                    type: object,
+                    additionalProperties: false,
+                    required: [intent],
+                    properties:
+                      {
+                        intent: { const: personal },
+                        timezone: { type: string, default: UTC },
+                      },
+                  }
+                - {
+                    type: object,
+                    additionalProperties: false,
+                    required: [intent],
+                    properties: { intent: { const: organization } },
+                  }
+      responses:
+        "201": { description: Registration intent accepted }
   /auth/registration:
     post:
       tags: [Auth]

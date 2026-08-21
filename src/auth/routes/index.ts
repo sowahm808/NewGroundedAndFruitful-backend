@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { childCredentialRateLimit } from "../../middleware/rate-limit.js";
 import { auth, db } from "../../config/firebase.js";
 import { validateBody } from "../../middleware/validate.js";
@@ -50,8 +50,7 @@ router.get(
   (req, res, next) => void sessionController.create(req, res).catch(next),
 );
 
-router.post(
-  "/registration",
+const registerIntent = [
   authenticate,
   validateBody(registrationIntentSchema),
   (req, res, next) => {
@@ -65,7 +64,10 @@ router.post(
       .then((data) => res.status(201).json({ data }))
       .catch(next);
   },
-);
+] satisfies RequestHandler[];
+
+router.post("/registration", ...registerIntent);
+router.post("/registration-intent", ...registerIntent);
 router.put(
   "/session/workspace",
   authenticate,
