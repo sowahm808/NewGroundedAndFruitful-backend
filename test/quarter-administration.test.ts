@@ -19,7 +19,21 @@ const principal = (
   role: roles[0]!,
   roles,
   organizationIds,
+  memberships: organizationIds.map((organizationId, index) => ({
+    id: `membership-${String(index)}`,
+    userId: "admin-1",
+    organizationId,
+    roles,
+    status: "active" as const,
+    version: 1,
+  })),
   token: {} as Principal["token"],
+});
+
+const snapshot = (id: string, data: Record<string, unknown>) => ({
+  id,
+  exists: true,
+  get: (field: string) => data[field],
 });
 
 describe("quarter administration validation", () => {
@@ -168,6 +182,85 @@ describe("quarter creation organization inference", () => {
   });
 });
 
+describe("quarter tenant projections", () => {
+  const quarter = (id: string, organizationId: string, status = "draft") =>
+    snapshot(id, {
+      name: `Quarter ${id}`,
+      description: null,
+      startDate: "2026-09-01",
+      endDate: "2026-11-30",
+      status,
+      organizationId,
+      createdAt: new Date("2026-08-01T00:00:00Z"),
+      updatedAt: new Date("2026-08-02T00:00:00Z"),
+      createdBy: "admin-1",
+      updatedBy: "admin-1",
+      version: 1,
+    });
+
+  const service = (quarters: ReturnType<typeof quarter>[]) => {
+    const workspaces = new Map([
+      [
+        "org-1",
+        snapshot("org-1", {
+          name: "Makrozoia Solutions LLC",
+          type: "organization",
+        }),
+      ],
+      [
+        "org-2",
+        snapshot("org-2", { name: "Other Tenant", type: "organization" }),
+      ],
+    ]);
+    const db = {
+      collection: (name: string) => {
+        if (name !== "quarters")
+          throw new Error(`Unexpected collection ${name}`);
+        return { get: () => Promise.resolve({ docs: quarters }) };
+      },
+      doc: (path: string) => {
+        const [collection, id] = path.split("/");
+        if (collection === "workspaces")
+          return { path, get: () => Promise.resolve(workspaces.get(id!)) };
+        const found = quarters.find((item) => item.id === id);
+        return { path, get: () => Promise.resolve(found) };
+      },
+      getAll: (...refs: Array<{ path: string }>) =>
+        Promise.resolve(
+          refs.map((ref) => workspaces.get(ref.path.split("/")[1]!)!),
+        ),
+    };
+    return new QuarterAdministrationService(db as never);
+  };
+
+  it("returns the authoritative minimal workspace and lifecycle actions", async () => {
+    const result = await service([quarter("q-1", "org-1")]).list(
+      principal(["admin"], ["org-1"]),
+      quarterListQuerySchema.parse({}),
+    );
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        organizationId: "org-1",
+        workspace: {
+          id: "org-1",
+          name: "Makrozoia Solutions LLC",
+          type: "organization",
+        },
+        allowedActions: ["view", "edit", "activate"],
+      }),
+    ]);
+  });
+
+  it("does not leak cross-tenant quarters or workspace names", async () => {
+    const result = await service([
+      quarter("q-1", "org-1"),
+      quarter("q-2", "org-2"),
+    ]).list(principal(["admin"], ["org-1"]), quarterListQuerySchema.parse({}));
+    expect(result.items.map((item) => item.id)).toEqual(["q-1"]);
+    expect(JSON.stringify(result)).not.toContain("Other Tenant");
+  });
+});
+
 describe("published quarter contract", () => {
   it("registers dedicated routes and never exposes a delete endpoint", () => {
     const routes = administrationRouter.stack
@@ -213,5 +306,13 @@ describe("published quarter contract", () => {
     expect(
       specification.components.schemas.Quarter.properties.createdAt.format,
     ).toBe("date-time");
+    expect(specification.components.schemas.Quarter.required).toEqual(
+      expect.arrayContaining(["organizationId", "workspace", "allowedActions"]),
+    );
+    expect(specification.components.schemas.QuarterWorkspace.required).toEqual([
+      "id",
+      "name",
+      "type",
+    ]);
   });
 });
