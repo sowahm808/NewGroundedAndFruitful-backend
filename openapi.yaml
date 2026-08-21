@@ -201,6 +201,53 @@ paths:
         [{ in: path, name: grantId, required: true, schema: { type: string } }]
       responses:
         "200": { description: Elevation immediately revoked and audited }
+  /auth/onboarding/personal-workspace:
+    post:
+      tags: [Onboarding]
+      operationId: onboardPersonalWorkspace
+      description: Atomically creates the single personal tenant and owner-only membership for an authenticated personal registrant. No existing role, workspace, membership, or administrative permission is required.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [timezone]
+              properties:
+                timezone: { type: string, description: Valid IANA timezone }
+      responses:
+        "201":
+          description: Personal workspace onboarding completed (including an exact retry)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required:
+                      [
+                        workspace,
+                        membership,
+                        activeWorkspaceId,
+                        onboardingStatus,
+                        nextStep,
+                        tokenRefreshRequired,
+                      ]
+                    properties:
+                      workspace: { type: object }
+                      membership: { type: object }
+                      activeWorkspaceId: { type: string }
+                      onboardingStatus: { const: complete }
+                      nextStep: { const: dashboard }
+                      tokenRefreshRequired: { const: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
   /auth/onboarding/organization:
     post:
       tags: [Onboarding]

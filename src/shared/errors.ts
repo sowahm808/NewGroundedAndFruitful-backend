@@ -77,6 +77,40 @@ export class OrganizationBootstrapError extends AppError {
   }
 }
 
+export class PersonalWorkspaceBootstrapError extends AppError {
+  constructor(
+    code:
+      | "PERSONAL_WORKSPACE_NOT_ELIGIBLE"
+      | "PERSONAL_WORKSPACE_ALREADY_EXISTS"
+      | "PERSONAL_WORKSPACE_BOOTSTRAP_CONFLICT"
+      | "PERSONAL_WORKSPACE_TIMEZONE_INVALID"
+      | "PERSONAL_WORKSPACE_BOOTSTRAP_FAILED",
+  ) {
+    const status =
+      code === "PERSONAL_WORKSPACE_NOT_ELIGIBLE"
+        ? 403
+        : code === "PERSONAL_WORKSPACE_TIMEZONE_INVALID"
+          ? 422
+          : code === "PERSONAL_WORKSPACE_BOOTSTRAP_FAILED"
+            ? 500
+            : 409;
+    super(status, code, personalWorkspaceBootstrapMessages[code]);
+  }
+}
+
+const personalWorkspaceBootstrapMessages = {
+  PERSONAL_WORKSPACE_NOT_ELIGIBLE:
+    "This account is not eligible to create a personal workspace.",
+  PERSONAL_WORKSPACE_ALREADY_EXISTS:
+    "A personal workspace already exists for this account.",
+  PERSONAL_WORKSPACE_BOOTSTRAP_CONFLICT:
+    "Personal workspace onboarding conflicts with the current state.",
+  PERSONAL_WORKSPACE_TIMEZONE_INVALID:
+    "The personal workspace timezone is invalid.",
+  PERSONAL_WORKSPACE_BOOTSTRAP_FAILED:
+    "Personal workspace onboarding could not be completed.",
+} as const;
+
 const organizationBootstrapMessages = {
   ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE:
     "This account is not eligible to create its first organization.",

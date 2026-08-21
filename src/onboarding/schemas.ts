@@ -14,3 +14,8 @@ export const organizationBootstrapSchema = z
     timezone: z.string().trim().min(1).max(80),
   })
   .strict();
+
+/** Only local-calendar configuration is accepted; identity and authority are server-owned. */
+export const personalWorkspaceBootstrapSchema = z
+  .object({ timezone: z.string().trim().min(1).max(80) })
+  .strict();

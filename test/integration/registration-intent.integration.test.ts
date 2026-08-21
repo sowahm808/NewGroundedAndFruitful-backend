@@ -56,6 +56,7 @@ beforeEach(async () => {
     "workspaces",
     "organizationSlugs",
     "onboardingBootstraps",
+    "personalWorkspaceBootstraps",
     "auditLogs",
   ]) {
     const snapshot = await db.collection(collection).get();
@@ -73,6 +74,84 @@ afterAll(async () => {
 });
 
 describe("registration intent HTTP policy", () => {
+  it("atomically and idempotently bootstraps one owner-only personal workspace", async () => {
+    const identity = await createIdentity("personal@example.test");
+    const intent = await fetch(`${base}/api/v1/auth/registration-intent`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${identity.idToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ intent: "personal" }),
+    });
+    expect(intent.status).toBe(201);
+    const bootstrap = (body: object = { timezone: "America/Chicago" }) =>
+      fetch(`${base}/api/v1/auth/onboarding/personal-workspace`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${identity.idToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    const responses = await Promise.all([bootstrap(), bootstrap()]);
+    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    const result = (await responses[0].json()) as {
+      data: { workspace: { id: string } };
+    };
+    expect(result).toMatchObject({
+      data: {
+        workspace: {
+          type: "personal",
+          name: "Personal",
+          timezone: "America/Chicago",
+          status: "active",
+        },
+        membership: { roles: ["owner"], status: "active" },
+        onboardingStatus: "complete",
+        nextStep: "dashboard",
+        tokenRefreshRequired: true,
+      },
+    });
+    expect((await db.collection("workspaces").get()).size).toBe(1);
+    expect((await db.collection("organizations").get()).size).toBe(1);
+    expect((await db.collection("memberships").get()).size).toBe(1);
+    expect((await db.collection("auditLogs").get()).size).toBe(5);
+    expect(await (await bootstrap()).json()).toMatchObject(result);
+    expect(
+      (await db.doc(`users/${identity.localId}`).get()).data(),
+    ).toMatchObject({
+      onboardingStatus: "complete",
+      activeWorkspaceId: result.data.workspace.id,
+      roles: [],
+    });
+  });
+
+  it("rejects personal bootstrap authority fields and organization intent", async () => {
+    const identity = await createIdentity("organization-only@example.test");
+    expect((await selectIntent(identity.idToken)).status).toBe(201);
+    const call = (body: object) =>
+      fetch(`${base}/api/v1/auth/onboarding/personal-workspace`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${identity.idToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    expect(
+      (await call({ timezone: "UTC", uid: "victim", roles: ["super_admin"] }))
+        .status,
+    ).toBe(422);
+    const ineligible = await call({ timezone: "UTC" });
+    expect(ineligible.status).toBe(403);
+    expect(await ineligible.json()).toMatchObject({
+      error: { code: "PERSONAL_WORKSPACE_NOT_ELIGIBLE" },
+    });
+    expect((await db.collection("workspaces").get()).empty).toBe(true);
+    expect((await db.collection("memberships").get()).empty).toBe(true);
+  });
+
   it("atomically bootstraps a roleless organization registrant and returns an exact retry", async () => {
     const identity = await createIdentity("bootstrap@example.test");
     expect((await selectIntent(identity.idToken)).status).toBe(201);
