@@ -11,17 +11,26 @@ import { MembershipRepository } from "../repositories/memberships.js";
 import { childLoginSchema } from "../schemas/child-login.js";
 import { ChildLoginService } from "../services/child-login.js";
 import { AuthSessionService } from "../services/session.js";
-import { authenticate } from "../../middleware/authentication.js";
+import {
+  authenticate,
+  authenticateRegistrationActor,
+} from "../../middleware/authentication.js";
 import {
   requireAuthenticated,
   requirePlatformSuperAdmin,
 } from "../authorization.js";
 import {
   WorkspaceService,
+  RegistrationIntentService,
   registrationIntentSchema,
   workspaceSelectionSchema,
 } from "../workspaces.js";
 import { ElevationService, elevationGrantSchema } from "../elevations.js";
+import {
+  AppError,
+  RegistrationIntentInvalidError,
+  RegistrationIntentSaveError,
+} from "../../shared/errors.js";
 
 const router = Router();
 const sessionController = new AuthSessionController(
@@ -39,6 +48,7 @@ const controller = new ChildLoginController(
   ),
 );
 const workspaces = new WorkspaceService(db);
+const registrationIntents = new RegistrationIntentService(db);
 const elevations = new ElevationService(db);
 
 router.post(
@@ -67,7 +77,37 @@ const registerIntent = [
 ] satisfies RequestHandler[];
 
 router.post("/registration", ...registerIntent);
-router.post("/registration-intent", ...registerIntent);
+router.post(
+  "/registration-intent",
+  authenticateRegistrationActor,
+  (req, _res, next) => {
+    const parsed = registrationIntentSchema.safeParse(req.body);
+    if (!parsed.success)
+      return next(new RegistrationIntentInvalidError(parsed.error.flatten()));
+    req.body = parsed.data;
+    next();
+  },
+  (req, res, next) => {
+    const actor = requireAuthenticated(req.principal);
+    void registrationIntents
+      .select(
+        actor.uid,
+        {
+          email:
+            typeof actor.token.email === "string" ? actor.token.email : null,
+          displayName: String(actor.token.name ?? actor.token.email ?? ""),
+        },
+        req.body.intent,
+        req.requestId,
+      )
+      .then((data) => res.status(201).json({ data }))
+      .catch((error: unknown) =>
+        next(
+          error instanceof AppError ? error : new RegistrationIntentSaveError(),
+        ),
+      );
+  },
+);
 router.put(
   "/session/workspace",
   authenticate,

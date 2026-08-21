@@ -49,6 +49,45 @@ export class AuthorizationError extends AppError {
     super(403, "FORBIDDEN", "You are not permitted to perform this action.");
   }
 }
+export class AccountDisabledError extends AppError {
+  constructor() {
+    super(403, "ACCOUNT_DISABLED", "The account is disabled.");
+  }
+}
+export class RegistrationIntentConflictError extends AppError {
+  constructor(
+    code:
+      | "REGISTRATION_INTENT_CONFLICT"
+      | "REGISTRATION_ALREADY_COMPLETED" = "REGISTRATION_INTENT_CONFLICT",
+  ) {
+    super(
+      409,
+      code,
+      code === "REGISTRATION_ALREADY_COMPLETED"
+        ? "Registration onboarding is already complete."
+        : "Registration intent conflicts with the current onboarding state.",
+    );
+  }
+}
+export class RegistrationIntentInvalidError extends AppError {
+  constructor(details?: unknown) {
+    super(
+      422,
+      "REGISTRATION_INTENT_INVALID",
+      "Registration intent must be personal or organization.",
+      details,
+    );
+  }
+}
+export class RegistrationIntentSaveError extends AppError {
+  constructor() {
+    super(
+      500,
+      "REGISTRATION_INTENT_SAVE_FAILED",
+      "Registration intent could not be saved.",
+    );
+  }
+}
 export class NotFoundError extends AppError {
   constructor(message = "Resource not found.") {
     super(404, "NOT_FOUND", message);
