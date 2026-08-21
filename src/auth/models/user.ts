@@ -31,7 +31,8 @@ export interface UserProfile {
     | "organization_setup"
     | "personal_workspace_required"
     | "organization_setup_required"
-    | "registration_intent_required";
+    | "registration_intent_required"
+    | "complete";
   registrationIntent?: "personal" | "organization";
 }
 

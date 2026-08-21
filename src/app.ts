@@ -18,7 +18,10 @@ import notificationRoutes from "./notifications/routes.js";
 import reportRoutes from "./reports/routes.js";
 import onboardingRoutes from "./onboarding/routes.js";
 import { env } from "./config/env.js";
-import { authenticate } from "./middleware/authentication.js";
+import {
+  authenticate,
+  requireFirebaseAuthentication,
+} from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import { requestContext } from "./middleware/request.js";
@@ -147,7 +150,14 @@ app.use(
   notificationRoutes,
 );
 app.use("/api/v1/reports", privateResponse, authenticate, reportRoutes);
-app.use("/api/v1/onboarding", privateResponse, authenticate, onboardingRoutes);
+// First-workspace onboarding is authenticated identity bootstrap: requiring a
+// pre-existing role or membership here would be circular authorization.
+app.use(
+  "/api/v1/onboarding",
+  privateResponse,
+  requireFirebaseAuthentication,
+  onboardingRoutes,
+);
 app.use(
   "/api/v1/administration",
   privateResponse,

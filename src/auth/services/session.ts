@@ -227,10 +227,14 @@ export class AuthSessionService {
       ...(profile.registrationIntent
         ? {
             registrationIntent: profile.registrationIntent,
-            nextStep:
-              profile.registrationIntent === "organization"
-                ? ("organization_setup" as const)
-                : ("personal_workspace_setup" as const),
+            ...(profile.onboardingStatus !== "complete"
+              ? {
+                  nextStep:
+                    profile.registrationIntent === "organization"
+                      ? ("organization_setup" as const)
+                      : ("personal_workspace_setup" as const),
+                }
+              : {}),
           }
         : {}),
       claimSynchronization,

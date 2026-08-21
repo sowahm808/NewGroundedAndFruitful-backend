@@ -49,7 +49,15 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  for (const collection of ["users", "memberships", "auditLogs"]) {
+  for (const collection of [
+    "users",
+    "memberships",
+    "organizations",
+    "workspaces",
+    "organizationSlugs",
+    "onboardingBootstraps",
+    "auditLogs",
+  ]) {
     const snapshot = await db.collection(collection).get();
     await Promise.all(snapshot.docs.map((document) => document.ref.delete()));
   }
@@ -65,6 +73,86 @@ afterAll(async () => {
 });
 
 describe("registration intent HTTP policy", () => {
+  it("atomically bootstraps a roleless organization registrant and returns an exact retry", async () => {
+    const identity = await createIdentity("bootstrap@example.test");
+    expect((await selectIntent(identity.idToken)).status).toBe(201);
+    const payload = {
+      name: "Makrozoia Solutions",
+      slug: "makrozoia-solutions",
+      timezone: "America/Chicago",
+    };
+    const bootstrap = () =>
+      fetch(`${base}/api/v1/onboarding/organization`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${identity.idToken}`,
+          "content-type": "application/json",
+          "idempotency-key": "registration-submit-1",
+        },
+        body: JSON.stringify(payload),
+      });
+    const first = await bootstrap();
+    expect(first.status).toBe(201);
+    const body = (await first.json()) as {
+      data: { workspace: { id: string } };
+    };
+    expect(body).toMatchObject({
+      data: {
+        workspace: { type: "organization", ...payload, status: "active" },
+        membership: { roles: ["owner", "admin"], status: "active" },
+        onboardingStatus: "complete",
+        nextStep: "dashboard",
+        tokenRefreshRequired: true,
+      },
+    });
+    expect((await bootstrap()).status).toBe(201);
+    expect(
+      (await Promise.all([bootstrap(), bootstrap()])).map(
+        (response) => response.status,
+      ),
+    ).toEqual([201, 201]);
+    expect((await db.collection("organizations").get()).size).toBe(1);
+    expect((await db.collection("memberships").get()).size).toBe(1);
+    expect((await db.collection("auditLogs").get()).size).toBe(4);
+    expect(
+      (await db.doc(`users/${identity.localId}`).get()).data(),
+    ).toMatchObject({
+      onboardingStatus: "complete",
+      activeWorkspaceId: body.data.workspace.id,
+      roles: [],
+    });
+  });
+
+  it("rejects ineligible intent and authority fields without partial writes", async () => {
+    const identity = await createIdentity("personal-bootstrap@example.test");
+    await db.doc(`users/${identity.localId}`).set({
+      uid: identity.localId,
+      email: "personal-bootstrap@example.test",
+      displayName: "Personal",
+      roles: [],
+      status: "active",
+      registrationIntent: "personal",
+      onboardingStatus: "personal_workspace_required",
+    });
+    const response = await fetch(`${base}/api/v1/onboarding/organization`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${identity.idToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Escalation",
+        slug: "escalation",
+        timezone: "UTC",
+        uid: "victim",
+        roles: ["super_admin"],
+        workspaceId: "chosen",
+      }),
+    });
+    expect(response.status).toBe(422);
+    expect((await db.collection("organizations").get()).empty).toBe(true);
+    expect((await db.collection("memberships").get()).empty).toBe(true);
+  });
   it("allows an idempotent organization intent for a roleless Firebase user", async () => {
     const identity = await createIdentity("roleless@example.test");
     const first = await selectIntent(identity.idToken);

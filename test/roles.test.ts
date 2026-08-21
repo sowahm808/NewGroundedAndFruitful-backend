@@ -22,9 +22,9 @@ describe("role normalization", () => {
     ).toEqual(["observer"]);
   });
   it("rejects unknown values without promotion", () => {
-    expect(normalizeRoles(["owner", "root"]).roles).toEqual([]);
-    expect(normalizeRoles(["owner", "root"]).invalid).toEqual([
-      "owner",
+    expect(normalizeRoles(["unknown", "root"]).roles).toEqual([]);
+    expect(normalizeRoles(["unknown", "root"]).invalid).toEqual([
+      "unknown",
       "root",
     ]);
   });

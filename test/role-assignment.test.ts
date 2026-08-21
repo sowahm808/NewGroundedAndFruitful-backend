@@ -88,7 +88,7 @@ describe("operational role assignment", () => {
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(unknown.auth.getUser).not.toHaveBeenCalled();
 
-    const invalidStored = fixture(["owner"]);
+    const invalidStored = fixture(["root"]);
     await expect(
       assignRole(invalidStored.auth as never, invalidStored.db as never, {
         uid: "uid-1",

@@ -54,6 +54,42 @@ export class AccountDisabledError extends AppError {
     super(403, "ACCOUNT_DISABLED", "The account is disabled.");
   }
 }
+export class OrganizationBootstrapError extends AppError {
+  constructor(
+    code:
+      | "ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE"
+      | "ORGANIZATION_BOOTSTRAP_ALREADY_COMPLETED"
+      | "ORGANIZATION_BOOTSTRAP_CONFLICT"
+      | "ORGANIZATION_NAME_CONFLICT"
+      | "ORGANIZATION_SLUG_CONFLICT"
+      | "ORGANIZATION_TIMEZONE_INVALID"
+      | "ORGANIZATION_BOOTSTRAP_FAILED",
+  ) {
+    const status =
+      code === "ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE"
+        ? 403
+        : code === "ORGANIZATION_TIMEZONE_INVALID"
+          ? 422
+          : code === "ORGANIZATION_BOOTSTRAP_FAILED"
+            ? 500
+            : 409;
+    super(status, code, organizationBootstrapMessages[code]);
+  }
+}
+
+const organizationBootstrapMessages = {
+  ORGANIZATION_BOOTSTRAP_NOT_ELIGIBLE:
+    "This account is not eligible to create its first organization.",
+  ORGANIZATION_BOOTSTRAP_ALREADY_COMPLETED:
+    "Organization onboarding is already complete.",
+  ORGANIZATION_BOOTSTRAP_CONFLICT:
+    "Organization onboarding conflicts with the completed request.",
+  ORGANIZATION_NAME_CONFLICT: "An organization with this name already exists.",
+  ORGANIZATION_SLUG_CONFLICT: "This organization slug is already in use.",
+  ORGANIZATION_TIMEZONE_INVALID: "The organization timezone is invalid.",
+  ORGANIZATION_BOOTSTRAP_FAILED:
+    "Organization onboarding could not be completed.",
+} as const;
 export class RegistrationIntentConflictError extends AppError {
   constructor(
     code:

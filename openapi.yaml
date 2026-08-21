@@ -205,7 +205,7 @@ paths:
     post:
       tags: [Onboarding]
       operationId: onboardOrganization
-      description: Creates the first organization and administrator membership for an eligible legacy super administrator.
+      description: Creates the first organization and owner/admin membership for an authenticated organization registrant. No existing role, workspace, or membership is required.
       security: [{ firebaseBearer: [] }]
       requestBody:
         required: true
@@ -238,23 +238,21 @@ paths:
                                 type: object,
                                 required:
                                   [
-                                    uid,
-                                    organizationId,
-                                    membershipId,
-                                    outcome,
-                                    claims,
+                                    workspace,
+                                    membership,
+                                    onboardingStatus,
+                                    nextStep,
+                                    activeWorkspaceId,
+                                    tokenRefreshRequired,
                                   ],
                                 properties:
                                   {
-                                    uid: { type: string },
-                                    organizationId: { type: string },
-                                    membershipId: { type: string },
-                                    outcome: { type: string, enum: [created] },
-                                    claims:
-                                      {
-                                        type: string,
-                                        enum: [refresh_required, synchronized],
-                                      },
+                                    workspace: { type: object },
+                                    membership: { type: object },
+                                    onboardingStatus: { const: complete },
+                                    nextStep: { const: dashboard },
+                                    activeWorkspaceId: { type: string },
+                                    tokenRefreshRequired: { const: true },
                                   },
                               },
                           },
@@ -264,7 +262,9 @@ paths:
           }
         "400": { $ref: "#/components/responses/Validation" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
   /health:
     get:
       tags: [Health]
