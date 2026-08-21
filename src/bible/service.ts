@@ -15,6 +15,7 @@ import {
 } from "../shared/errors.js";
 import { parseBibleDocxPair } from "./docx.js";
 import type { BiblePreviewItem } from "./domain.js";
+import { logger } from "../shared/logger.js";
 
 const error = (status: number, code: string, message: string) =>
   new AppError(status, code, message);
@@ -99,12 +100,27 @@ export class BibleAdministrationService {
     key: Upload,
     requestId: string,
   ) {
+    const startedAt = Date.now();
+    const phase = (event: string, fields: Record<string, unknown> = {}) =>
+      logger.info(`bible_import.${event}`, {
+        requestId,
+        actorId: principal?.uid,
+        organizationId: metadata.organizationId,
+        quarterId: metadata.quarterId,
+        durationMs: Date.now() - startedAt,
+        ...fields,
+      });
+    phase("request_received", {
+      quizFileSize: quiz.buffer.length,
+      answerKeyFileSize: key.buffer.length,
+    });
     const actor = requireAdmin(principal);
     if (
       !actor.roles.includes("super_admin") &&
       !actor.organizationIds.includes(metadata.organizationId)
     )
       throw new AuthorizationError();
+    phase("authorization_passed");
     const fileErrors: Record<string, string[]> = {};
     for (const [field, file] of [
       ["quizFile", quiz],
@@ -134,6 +150,7 @@ export class BibleAdministrationService {
       throw new ValidationError("Invalid Bible import fields.", {
         fieldErrors: fileErrors,
       });
+    phase("documents_validated");
     const [org, quarter] = await Promise.all([
       this.db.doc(`organizations/${metadata.organizationId}`).get(),
       this.db.doc(`quarters/${metadata.quarterId}`).get(),
@@ -145,17 +162,36 @@ export class BibleAdministrationService {
     if (!quarter.exists)
       throw error(404, "BIBLE_QUARTER_NOT_FOUND", "Quarter not found.");
     if (quarter.get("organizationId") !== metadata.organizationId)
-      throw new ValidationError("Invalid Bible import fields.", {
-        fieldErrors: {
-          quarterId: ["Quarter does not belong to the organization."],
-        },
-      });
+      throw new AuthorizationError();
+    const quarterStatus = quarter.get("status");
+    if (quarterStatus && !["draft", "active"].includes(String(quarterStatus)))
+      throw error(
+        409,
+        "BIBLE_QUARTER_LIFECYCLE_CONFLICT",
+        "The selected quarter does not allow imports.",
+      );
     const startDate = String(quarter.get("startDate")),
       endDate = String(quarter.get("endDate"));
     const result = parseBibleDocxPair(quiz.buffer, key.buffer, {
       startDate,
       endDate,
     });
+    phase("question_parse_completed", { activityCount: result.items.length });
+    phase("answer_parse_completed");
+    if (result.errors.length)
+      throw new AppError(
+        422,
+        "QUIZ_DOCUMENT_STRUCTURE_INVALID",
+        "The question and answer documents could not be reconciled.",
+        {
+          fieldErrors: {
+            quizFile: [
+              "Use the supported numbered-question and answer-choice format.",
+            ],
+          },
+        },
+      );
+    phase("reconciliation_completed", { activityCount: result.items.length });
     if (!this.bucket)
       throw new ServiceUnavailableError("Bible import storage is unavailable.");
     const ref = this.db.collection("bibleImports").doc(),
@@ -175,6 +211,10 @@ export class BibleAdministrationService {
         });
         stored.push(path);
       }
+      phase("storage_completed", {
+        importId: ref.id,
+        objectCount: stored.length,
+      });
       await this.db.runTransaction(async (tx) => {
         const duplicate = await tx.get(
           this.db
@@ -244,6 +284,7 @@ export class BibleAdministrationService {
           },
         );
       });
+      phase("persistence_completed", { importId: ref.id });
     } catch (cause) {
       await Promise.allSettled(
         stored.map((path) =>
@@ -251,10 +292,28 @@ export class BibleAdministrationService {
         ),
       );
       if (cause instanceof AppError) throw cause;
+      logger.error("bible_import.failed", {
+        requestId,
+        actorId: actor.uid,
+        organizationId: metadata.organizationId,
+        quarterId: metadata.quarterId,
+        importId: ref.id,
+        phase: stored.length < 2 ? "storage" : "persistence",
+        durationMs: Date.now() - startedAt,
+        errorType: cause instanceof Error ? cause.name : "unknown",
+        safeErrorCode:
+          stored.length < 2
+            ? "BIBLE_IMPORT_STORAGE_UNAVAILABLE"
+            : "BIBLE_IMPORT_PERSISTENCE_FAILED",
+      });
       throw error(
-        500,
-        "BIBLE_IMPORT_CREATE_FAILED",
-        "Bible import creation failed.",
+        stored.length < 2 ? 503 : 500,
+        stored.length < 2
+          ? "BIBLE_IMPORT_STORAGE_UNAVAILABLE"
+          : "BIBLE_IMPORT_PERSISTENCE_FAILED",
+        stored.length < 2
+          ? "Bible import storage is temporarily unavailable."
+          : "Bible import persistence failed.",
       );
     }
     return this.get(principal, ref.id);
