@@ -126,6 +126,15 @@ app.use(rateLimit(60_000, 120));
  * Remove it after consumers migrate to /api/v1/auth.
  */
 app.use("/api/auth", privateResponse, authRoutes);
+// Canonical first-organization bootstrap route. Mount this before the general
+// auth router so it receives identity-only authentication rather than the
+// role-resolving application policy used by established accounts.
+app.use(
+  "/api/v1/auth/onboarding",
+  privateResponse,
+  requireFirebaseAuthentication,
+  onboardingRoutes,
+);
 app.use("/api/v1/auth", privateResponse, authRoutes);
 
 /*
@@ -150,8 +159,8 @@ app.use(
   notificationRoutes,
 );
 app.use("/api/v1/reports", privateResponse, authenticate, reportRoutes);
-// First-workspace onboarding is authenticated identity bootstrap: requiring a
-// pre-existing role or membership here would be circular authorization.
+// Compatibility route for clients released against the original path. It uses
+// the same identity-only bootstrap policy as the canonical auth route.
 app.use(
   "/api/v1/onboarding",
   privateResponse,

@@ -201,7 +201,7 @@ paths:
         [{ in: path, name: grantId, required: true, schema: { type: string } }]
       responses:
         "200": { description: Elevation immediately revoked and audited }
-  /onboarding/organization:
+  /auth/onboarding/organization:
     post:
       tags: [Onboarding]
       operationId: onboardOrganization
