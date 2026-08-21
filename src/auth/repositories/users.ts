@@ -7,14 +7,18 @@ import { canonicalRoleSchema } from "../roles.js";
 const collection = "users";
 const userProfileDocument = z
   .object({
-    uid: z.string().min(1),
-    email: z.string().email().nullable(),
-    displayName: z.string(),
-    roles: z.array(canonicalRoleSchema),
-    status: z.enum(["active", "disabled"]),
+    // Profiles predate the current schema, and authentication must still be
+    // able to classify those accounts for recovery. Treat malformed legacy
+    // identity fields as missing rather than allowing ZodError to turn a
+    // valid Firebase login into a 500 response.
+    uid: z.string().min(1).optional().catch(undefined),
+    email: z.string().email().nullable().optional().catch(undefined),
+    displayName: z.string().optional().catch(undefined),
+    roles: z.array(canonicalRoleSchema).optional().catch(undefined),
+    status: z.unknown().optional(),
     createdAt: z.unknown().optional(),
     updatedAt: z.unknown().optional(),
-    activeWorkspaceId: z.string().nullable().optional(),
+    activeWorkspaceId: z.string().nullable().optional().catch(undefined),
     onboardingStatus: z
       .enum([
         "personal_setup",
@@ -24,22 +28,29 @@ const userProfileDocument = z
         "registration_intent_required",
         "complete",
       ])
-      .optional(),
+      .optional()
+      .catch(undefined),
     registrationIntent: z
       .enum(["personal", "organization"])
       .nullable()
-      .optional(),
+      .optional()
+      .catch(undefined),
   })
   .passthrough();
 
-const parseUserProfile = (value: unknown): UserProfile => {
+const parseUserProfile = (uid: string, value: unknown): UserProfile => {
   const parsed = userProfileDocument.parse(value);
   return {
-    uid: parsed.uid,
-    email: parsed.email,
-    displayName: parsed.displayName,
-    roles: parsed.roles,
-    status: parsed.status,
+    // The document path is the trusted identity. A stale or corrupt embedded
+    // uid must never cause the session to be issued for another user.
+    uid,
+    email: parsed.email ?? null,
+    displayName: parsed.displayName ?? "",
+    roles: parsed.roles ?? [],
+    status:
+      parsed.status === undefined || parsed.status === "active"
+        ? "active"
+        : "disabled",
     ...(parsed.activeWorkspaceId
       ? { activeWorkspaceId: parsed.activeWorkspaceId }
       : {}),
@@ -64,7 +75,7 @@ export class UserRepository {
   async getUserByUid(uid: string): Promise<UserProfile | null> {
     const snapshot = await this.firestore.doc(`${collection}/${uid}`).get();
     if (!snapshot.exists) return null;
-    return parseUserProfile(snapshot.data());
+    return parseUserProfile(uid, snapshot.data());
   }
 
   async provisionUserProfile(
@@ -98,7 +109,7 @@ export class UserRepository {
         };
       }
 
-      const current = parseUserProfile(snapshot.data());
+      const current = parseUserProfile(input.uid, snapshot.data());
       const patch: Record<string, unknown> = {};
       if (current.uid !== input.uid) patch.uid = input.uid;
       if (typeof current.email === "undefined") patch.email = input.email;
