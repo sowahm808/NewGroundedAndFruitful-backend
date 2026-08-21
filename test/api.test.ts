@@ -169,6 +169,18 @@ describe("HTTP safety contract", () => {
     });
     expect(response.status).toBe(401);
   });
+  it("publishes the registration-intent compatibility route", async () => {
+    const response = await fetch(`${base}/api/v1/auth/registration-intent`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ intent: "organization" }),
+    });
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
   it("requires a token for GET session bootstrap", async () => {
     const response = await fetch(`${base}/api/v1/auth/session`);
     expect(response.status).toBe(401);

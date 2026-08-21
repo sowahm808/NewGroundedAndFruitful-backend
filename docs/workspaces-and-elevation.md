@@ -4,7 +4,7 @@
 
 ## Registration and sessions
 
-Clients submit `POST /api/v1/auth/registration` with intent `personal` or `organization`. Personal registration creates a deterministic private workspace and owner membership in one transaction and proceeds to personal/family setup. Organization intent records setup state; `POST /onboarding/organization` creates the organization and initial membership without changing platform roles. Login resolves identity first and returns every authorized workspace. A single workspace is selected automatically; otherwise clients must call `PUT /api/v1/auth/session/workspace`. Selection is persisted convenience state, not authorization, and every resource request is still checked against active server-owned membership.
+Clients submit `POST /api/v1/auth/registration` with intent `personal` or `organization`; `POST /api/v1/auth/registration-intent` is maintained as a compatibility alias for clients using that route name. Personal registration creates a deterministic private workspace and owner membership in one transaction and proceeds to personal/family setup. Organization intent records setup state; `POST /onboarding/organization` creates the organization and initial membership without changing platform roles. Login resolves identity first and returns every authorized workspace. A single workspace is selected automatically; otherwise clients must call `PUT /api/v1/auth/session/workspace`. Selection is persisted convenience state, not authorization, and every resource request is still checked against active server-owned membership.
 
 ## Temporary elevation
 
