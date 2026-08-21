@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { parseBibleDocxPair } from "../src/bible/docx.js";
 
 function docx(
@@ -89,8 +90,8 @@ describe("Bible DOCX importer", () => {
       endDate: "2026-09-30",
     });
     expect(parsed.errors.join(" ")).toContain("outside the selected quarter");
-    expect(parsed.errors.join(" ")).toContain("Multiple underlined");
-    expect(parsed.errors.join(" ")).toContain("No underlined");
+    expect(parsed.errors.join(" ")).toContain("CORRECT_ANSWER_AMBIGUOUS");
+    expect(parsed.errors.join(" ")).toContain("CORRECT_ANSWER_MISSING");
   });
   it("rejects malformed and non-DOCX input", () => {
     expect(() =>
@@ -99,5 +100,15 @@ describe("Bible DOCX importer", () => {
         endDate: "2026-09-30",
       }),
     ).toThrowError(/not a DOCX/);
+  });
+  it("reconciles the sanitized production documents by ordinal", () => {
+    const parsed = parseBibleDocxPair(
+      readFileSync("docs/reference/bible quiz Jul-Sep.docx"),
+      readFileSync("docs/reference/bible quiz Answers Jul-Sep.docx"),
+      { startDate: "2026-07-01", endDate: "2026-09-30" },
+    );
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.items).toHaveLength(92);
+    expect(parsed.parserVersion).toBe("gf-bible-ooxml/2.0.0");
   });
 });

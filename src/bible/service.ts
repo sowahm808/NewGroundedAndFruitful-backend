@@ -181,14 +181,13 @@ export class BibleAdministrationService {
     if (result.errors.length)
       throw new AppError(
         422,
-        "QUIZ_DOCUMENT_STRUCTURE_INVALID",
+        "QUIZ_DOCUMENT_RECONCILIATION_FAILED",
         "The question and answer documents could not be reconciled.",
         {
           fieldErrors: {
-            quizFile: [
-              "Use the supported numbered-question and answer-choice format.",
-            ],
+            answerKeyFile: result.errors.slice(0, 50),
           },
+          details: result.diagnostics,
         },
       );
     phase("reconciliation_completed", { activityCount: result.items.length });

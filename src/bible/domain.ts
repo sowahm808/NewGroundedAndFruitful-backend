@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PARSER_VERSION = "gf-bible-ooxml/1.0.0";
+export const PARSER_VERSION = "gf-bible-ooxml/2.0.0";
 export const choiceSchema = z.object({
   id: z.string().regex(/^[a-e]$/),
   label: z.string().regex(/^[a-e]$/),

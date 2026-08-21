@@ -27,6 +27,7 @@ const entities = (s: string) =>
 export interface Paragraph {
   text: string;
   underlined: boolean;
+  sourceNumber?: string;
 }
 
 export function extractDocx(buffer: Buffer): Paragraph[] {
@@ -58,8 +59,8 @@ export function extractDocx(buffer: Buffer): Paragraph[] {
       "DOCX contains too many archive entries.",
     );
   let cursor = offset,
-    total = 0,
-    xml: Buffer | undefined;
+    total = 0;
+  const files = new Map<string, Buffer>();
   for (let i = 0; i < count; i++) {
     if (buffer.readUInt32LE(cursor) !== 0x02014b50)
       throw fail("BIBLE_IMPORT_FILE_INVALID", "Malformed DOCX directory.");
@@ -87,18 +88,24 @@ export function extractDocx(buffer: Buffer): Paragraph[] {
         "BIBLE_IMPORT_FILE_INVALID",
         "Macro-enabled DOCX content is prohibited.",
       );
-    if (name === "word/document.xml") {
+    if (
+      ["word/document.xml", "word/styles.xml", "word/numbering.xml"].includes(
+        name,
+      )
+    ) {
       const ln = buffer.readUInt16LE(local + 26),
         le = buffer.readUInt16LE(local + 28),
         data = buffer.subarray(
           local + 30 + ln + le,
           local + 30 + ln + le + compressed,
         );
-      xml =
+      const contents =
         method === 0 ? data : method === 8 ? inflateRawSync(data) : undefined;
+      if (contents) files.set(name, contents);
     }
     cursor += 46 + nameLen + extra + comment;
   }
+  const xml = files.get("word/document.xml");
   if (!xml)
     throw fail(
       "BIBLE_IMPORT_FILE_INVALID",
@@ -110,22 +117,51 @@ export function extractDocx(buffer: Buffer): Paragraph[] {
       "BIBLE_IMPORT_FILE_INVALID",
       "Invalid WordprocessingML document.",
     );
+  const styles = files.get("word/styles.xml")?.toString("utf8") ?? "";
+  const underlinedStyles = new Map<string, boolean>();
+  for (const match of styles.matchAll(
+    /<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g,
+  )) {
+    const id = /w:styleId="([^"]+)"/.exec(match[1]!)?.[1];
+    if (!id) continue;
+    const value = /<w:u(?:\s[^>]*)?\/?\s*>/.exec(match[2]!)?.[0];
+    if (value) underlinedStyles.set(id, !/w:val="(?:none|0)"/.test(value));
+  }
+  // Resolve the simple decimal-list form used by the supported template. The
+  // source number is metadata: it is not folded into content fingerprints.
+  const counters = new Map<string, number>();
   const paragraphs = [...source.matchAll(/<w:p(?:\s[^>]*)?>([\s\S]*?)<\/w:p>/g)]
     .map((m) => {
       let underlined = false;
       let text = "";
+      const numId = /<w:numId[^>]*w:val="(\d+)"/.exec(m[1]!)?.[1];
+      const level = /<w:ilvl[^>]*w:val="(\d+)"/.exec(m[1]!)?.[1] ?? "0";
+      let sourceNumber: string | undefined;
+      if (numId) {
+        const key = `${numId}:${level}`;
+        const number = (counters.get(key) ?? 0) + 1;
+        counters.set(key, number);
+        sourceNumber = String(number);
+      }
       for (const run of m[1]!.matchAll(/<w:r(?:\s[^>]*)?>([\s\S]*?)<\/w:r>/g)) {
         const body = run[1]!;
-        const u =
-          /<w:u(?:\s[^>]*)?\/?>(?![\s\S]*w:val="none")/.test(body) &&
-          !/<w:u[^>]*w:val="(?:none|0)"/.test(body);
+        const direct = /<w:u(?:\s[^>]*)?\/?\s*>/.exec(body)?.[0];
+        const styleId = /<w:rStyle[^>]*w:val="([^"]+)"/.exec(body)?.[1];
+        const u = direct
+          ? !/w:val="(?:none|0)"/.test(direct)
+          : (styleId ? underlinedStyles.get(styleId) : false) === true;
         for (const t of body.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)) {
           text += entities(t[1]!);
           if (u && t[1]!.trim()) underlined = true;
         }
         if (/<w:tab\s*\/>/.test(body)) text += "\t";
+        if (/<w:(?:br|cr)\b[^>]*\/>/.test(body)) text += "\n";
       }
-      return { text: text.replace(/\s+/g, " ").trim(), underlined };
+      return {
+        text: text.replace(/[\u00a0\s]+/g, " ").trim(),
+        underlined,
+        ...(sourceNumber ? { sourceNumber } : {}),
+      };
     })
     .filter((p) => p.text);
   if (paragraphs.length > LIMITS.paragraphs)
@@ -156,9 +192,18 @@ const norm = (s: string) =>
     .replace(/\s+/g, " ")
     .trim()
     .toLocaleLowerCase("en-US");
+// Product policy treats terminal punctuation as presentation-only on choices,
+// but never on prompts (where it can change meaning).
+const normChoice = (s: string) => norm(s).replace(/[.!?]+$/u, "");
+const fingerprint = (s: string, choiceText = false) =>
+  createHash("sha256")
+    .update(choiceText ? normChoice(s) : norm(s))
+    .digest("hex");
 const choice = /^([a-e])[.\)\-]\s*(.+)$/i,
   heading = /^(\d{1,2})\s*-\s*(.+)$/;
 interface ParsedQuestion {
+  ordinal: number;
+  sourceNumber?: string;
   prompt: string;
   choices: Array<{
     id: string;
@@ -235,7 +280,17 @@ function parse(paragraphs: Paragraph[]): RawItem[] {
       });
       q.originalText += `\n${p.text}`;
     } else {
-      q = { prompt: p.text, choices: [], originalText: p.text };
+      const literal = /^(\d{1,3})[.)-]\s+(.+)$/.exec(p.text);
+      const prompt = literal?.[2] ?? p.text;
+      q = {
+        ordinal: current.questions.length + 1,
+        ...(literal?.[1] || p.sourceNumber
+          ? { sourceNumber: literal?.[1] ?? p.sourceNumber! }
+          : {}),
+        prompt,
+        choices: [],
+        originalText: p.text,
+      };
       current.questions.push(q);
       current.originalText += `\n${p.text}`;
     }
@@ -276,35 +331,64 @@ export function parseBibleDocxPair(
     if (localDate < quarter.startDate || localDate > quarter.endDate)
       errors.push(`Date ${localDate} is outside the selected quarter.`);
     const questions = [];
-    const seen = new Set<string>();
+    const questionNumbers = a.questions
+      .map((q) => q.sourceNumber)
+      .filter(Boolean);
+    if (new Set(questionNumbers).size !== questionNumbers.length)
+      errors.push(
+        `QUESTION_NUMBER_DUPLICATE: Question number is duplicated on ${localDate}.`,
+      );
     for (const [j, q] of a.questions.entries()) {
-      const kq = match.questions.find((x) => norm(x.prompt) === norm(q.prompt));
-      if (!kq) {
-        errors.push(`Question mismatch on ${localDate}: ${q.prompt}`);
+      // Ordinal is authoritative when question numbers are absent. This avoids
+      // selecting the first of two intentionally repeated prompts.
+      const kq = q.sourceNumber
+        ? match.questions.find((x) => x.sourceNumber === q.sourceNumber)
+        : match.questions[j];
+      const displayNumber = q.sourceNumber ?? String(q.ordinal);
+      if (!kq || fingerprint(kq.prompt) !== fingerprint(q.prompt)) {
+        errors.push(
+          `QUESTION_NOT_MATCHED: Question ${displayNumber} does not match the question document (${localDate}).`,
+        );
         continue;
       }
-      if (seen.has(norm(q.prompt)))
-        errors.push(`Duplicate question on ${localDate}: ${q.prompt}`);
-      seen.add(norm(q.prompt));
       if (q.choices.length < 2)
         errors.push(`Question has fewer than two choices on ${localDate}.`);
       const ids = q.choices.map((c) => c.id);
       if (new Set(ids).size !== ids.length)
         errors.push(`Duplicate choice IDs on ${localDate}.`);
+      if (q.choices.length !== kq.choices.length)
+        errors.push(
+          `CHOICE_COUNT_MISMATCH: Question ${displayNumber} has a different choice count (${localDate}).`,
+        );
+      const choicesMatch = q.choices.every((c) => {
+        const answerChoice = kq.choices.find(
+          (candidate) => candidate.label === c.label,
+        );
+        return (
+          answerChoice &&
+          fingerprint(answerChoice.text, true) === fingerprint(c.text, true)
+        );
+      });
+      if (!choicesMatch)
+        errors.push(
+          `CHOICE_NOT_MATCHED: Question ${displayNumber} has a choice that does not match (${localDate}).`,
+        );
       const marked = kq.choices.filter((c) => c.underlined);
       if (marked.length !== 1)
         errors.push(
-          `${marked.length ? "Multiple" : "No"} underlined correct answers on ${localDate}: ${q.prompt}`,
+          `${marked.length ? "CORRECT_ANSWER_AMBIGUOUS" : "CORRECT_ANSWER_MISSING"}: Question ${displayNumber} ${marked.length ? "has multiple underlined correct answers" : "has no underlined correct answer"} (${localDate}).`,
         );
       const correct = marked[0]?.id ?? "a";
       if (
+        marked.length === 1 &&
         !q.choices.some(
           (c) =>
-            c.id === correct && norm(c.text) === norm(marked[0]?.text ?? ""),
+            c.id === correct &&
+            normChoice(c.text) === normChoice(marked[0]?.text ?? ""),
         )
       )
         errors.push(
-          `Correct answer not found in child choices on ${localDate}.`,
+          `CHOICE_NOT_MATCHED: Question ${displayNumber}'s marked answer does not match (${localDate}).`,
         );
       if (q.choices.length >= 5)
         warnings.push(
@@ -359,5 +443,30 @@ export function parseBibleDocxPair(
     items,
     errors: [...new Set(errors)],
     warnings: [...new Set(warnings)],
+    diagnostics: {
+      questionDocumentCount: qr.reduce(
+        (sum, item) => sum + item.questions.length,
+        0,
+      ),
+      answerKeyDocumentCount: kr.reduce(
+        (sum, item) => sum + item.questions.length,
+        0,
+      ),
+      unmatchedQuestionNumbers: errors
+        .filter((value) => value.startsWith("QUESTION_NOT_MATCHED"))
+        .map((value) => /Question (\d+)/.exec(value)?.[1])
+        .filter((value): value is string => Boolean(value))
+        .slice(0, 50),
+      missingCorrectAnswerNumbers: errors
+        .filter((value) => value.startsWith("CORRECT_ANSWER_MISSING"))
+        .map((value) => /Question (\d+)/.exec(value)?.[1])
+        .filter((value): value is string => Boolean(value))
+        .slice(0, 50),
+      duplicateQuestionNumbers: errors
+        .filter((value) => value.startsWith("QUESTION_NUMBER_DUPLICATE"))
+        .slice(0, 50)
+        .map(() => "duplicate"),
+      truncated: errors.length > 50,
+    },
   };
 }
