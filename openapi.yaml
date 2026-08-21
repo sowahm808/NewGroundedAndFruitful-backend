@@ -205,7 +205,7 @@ paths:
     post:
       tags: [Onboarding]
       operationId: onboardPersonalWorkspace
-      description: Atomically creates the single personal tenant and owner-only membership for an authenticated personal registrant. No existing role, workspace, membership, or administrative permission is required.
+      description: Atomically creates the single personal tenant, owner governance membership, and parent persona for an authenticated personal registrant. It grants no organization-admin or platform authority.
       security: [{ firebaseBearer: [] }]
       requestBody:
         required: true
@@ -2283,6 +2283,30 @@ components:
                           ],
                       },
                     activeWorkspaceId: { type: string },
+                    activeWorkspace:
+                      {
+                        type: object,
+                        required: [id, type, name, status],
+                        properties:
+                          {
+                            id: { type: string },
+                            type:
+                              { type: string, enum: [personal, organization] },
+                            name: { type: string },
+                            status: { type: string },
+                          },
+                      },
+                    workspaceRoles: { type: array, items: { type: string } },
+                    personas:
+                      {
+                        type: array,
+                        items:
+                          {
+                            type: string,
+                            enum: [child, parent, mentor, observer],
+                          },
+                      },
+                    capabilities: { type: array, items: { type: string } },
                     effectiveRoles: { type: array, items: { type: string } },
                     workspaces:
                       {
@@ -2316,6 +2340,17 @@ components:
                               {
                                 workspaceId: { type: string },
                                 organizationId: { type: string },
+                                workspaceRoles:
+                                  { type: array, items: { type: string } },
+                                personas:
+                                  {
+                                    type: array,
+                                    items:
+                                      {
+                                        type: string,
+                                        enum: [child, parent, mentor, observer],
+                                      },
+                                  },
                                 roles:
                                   {
                                     type: array,

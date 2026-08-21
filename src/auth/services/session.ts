@@ -16,6 +16,7 @@ import {
   type PlatformRole,
 } from "../claims.js";
 import { ElevationService } from "../elevations.js";
+import { deriveCapabilities, normalizePersonas } from "../capabilities.js";
 
 export interface SessionContext {
   requestId?: string;
@@ -59,6 +60,7 @@ export class AuthSessionService {
       .filter((membership) => membership.userId === decodedToken.uid)
       .map((membership) => {
         const normalized = normalizeRoles(membership.roles ?? membership.role);
+        const personas = normalizePersonas(membership.personas);
         this.logInvalidRoles(normalized.invalid, decodedToken.uid, context);
         return {
           organizationId: membership.organizationId,
@@ -68,6 +70,7 @@ export class AuthSessionService {
           ...((membership.workspaceRoles?.length ?? 0) > 0
             ? { workspaceRoles: membership.workspaceRoles }
             : {}),
+          ...(personas.length > 0 ? { personas } : {}),
           roles: normalized.roles,
           status: membershipStatus(membership.status, membership.expiresAt),
         };
@@ -125,6 +128,19 @@ export class AuthSessionService {
       : workspaceIds.length === 1
         ? workspaceIds[0]
         : undefined;
+    const activeMembership = activeMemberships.find(
+      (item) => (item.workspaceId ?? item.organizationId) === activeWorkspaceId,
+    );
+    const workspaceRoles = activeMembership?.workspaceRoles ?? [];
+    const personas = activeMembership?.personas ?? [];
+    const capabilities = deriveCapabilities(
+      personas,
+      workspaceRoles,
+      activeMembership?.roles ?? [],
+    );
+    const activeWorkspace = workspaces.find(
+      (workspace) => workspace.id === activeWorkspaceId,
+    );
     const storedProfile = profile as unknown as {
       roles?: unknown;
       role?: unknown;
@@ -243,11 +259,25 @@ export class AuthSessionService {
       effectiveRoles: [
         ...new Set([
           ...effectiveRoles,
+          ...personas,
           ...activeElevations.flatMap((grant) => grant.roles),
         ]),
       ],
       activeElevations,
       ...(activeWorkspaceId ? { activeWorkspaceId } : {}),
+      ...(activeWorkspace
+        ? {
+            activeWorkspace: {
+              id: activeWorkspace.id,
+              type: activeWorkspace.type,
+              name: activeWorkspace.name,
+              status: activeWorkspace.status,
+            },
+          }
+        : {}),
+      workspaceRoles,
+      personas,
+      capabilities: restricted ? [] : capabilities,
       authorization: {
         source:
           platformRoles.length > 0

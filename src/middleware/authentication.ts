@@ -19,6 +19,7 @@ import { env } from "../config/env.js";
 import { trustedPlatformRoles } from "../auth/claims.js";
 import { ElevationService } from "../auth/elevations.js";
 import { logger } from "../shared/logger.js";
+import { deriveCapabilities, normalizePersonas } from "../auth/capabilities.js";
 export { isRole } from "../auth/roles.js";
 
 export async function resolvePrincipal(
@@ -74,6 +75,19 @@ export async function resolvePrincipal(
       userId: token.uid,
       organizationId: data.organizationId,
       roles,
+      ...(typeof data.workspaceId === "string"
+        ? { workspaceId: data.workspaceId }
+        : {}),
+      ...(Array.isArray(data.workspaceRoles)
+        ? {
+            workspaceRoles: data.workspaceRoles.filter(
+              (role): role is string => typeof role === "string",
+            ),
+          }
+        : {}),
+      ...(normalizePersonas(data.personas).length > 0
+        ? { personas: normalizePersonas(data.personas) }
+        : {}),
       status: "active",
       version: data.version,
       ...(Array.isArray(data.programIds)
@@ -158,6 +172,7 @@ export async function authenticate(
       throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
     const token: DecodedIdToken = await auth.verifyIdToken(match[1], true);
     const resolved = await resolvePrincipal(db, token);
+    const user = await db.doc(`users/${token.uid}`).get();
     const requestedWorkspaceId = req.header("x-workspace-id")?.trim();
     if (
       requestedWorkspaceId &&
@@ -170,12 +185,32 @@ export async function authenticate(
       throw new AuthorizationError();
     const activeWorkspaceId =
       requestedWorkspaceId ||
+      (typeof user.get("activeWorkspaceId") === "string" &&
+      resolved.memberships.some(
+        (membership) =>
+          (membership.workspaceId ?? membership.organizationId) ===
+          user.get("activeWorkspaceId"),
+      )
+        ? String(user.get("activeWorkspaceId"))
+        : undefined) ||
       (resolved.organizationIds.length === 1
         ? resolved.organizationIds[0]
         : undefined);
     const elevations = await new ElevationService(db).activeForUser(
       token.uid,
       activeWorkspaceId,
+    );
+    const activeMembership = resolved.memberships.find(
+      (membership) =>
+        (membership.workspaceId ?? membership.organizationId) ===
+        activeWorkspaceId,
+    );
+    const personas = activeMembership?.personas ?? [];
+    const workspaceRoles = activeMembership?.workspaceRoles ?? [];
+    const derivedCapabilities = deriveCapabilities(
+      personas,
+      workspaceRoles,
+      activeMembership?.roles ?? [],
     );
     req.principal = {
       uid: token.uid,
@@ -189,8 +224,13 @@ export async function authenticate(
         ]),
       ],
       capabilities: [
-        ...new Set(elevations.flatMap((grant) => grant.capabilities)),
+        ...new Set([
+          ...derivedCapabilities,
+          ...elevations.flatMap((grant) => grant.capabilities),
+        ]),
       ],
+      personas,
+      workspaceRoles,
       ...(activeWorkspaceId ? { activeWorkspaceId } : {}),
       platformRoles: resolved.platformRoles,
       organizationIds: resolved.organizationIds,

@@ -262,3 +262,22 @@ describe("ParentService academic-support requests", () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe("ParentService children relationship scope", () => {
+  it("returns 200-compatible empty data when an authorized parent has no links", async () => {
+    const query = {
+      where: () => query,
+      limit: () => query,
+      get: () => Promise.resolve({ docs: [] }),
+    };
+    const service = new ParentService({
+      collection: () => query,
+    } as unknown as Firestore);
+    await expect(
+      service.children(
+        { uid: "parent-1", organizationIds: ["personal-1"] },
+        { limit: 20 },
+      ),
+    ).resolves.toEqual({ data: [], meta: { nextCursor: null } });
+  });
+});

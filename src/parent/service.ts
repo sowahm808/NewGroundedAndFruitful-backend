@@ -13,7 +13,11 @@ import {
   NotFoundError,
 } from "../shared/errors.js";
 
-type Principal = { uid: string; organizationIds: readonly string[] };
+type Principal = {
+  uid: string;
+  organizationIds: readonly string[];
+  activeWorkspaceId?: string;
+};
 type ChildStatus = "active" | "pending" | "inactive";
 type ListInput = {
   limit: number;
@@ -49,6 +53,12 @@ const fingerprint = (value: unknown) =>
 export class ParentService {
   constructor(private readonly db: Firestore) {}
 
+  private tenantIds(principal: Principal): readonly string[] {
+    return principal.activeWorkspaceId
+      ? [principal.activeWorkspaceId]
+      : principal.organizationIds;
+  }
+
   private async link(
     principal: Principal,
     childId: string,
@@ -67,7 +77,7 @@ export class ParentService {
     const organizationId = link.get("organizationId");
     if (
       typeof organizationId !== "string" ||
-      !principal.organizationIds.includes(organizationId)
+      !this.tenantIds(principal).includes(organizationId)
     )
       throw new AuthorizationError();
     const child = await this.db.doc(`participants/${childId}`).get();
@@ -86,7 +96,7 @@ export class ParentService {
     const authorized = links.docs.filter(
       (doc) =>
         doc.get("status") === "active" &&
-        principal.organizationIds.includes(doc.get("organizationId")) &&
+        this.tenantIds(principal).includes(doc.get("organizationId")) &&
         typeof doc.get("participantId") === "string" &&
         typeof doc.get("organizationId") === "string",
     );

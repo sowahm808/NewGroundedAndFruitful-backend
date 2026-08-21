@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import { db } from "../../config/firebase.js";
-import { requireAnyRole } from "../../middleware/authorize.js";
+import { requireCapability } from "../../middleware/authorize.js";
 import { ValidationError } from "../../shared/errors.js";
 import {
   characterPatchSchema,
@@ -22,7 +22,7 @@ import { ParentService } from "../service.js";
 
 const router = Router();
 const service = new ParentService(db);
-router.use(requireAnyRole("parent"));
+router.use(requireCapability("parent.children.read"));
 const principal = (req: Request) => req.principal!;
 const parse = <T>(
   schema: {

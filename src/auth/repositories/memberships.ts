@@ -7,6 +7,7 @@ const membershipDocument = z
     userId: z.string().min(1),
     workspaceId: z.string().min(1).optional(),
     workspaceRoles: z.array(z.string()).optional(),
+    personas: z.array(z.string()).optional(),
     roles: z.unknown().optional(),
     role: z.unknown().optional(),
     status: z.enum(["active", "pending", "suspended", "revoked"]),
@@ -19,6 +20,7 @@ export interface StoredMembership {
   userId: string;
   workspaceId?: string;
   workspaceRoles?: string[];
+  personas?: string[];
   roles?: unknown;
   role?: unknown;
   status: string;
@@ -44,6 +46,7 @@ export class MembershipRepository {
           ...(data.workspaceRoles
             ? { workspaceRoles: data.workspaceRoles }
             : {}),
+          ...(data.personas ? { personas: data.personas } : {}),
           ...(data.roles !== undefined ? { roles: data.roles } : {}),
           ...(data.role !== undefined ? { role: data.role } : {}),
           status: data.status,

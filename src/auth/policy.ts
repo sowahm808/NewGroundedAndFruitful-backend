@@ -1,6 +1,7 @@
 import type { Firestore, Timestamp } from "firebase-admin/firestore";
 import { AuthorizationError } from "../shared/errors.js";
 import type { Role as UserRole } from "./roles.js";
+import type { ProductPersona } from "./capabilities.js";
 
 export type { UserRole };
 
@@ -55,6 +56,8 @@ export interface Membership {
   userId: string;
   organizationId: string;
   workspaceId?: string;
+  workspaceRoles?: readonly string[];
+  personas?: readonly ProductPersona[];
   roles: readonly UserRole[];
   status: MembershipStatus;
   version: number;
