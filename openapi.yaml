@@ -18,6 +18,129 @@ tags:
     { name: Onboarding },
   ]
 paths:
+  /auth/registration:
+    post:
+      tags: [Auth]
+      operationId: registerAccountIntent
+      summary: Idempotently begin personal or organization registration
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - {
+                    type: object,
+                    additionalProperties: false,
+                    required: [intent],
+                    properties:
+                      {
+                        intent: { const: personal },
+                        timezone: { type: string, default: UTC },
+                      },
+                  }
+                - {
+                    type: object,
+                    additionalProperties: false,
+                    required: [intent],
+                    properties: { intent: { const: organization } },
+                  }
+      responses:
+        "201": { description: Registration intent accepted }
+  /auth/session/workspace:
+    put:
+      tags: [Auth]
+      operationId: selectActiveWorkspace
+      description: Selects an active context only after server-side active membership validation; selection never grants access.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    type: object,
+                    additionalProperties: false,
+                    required: [workspaceId],
+                    properties: { workspaceId: { type: string } },
+                  },
+              },
+          }
+      responses:
+        "200": { description: Workspace selected }
+        "403": { description: No active membership in workspace }
+  /auth/elevations:
+    post:
+      tags: [Auth]
+      operationId: grantTemporaryElevation
+      description: Requires an explicitly authorized platform grantor and authentication within five minutes. Self-elevation is forbidden.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [userId, scope, reason, startsAt, expiresAt]
+              properties:
+                userId: { type: string }
+                roles: { type: array, items: { type: string }, maxItems: 10 }
+                capabilities:
+                  {
+                    type: array,
+                    items:
+                      {
+                        type: string,
+                        enum:
+                          [
+                            organizations.manage,
+                            memberships.manage,
+                            quarters.manage,
+                            bible.publish,
+                            roles.elevate,
+                            platform.audit.read,
+                          ],
+                      },
+                  }
+                scope:
+                  {
+                    oneOf:
+                      [
+                        {
+                          type: object,
+                          required: [type],
+                          properties: { type: { const: platform } },
+                        },
+                        {
+                          type: object,
+                          required: [type, workspaceId],
+                          properties:
+                            {
+                              type: { const: workspace },
+                              workspaceId: { type: string },
+                            },
+                        },
+                      ],
+                  }
+                reason: { type: string, minLength: 8, maxLength: 500 }
+                startsAt: { type: string, format: date-time }
+                expiresAt: { type: string, format: date-time }
+                maxUses: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "201": { description: Elevation granted and audited }
+  /auth/elevations/{grantId}/revoke:
+    post:
+      tags: [Auth]
+      operationId: revokeTemporaryElevation
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        [{ in: path, name: grantId, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Elevation immediately revoked and audited }
   /onboarding/organization:
     post:
       tags: [Onboarding]

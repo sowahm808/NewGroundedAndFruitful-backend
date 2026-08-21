@@ -5,21 +5,36 @@ import type { UserProfile } from "../models/user.js";
 import { canonicalRoleSchema } from "../roles.js";
 
 const collection = "users";
-const userProfileDocument = z.object({
-  uid: z.string().min(1),
-  email: z.string().email().nullable(),
-  displayName: z.string(),
-  roles: z.array(canonicalRoleSchema),
-  status: z.enum(["active", "disabled"]),
-  createdAt: z.unknown().optional(),
-  updatedAt: z.unknown().optional(),
-}).passthrough();
+const userProfileDocument = z
+  .object({
+    uid: z.string().min(1),
+    email: z.string().email().nullable(),
+    displayName: z.string(),
+    roles: z.array(canonicalRoleSchema),
+    status: z.enum(["active", "disabled"]),
+    createdAt: z.unknown().optional(),
+    updatedAt: z.unknown().optional(),
+    activeWorkspaceId: z.string().optional(),
+    onboardingStatus: z
+      .enum(["personal_setup", "organization_setup"])
+      .optional(),
+  })
+  .passthrough();
 
 const parseUserProfile = (value: unknown): UserProfile => {
   const parsed = userProfileDocument.parse(value);
   return {
-    uid: parsed.uid, email: parsed.email, displayName: parsed.displayName,
-    roles: parsed.roles, status: parsed.status,
+    uid: parsed.uid,
+    email: parsed.email,
+    displayName: parsed.displayName,
+    roles: parsed.roles,
+    status: parsed.status,
+    ...(parsed.activeWorkspaceId
+      ? { activeWorkspaceId: parsed.activeWorkspaceId }
+      : {}),
+    ...(parsed.onboardingStatus
+      ? { onboardingStatus: parsed.onboardingStatus }
+      : {}),
   };
 };
 
@@ -30,10 +45,10 @@ export interface ProvisionUserProfileInput {
 }
 
 export class UserRepository {
-  constructor(private readonly db: Firestore) {}
+  constructor(public readonly firestore: Firestore) {}
 
   async getUserByUid(uid: string): Promise<UserProfile | null> {
-    const snapshot = await this.db.doc(`${collection}/${uid}`).get();
+    const snapshot = await this.firestore.doc(`${collection}/${uid}`).get();
     if (!snapshot.exists) return null;
     return parseUserProfile(snapshot.data());
   }
@@ -41,8 +56,8 @@ export class UserRepository {
   async provisionUserProfile(
     input: ProvisionUserProfileInput,
   ): Promise<UserProfile> {
-    const ref = this.db.doc(`${collection}/${input.uid}`);
-    return this.db.runTransaction(async (transaction: Transaction) => {
+    const ref = this.firestore.doc(`${collection}/${input.uid}`);
+    return this.firestore.runTransaction(async (transaction: Transaction) => {
       const snapshot = await transaction.get(ref);
       const now = FieldValue.serverTimestamp();
       if (!snapshot.exists) {

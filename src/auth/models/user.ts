@@ -5,6 +5,8 @@ import type { PlatformRole } from "../claims.js";
 export type UserStatus = "active" | "disabled";
 export type MembershipStatus = "active" | "pending" | "suspended" | "revoked";
 export type OnboardingStatus =
+  | "personal_setup"
+  | "organization_setup"
   | "complete"
   | "organization_required"
   | "role_required"
@@ -20,6 +22,8 @@ export interface UserProfile {
   status: UserStatus;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+  activeWorkspaceId?: string;
+  onboardingStatus?: "personal_setup" | "organization_setup";
 }
 
 export interface SessionUser {
@@ -37,11 +41,30 @@ export interface SessionUser {
   tokenRefreshRequired: boolean;
   memberships: Array<{
     organizationId: string;
+    workspaceId?: string;
+    workspaceRoles?: readonly string[];
     roles: readonly Role[];
     status: MembershipStatus | "expired" | "invalid";
   }>;
   /** Resolved only when exactly one active organization is available. */
   activeOrganizationId?: string;
+  activeWorkspaceId?: string;
+  workspaces?: Array<{
+    id: string;
+    type: "personal" | "organization";
+    name: string;
+    roles: readonly string[];
+    status: string;
+  }>;
+  baseRoles?: readonly Role[];
+  effectiveRoles?: readonly string[];
+  activeElevations?: Array<{
+    id: string;
+    roles: string[];
+    capabilities: string[];
+    scope: unknown;
+    expiresAt: Date;
+  }>;
   authorization: {
     source:
       | "platform_claims_and_memberships"

@@ -12,6 +12,7 @@ import {
 } from "../auth/role-resolution.js";
 import { env } from "../config/env.js";
 import { trustedPlatformRoles } from "../auth/claims.js";
+import { ElevationService } from "../auth/elevations.js";
 export { isRole } from "../auth/roles.js";
 
 export async function resolvePrincipal(
@@ -150,10 +151,40 @@ export async function authenticate(
       throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
     const token: DecodedIdToken = await auth.verifyIdToken(match[1], true);
     const resolved = await resolvePrincipal(db, token);
+    const requestedWorkspaceId = req.header("x-workspace-id")?.trim();
+    if (
+      requestedWorkspaceId &&
+      !resolved.memberships.some(
+        (membership) =>
+          membership.organizationId === requestedWorkspaceId &&
+          membership.userId === token.uid,
+      )
+    )
+      throw new AuthorizationError();
+    const activeWorkspaceId =
+      requestedWorkspaceId ||
+      (resolved.organizationIds.length === 1
+        ? resolved.organizationIds[0]
+        : undefined);
+    const elevations = await new ElevationService(db).activeForUser(
+      token.uid,
+      activeWorkspaceId,
+    );
     req.principal = {
       uid: token.uid,
       role: resolved.roles[0]!,
       roles: resolved.roles,
+      baseRoles: resolved.roles,
+      effectiveRoles: [
+        ...new Set([
+          ...resolved.roles,
+          ...elevations.flatMap((grant) => grant.roles),
+        ]),
+      ],
+      capabilities: [
+        ...new Set(elevations.flatMap((grant) => grant.capabilities)),
+      ],
+      ...(activeWorkspaceId ? { activeWorkspaceId } : {}),
       platformRoles: resolved.platformRoles,
       organizationIds: resolved.organizationIds,
       memberships: resolved.memberships,
