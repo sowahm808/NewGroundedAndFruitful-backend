@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from "express";
-import { db, storage } from "../config/firebase.js";
-import { env } from "../config/env.js";
+import { db } from "../config/firebase.js";
+import { importBucket } from "../config/storage-readiness.js";
 import { validateBody } from "../middleware/validate.js";
 import { AppError, ValidationError } from "../shared/errors.js";
 import { logger } from "../shared/logger.js";
@@ -13,12 +13,7 @@ import {
 import { BibleAdministrationService, type Upload } from "./service.js";
 
 const router = Router(),
-  service = new BibleAdministrationService(
-    db,
-    env.FIREBASE_STORAGE_BUCKET
-      ? storage.bucket(env.FIREBASE_STORAGE_BUCKET)
-      : undefined,
-  ),
+  service = new BibleAdministrationService(db, importBucket),
   MAX_FILE = 5 * 1024 * 1024,
   MAX_REQUEST = MAX_FILE * 2 + 64 * 1024,
   FILE_FIELDS = ["quizFile", "answerKeyFile"] as const,
@@ -153,6 +148,7 @@ router.post(
       files.quizFile,
       files.answerKeyFile,
       req.requestId,
+      req.header("idempotency-key")?.trim(),
     );
   }, 201),
 );
