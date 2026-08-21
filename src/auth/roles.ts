@@ -7,6 +7,7 @@ export const canonicalRoles = [
   "observer",
   "admin",
   "super_admin",
+  "platform_super_admin",
 ] as const;
 
 export type Role = (typeof canonicalRoles)[number];
@@ -24,6 +25,7 @@ const aliases: Readonly<Record<string, Role>> = {
   admin: "admin",
   administrator: "admin",
   superadmin: "super_admin",
+  platformsuperadmin: "platform_super_admin",
 };
 
 /** Normalizes persisted roles. Unknown values are returned for safe diagnostics. */

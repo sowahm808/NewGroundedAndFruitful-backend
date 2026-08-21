@@ -182,25 +182,25 @@ describe("production Firestore rules", () => {
     );
     await assertFails(getDoc(doc(authed("suspended"), "participants/participant-1")));
   });
-  it("denies ordinary users and malformed, missing, or unknown claims", async () => {
+  it("uses memberships for tenant roles and rejects claims without scope", async () => {
     await seed();
     await assertFails(getDoc(doc(authed("ordinary", []), "teams/team-1")));
-    await assertFails(getDoc(doc(authed("mentor-1"), "teams/team-1")));
-    await assertFails(
+    await assertSucceeds(getDoc(doc(authed("mentor-1"), "teams/team-1")));
+    await assertSucceeds(
       getDoc(doc(authed("mentor-1", "mentor"), "teams/team-1")),
     );
-    await assertFails(
+    await assertSucceeds(
       getDoc(doc(authed("mentor-1", ["owner"]), "teams/team-1")),
     );
+    await assertFails(getDoc(doc(authed("ordinary", ["admin"]), "teams/team-1")));
   });
-  it("denies admin and super-admin direct domain reads", async () => {
+  it("scopes tenant administrators and permits only the explicit platform operator globally", async () => {
     await seed();
     const admin = authed("admin-1", ["admin"]);
-    await assertFails(getDoc(doc(admin, "teams/team-1")));
+    await assertSucceeds(getDoc(doc(admin, "teams/team-1")));
     await assertFails(getDoc(doc(admin, "teams/team-2")));
-    await assertFails(
-      getDoc(doc(authed("root", ["super_admin"]), "teams/team-2")),
-    );
+    await assertFails(getDoc(doc(authed("root", ["super_admin"]), "teams/team-2")));
+    await assertSucceeds(getDoc(doc(authed("root", ["platform_super_admin"]), "teams/team-2")));
   });
   it("denies direct memberships, points, audits, team writes, and nested paths", async () => {
     await seed();

@@ -82,7 +82,12 @@ export async function resolvePrincipal(
     user.exists ? (user.get("roles") ?? user.get("role")) : undefined,
     mode,
   );
+  const tokenRoles = normalizeRoles(token.roles).roles;
   const roles = [...resolution.roles];
+  // The platform role is the sole global claim. Tenant roles in claims never
+  // create scope; this role must be provisioned through the operator workflow.
+  if (tokenRoles.includes("platform_super_admin"))
+    roles.push("platform_super_admin");
   if (resolution.source === "legacy_user_profile" && user.exists) {
     const explicitIds = user.get("organizationIds");
     if (Array.isArray(explicitIds))

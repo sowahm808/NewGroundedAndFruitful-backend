@@ -4,7 +4,8 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
 import {
   requireAuthenticated,
-  requireSuperAdmin,
+  requireOrganizationRole,
+  requirePlatformSuperAdmin,
   type Principal,
 } from "../auth/authorization.js";
 import {
@@ -27,22 +28,10 @@ export class AdministrationService {
     return requireAuthenticated(p);
   }
   private admin(p: Principal | undefined, organizationId: string) {
-    const actor = this.actor(p);
-    if (
-      !actor.roles.some((r) => r === "admin" || r === "super_admin") ||
-      !actor.organizationIds.includes(organizationId)
-    )
-      throw new AuthorizationError();
-    return actor;
+    return requireOrganizationRole(p, organizationId, ["admin", "super_admin"]);
   }
   private superAdmin(p: Principal | undefined, organizationId: string) {
-    const actor = this.actor(p);
-    if (
-      !actor.roles.includes("super_admin") ||
-      !actor.organizationIds.includes(organizationId)
-    )
-      throw new AuthorizationError();
-    return actor;
+    return requireOrganizationRole(p, organizationId, ["super_admin"]);
   }
   async resources(
     p: Principal | undefined,
@@ -78,7 +67,7 @@ export class AdministrationService {
         organizationId,
       ) as typeof resourceQuery;
     } else {
-      requireSuperAdmin(p);
+      requirePlatformSuperAdmin(p);
     }
     const timestamp = (value: unknown) =>
       typeof value === "object" &&
@@ -225,7 +214,7 @@ export class AdministrationService {
         ids.map((userId) => this.db.doc(`users/${userId}`).get()),
       );
     } else {
-      requireSuperAdmin(p);
+      requirePlatformSuperAdmin(p);
       users = (await this.db.collection("users").get()).docs;
     }
     const timestamp = (value: unknown) =>
@@ -285,7 +274,7 @@ export class AdministrationService {
         organizationId,
       ) as typeof membershipQuery;
     } else {
-      requireSuperAdmin(p);
+      requirePlatformSuperAdmin(p);
     }
     const timestamp = (value: unknown) =>
       typeof value === "object" &&
@@ -345,8 +334,7 @@ export class AdministrationService {
     });
   }
   async createOrganization(p: Principal | undefined, input: Data) {
-    const actor = this.actor(p);
-    if (!actor.roles.includes("super_admin")) throw new AuthorizationError();
+    const actor = requirePlatformSuperAdmin(p);
     const ref = this.db.collection("organizations").doc();
     await this.db.runTransaction(async (tx) => {
       tx.create(ref, {
@@ -359,10 +347,10 @@ export class AdministrationService {
       this.audit(tx, actor.uid, ref.id, "organization.created", {
         organizationId: ref.id,
       });
-      tx.create(this.db.doc(`memberships/${actor.uid}_${ref.id}_super_admin`), {
+      tx.create(this.db.doc(`memberships/${ref.id}_${actor.uid}`), {
         userId: actor.uid,
         organizationId: ref.id,
-        role: "super_admin",
+        roles: ["super_admin"],
         status: "active",
         version: 1,
         createdAt: FieldValue.serverTimestamp(),
@@ -377,11 +365,16 @@ export class AdministrationService {
   }
   async organizations(p: Principal | undefined) {
     const actor = this.actor(p);
-    if (!actor.roles.some((role) => role === "admin" || role === "super_admin"))
+    if (!actor.roles.some((role) => role === "admin" || role === "super_admin" || role === "platform_super_admin"))
       throw new AuthorizationError();
-    if (actor.organizationIds.length === 0) return [];
+    if (actor.roles.includes("platform_super_admin")) {
+      const all = await this.db.collection("organizations").get();
+      return all.docs.map((snap) => ({ id: snap.id, ...snap.data() }));
+    }
+    const organizationIds = [...new Set((actor.memberships ?? []).map((membership) => membership.organizationId))];
+    if (organizationIds.length === 0) return [];
     const snapshots = await Promise.all(
-      actor.organizationIds.map((id) =>
+      organizationIds.map((id) =>
         this.db.doc(`organizations/${id}`).get(),
       ),
     );
@@ -442,10 +435,7 @@ export class AdministrationService {
   async onboardParent(p: Principal | undefined, input: Data) {
     const actor = this.actor(p);
     const oid = String(input.organizationId);
-    if (
-      !actor.organizationIds.includes(oid) &&
-      !actor.roles.includes("super_admin")
-    )
+    if (!actor.memberships?.some((membership) => membership.organizationId === oid))
       throw new AuthorizationError();
     const ref = this.db.doc(`parentProfiles/${actor.uid}`);
     await this.db.runTransaction(async (tx) => {

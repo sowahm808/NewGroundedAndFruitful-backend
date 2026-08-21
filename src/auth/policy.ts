@@ -57,6 +57,7 @@ const tenant = ["organization.manage", "membership.manage", "role.manage", "invi
 export const rolePermissions: Readonly<Record<UserRole, readonly Permission[]>> = {
   child: self, parent, mentor, observer, admin,
   super_admin: [...admin, ...tenant],
+  platform_super_admin: [...admin, ...tenant],
 };
 
 export interface RelationshipReader {
@@ -77,21 +78,20 @@ export class AuthorizationPolicy {
   constructor(private readonly relationships: RelationshipReader, private readonly clock = () => new Date()) {}
 
   async authorize(context: AuthorizationContext, permission: Permission, resource: ResourceScope): Promise<void> {
+    const platformOperator = context.roles.includes("platform_super_admin");
     const memberships = context.memberships.filter(isActiveMembership).filter((membership) =>
       membership.userId === context.actorUid &&
       membership.organizationId === resource.organizationId);
-    const legacyScoped = context.authorizationSource === "legacy_user_profile" &&
-      context.organizationIds.includes(resource.organizationId);
-    if (memberships.length === 0 && !legacyScoped) throw new AuthorizationError();
+    if (memberships.length === 0 && !platformOperator) throw new AuthorizationError();
 
     const eligible = memberships.filter((membership) => membership.roles.some((role) =>
       rolePermissions[role].includes(permission)));
-    const eligibleRoles = legacyScoped
-      ? context.roles.filter((role) => rolePermissions[role].includes(permission))
+    const eligibleRoles = platformOperator
+      ? (["platform_super_admin"] as const).filter((role) => rolePermissions[role].includes(permission))
       : [];
     if (eligible.length === 0 && eligibleRoles.length === 0) throw new AuthorizationError();
     if (programPermissions.has(permission) && resource.programId &&
-      !legacyScoped && !eligible.some((membership) => !membership.programIds || membership.programIds.includes(resource.programId!)))
+      !platformOperator && !eligible.some((membership) => !membership.programIds || membership.programIds.includes(resource.programId!)))
       throw new AuthorizationError();
 
     let related = true;

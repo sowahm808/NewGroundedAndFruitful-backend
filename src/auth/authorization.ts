@@ -38,6 +38,26 @@ export const requireAdmin = (p: Principal | undefined) =>
   requireAnyRole(p, ["admin", "super_admin"]);
 export const requireSuperAdmin = (p: Principal | undefined) =>
   requireRole(p, "super_admin");
+export const requirePlatformSuperAdmin = (p: Principal | undefined) =>
+  requireRole(p, "platform_super_admin");
+
+/** Membership documents are the sole source of tenant scope. */
+export function requireOrganizationRole(
+  p: Principal | undefined,
+  organizationId: string,
+  roles: readonly Role[],
+): Principal {
+  const actor = requireAuthenticated(p);
+  if (actor.roles.includes("platform_super_admin")) return actor;
+  const authorized = actor.memberships?.some(
+    (membership) =>
+      membership.userId === actor.uid &&
+      membership.organizationId === organizationId &&
+      membership.roles.some((role) => roles.includes(role)),
+  );
+  if (!authorized) throw new AuthorizationError();
+  return actor;
+}
 export async function requireParentOf(
   db: Firestore,
   p: Principal | undefined,

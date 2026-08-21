@@ -145,10 +145,10 @@ describe("quarter creation organization inference", () => {
     ).creationOrganization(actor, requestedOrganizationId);
   };
 
-  it("uses the sole deployment organization for an unscoped super administrator", async () => {
+  it("never infers an organization for an unscoped tenant super administrator", async () => {
     await expect(
       resolveOrganization(principal(["super_admin"], []), ["org-1"]),
-    ).resolves.toBe("org-1");
+    ).resolves.toBeUndefined();
   });
 
   it("requires an explicit selection when multiple deployment organizations exist", async () => {
