@@ -320,8 +320,57 @@ paths:
                                   ],
                                 properties:
                                   {
-                                    workspace: { type: object },
-                                    membership: { type: object },
+                                    workspace:
+                                      {
+                                        type: object,
+                                        required:
+                                          [
+                                            id,
+                                            type,
+                                            name,
+                                            slug,
+                                            timezone,
+                                            status,
+                                          ],
+                                        properties:
+                                          {
+                                            id: { type: string },
+                                            type: { const: organization },
+                                            name: { type: string },
+                                            slug: { type: string },
+                                            timezone: { type: string },
+                                            status: { const: active },
+                                          },
+                                      },
+                                    membership:
+                                      {
+                                        type: object,
+                                        description: organizationId is a compatibility tenant alias and always equals workspaceId.,
+                                        required:
+                                          [
+                                            id,
+                                            workspaceId,
+                                            organizationId,
+                                            roles,
+                                            status,
+                                          ],
+                                        properties:
+                                          {
+                                            id: { type: string },
+                                            workspaceId: { type: string },
+                                            organizationId: { type: string },
+                                            roles:
+                                              {
+                                                type: array,
+                                                items:
+                                                  {
+                                                    type: string,
+                                                    enum: [owner, admin],
+                                                  },
+                                              },
+                                            status: { const: active },
+                                          },
+                                      },
                                     onboardingStatus: { const: complete },
                                     nextStep: { const: dashboard },
                                     activeWorkspaceId: { type: string },
@@ -2192,6 +2241,41 @@ components:
                             session_error,
                           ],
                       },
+                    registrationIntent:
+                      { type: string, enum: [personal, organization] },
+                    nextStep:
+                      {
+                        type: string,
+                        enum:
+                          [
+                            personal_workspace_setup,
+                            organization_setup,
+                            dashboard,
+                          ],
+                      },
+                    activeWorkspaceId: { type: string },
+                    effectiveRoles: { type: array, items: { type: string } },
+                    workspaces:
+                      {
+                        type: array,
+                        items:
+                          {
+                            type: object,
+                            required: [id, type, name, roles, status],
+                            properties:
+                              {
+                                id: { type: string },
+                                type:
+                                  {
+                                    type: string,
+                                    enum: [personal, organization],
+                                  },
+                                name: { type: string },
+                                roles: { type: array, items: { type: string } },
+                                status: { type: string },
+                              },
+                          },
+                      },
                     memberships:
                       {
                         type: array,
@@ -2201,6 +2285,7 @@ components:
                             required: [organizationId, roles, status],
                             properties:
                               {
+                                workspaceId: { type: string },
                                 organizationId: { type: string },
                                 roles:
                                   {

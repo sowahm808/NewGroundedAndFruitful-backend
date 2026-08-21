@@ -320,22 +320,31 @@ export class OrganizationBootstrapService {
 
     try {
       return await this.db.runTransaction(async (tx) => {
-        const [user, marker, workspace, membership, slug, sameName] =
-          await Promise.all([
-            tx.get(userRef),
-            tx.get(markerRef),
-            tx.get(workspaceRef),
-            tx.get(membershipRef),
-            tx.get(slugRef),
-            tx.get(
-              this.db
-                .collection("organizations")
-                .where("name", "==", input.name)
-                .limit(1),
-            ),
-          ]);
+        const [
+          user,
+          marker,
+          workspace,
+          organization,
+          membership,
+          slug,
+          sameName,
+        ] = await Promise.all([
+          tx.get(userRef),
+          tx.get(markerRef),
+          tx.get(workspaceRef),
+          tx.get(organizationRef),
+          tx.get(membershipRef),
+          tx.get(slugRef),
+          tx.get(
+            this.db
+              .collection("organizations")
+              .where("name", "==", input.name)
+              .limit(1),
+          ),
+        ]);
         if (marker.exists) {
           if (
+            marker.get("uid") !== input.uid ||
             marker.get("payloadHash") !== payloadHash ||
             (input.idempotencyKey &&
               marker.get("idempotencyKey") &&
@@ -344,10 +353,95 @@ export class OrganizationBootstrapService {
             throw new OrganizationBootstrapError(
               "ORGANIZATION_BOOTSTRAP_CONFLICT",
             );
-          if (!workspace.exists || !membership.exists)
+          if (
+            marker.get("workspaceId") !== workspaceId ||
+            marker.get("organizationId") !== workspaceId ||
+            marker.get("membershipId") !== membershipId ||
+            marker.get("status") !== "complete"
+          )
             throw new OrganizationBootstrapError(
-              "ORGANIZATION_BOOTSTRAP_FAILED",
+              "ORGANIZATION_BOOTSTRAP_CONFLICT",
             );
+          this.assertRecoverableRecord(workspace, input, input.uid);
+          this.assertRecoverableRecord(organization, input, input.uid);
+          this.assertRecoverableMembership(membership, input.uid, workspaceId);
+          if (slug.exists && slug.get("organizationId") !== workspaceId)
+            throw new OrganizationBootstrapError("ORGANIZATION_SLUG_CONFLICT");
+          this.repairCommittedBootstrap(tx, {
+            input,
+            workspaceId,
+            membershipId,
+            workspace,
+            organization,
+            membership,
+            slug,
+            userRef,
+            workspaceRef,
+            organizationRef,
+            membershipRef,
+            slugRef,
+          });
+          return this.result(workspaceId, membershipId, input);
+        }
+
+        // Recover a response-lost bootstrap written by an older implementation.
+        // The deterministic actor-owned IDs and createdBy/userId evidence are
+        // required; a matching slug by itself is never ownership evidence.
+        const priorActorState =
+          workspace.exists || organization.exists || membership.exists;
+        if (priorActorState) {
+          this.assertRecoverableRecord(workspace, input, input.uid);
+          this.assertRecoverableRecord(organization, input, input.uid);
+          this.assertRecoverableMembership(membership, input.uid, workspaceId);
+          if (slug.exists && slug.get("organizationId") !== workspaceId)
+            throw new OrganizationBootstrapError("ORGANIZATION_SLUG_CONFLICT");
+          if (
+            user.get("registrationIntent") !== "organization" ||
+            (user.get("onboardingStatus") !== "complete" &&
+              user.get("onboardingStatus") !== "organization_setup_required")
+          )
+            throw new OrganizationBootstrapError(
+              "ORGANIZATION_BOOTSTRAP_CONFLICT",
+            );
+          const now = FieldValue.serverTimestamp();
+          this.repairCommittedBootstrap(tx, {
+            input,
+            workspaceId,
+            membershipId,
+            workspace,
+            organization,
+            membership,
+            slug,
+            userRef,
+            workspaceRef,
+            organizationRef,
+            membershipRef,
+            slugRef,
+          });
+          tx.create(markerRef, {
+            uid: input.uid,
+            organizationId: workspaceId,
+            workspaceId,
+            membershipId,
+            payloadHash,
+            idempotencyKey: input.idempotencyKey ?? payloadHash,
+            status: "complete",
+            requestId: input.requestId,
+            recovered: true,
+            createdAt: now,
+          });
+          tx.create(
+            this.db.doc(`auditLogs/organization-bootstrap-${input.uid}`),
+            {
+              event: "organization.bootstrap_recovered",
+              actorId: input.uid,
+              organizationId: workspaceId,
+              workspaceId,
+              membershipId,
+              requestId: input.requestId,
+              createdAt: now,
+            },
+          );
           return this.result(workspaceId, membershipId, input);
         }
         requireOrganizationBootstrapEligibility({
@@ -357,17 +451,13 @@ export class OrganizationBootstrapService {
           registrationIntent: user.get("registrationIntent"),
           onboardingStatus: user.get("onboardingStatus"),
         });
-        if (workspace.exists || membership.exists)
-          throw new OrganizationBootstrapError(
-            "ORGANIZATION_BOOTSTRAP_CONFLICT",
-          );
         if (slug.exists)
           throw new OrganizationBootstrapError("ORGANIZATION_SLUG_CONFLICT");
         if (!sameName.empty)
           throw new OrganizationBootstrapError("ORGANIZATION_NAME_CONFLICT");
 
         const now = FieldValue.serverTimestamp();
-        const organization = {
+        const organizationRecord = {
           type: "organization",
           name: input.name,
           slug: input.slug,
@@ -379,9 +469,9 @@ export class OrganizationBootstrapService {
           updatedAt: now,
           updatedBy: input.uid,
         };
-        tx.create(organizationRef, organization);
+        tx.create(organizationRef, organizationRecord);
         tx.create(workspaceRef, {
-          ...organization,
+          ...organizationRecord,
           organizationId: workspaceId,
         });
         tx.create(slugRef, {
@@ -444,6 +534,106 @@ export class OrganizationBootstrapService {
         throw error;
       throw new OrganizationBootstrapError("ORGANIZATION_BOOTSTRAP_FAILED");
     }
+  }
+
+  private assertRecoverableRecord(
+    snapshot: FirebaseFirestore.DocumentSnapshot,
+    input: OrganizationBootstrapInput,
+    uid: string,
+  ): void {
+    if (!snapshot.exists) return;
+    if (
+      snapshot.get("createdBy") !== uid ||
+      snapshot.get("type") !== "organization" ||
+      snapshot.get("name") !== input.name ||
+      snapshot.get("slug") !== input.slug ||
+      snapshot.get("timezone") !== input.timezone ||
+      snapshot.get("status") !== "active"
+    )
+      throw new OrganizationBootstrapError("ORGANIZATION_BOOTSTRAP_CONFLICT");
+  }
+
+  private assertRecoverableMembership(
+    snapshot: FirebaseFirestore.DocumentSnapshot,
+    uid: string,
+    workspaceId: string,
+  ): void {
+    if (!snapshot.exists) return;
+    const roles = snapshot.get("roles");
+    if (
+      snapshot.get("userId") !== uid ||
+      snapshot.get("workspaceId") !== workspaceId ||
+      snapshot.get("organizationId") !== workspaceId ||
+      snapshot.get("status") !== "active" ||
+      !Array.isArray(roles) ||
+      !roles.includes("owner") ||
+      !roles.includes("admin")
+    )
+      throw new OrganizationBootstrapError("ORGANIZATION_BOOTSTRAP_CONFLICT");
+  }
+
+  private repairCommittedBootstrap(
+    tx: FirebaseFirestore.Transaction,
+    state: {
+      input: OrganizationBootstrapInput;
+      workspaceId: string;
+      membershipId: string;
+      workspace: FirebaseFirestore.DocumentSnapshot;
+      organization: FirebaseFirestore.DocumentSnapshot;
+      membership: FirebaseFirestore.DocumentSnapshot;
+      slug: FirebaseFirestore.DocumentSnapshot;
+      userRef: FirebaseFirestore.DocumentReference;
+      workspaceRef: FirebaseFirestore.DocumentReference;
+      organizationRef: FirebaseFirestore.DocumentReference;
+      membershipRef: FirebaseFirestore.DocumentReference;
+      slugRef: FirebaseFirestore.DocumentReference;
+    },
+  ): void {
+    const now = FieldValue.serverTimestamp();
+    const tenant = {
+      type: "organization",
+      name: state.input.name,
+      slug: state.input.slug,
+      timezone: state.input.timezone,
+      status: "active",
+      version: 1,
+      createdAt: now,
+      createdBy: state.input.uid,
+      updatedAt: now,
+      updatedBy: state.input.uid,
+    };
+    if (!state.organization.exists) tx.create(state.organizationRef, tenant);
+    if (!state.workspace.exists)
+      tx.create(state.workspaceRef, {
+        ...tenant,
+        organizationId: state.workspaceId,
+      });
+    if (!state.membership.exists)
+      tx.create(state.membershipRef, {
+        userId: state.input.uid,
+        organizationId: state.workspaceId,
+        workspaceId: state.workspaceId,
+        roles: ["owner", "admin"],
+        status: "active",
+        version: 1,
+        createdAt: now,
+        createdBy: state.input.uid,
+        updatedAt: now,
+        updatedBy: state.input.uid,
+      });
+    if (!state.slug.exists)
+      tx.create(state.slugRef, {
+        slug: state.input.slug,
+        organizationId: state.workspaceId,
+        createdAt: now,
+      });
+    tx.update(state.userRef, {
+      onboardingStatus: "complete",
+      activeWorkspaceId: state.workspaceId,
+      organizationBootstrapId: state.input.uid,
+      updatedAt: now,
+      updatedBy: state.input.uid,
+    });
   }
 
   private result(
