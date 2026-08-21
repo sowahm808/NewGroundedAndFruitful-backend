@@ -62,6 +62,7 @@ describe("HTTP safety contract", () => {
     expect(await response.json()).toMatchObject({
       status: "ok",
       environment: "test",
+      revision: "unknown",
     });
   });
 
@@ -71,6 +72,7 @@ describe("HTTP safety contract", () => {
     expect(await response.json()).toMatchObject({
       status: "ok",
       environment: "test",
+      revision: "unknown",
     });
     expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(response.headers.get("x-powered-by")).toBeNull();
@@ -177,6 +179,20 @@ describe("HTTP safety contract", () => {
     });
     expect(response.status).toBe(401);
     expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("does not let the application-level origin guard intercept registration intent", async () => {
+    const response = await fetch(`${base}/api/v1/auth/registration-intent`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://new-registration-client.example",
+      },
+      body: JSON.stringify({ intent: "organization" }),
+    });
+    expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({
       error: { code: "AUTHENTICATION_REQUIRED" },
     });

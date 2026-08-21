@@ -13,7 +13,8 @@ import { ChildLoginService } from "../services/child-login.js";
 import { AuthSessionService } from "../services/session.js";
 import {
   authenticate,
-  authenticateRegistrationActor,
+  requireEnabledRegistrationAccount,
+  requireFirebaseAuthentication,
 } from "../../middleware/authentication.js";
 import {
   requireAuthenticated,
@@ -79,7 +80,8 @@ const registerIntent = [
 router.post("/registration", ...registerIntent);
 router.post(
   "/registration-intent",
-  authenticateRegistrationActor,
+  requireFirebaseAuthentication,
+  requireEnabledRegistrationAccount,
   (req, _res, next) => {
     const parsed = registrationIntentSchema.safeParse(req.body);
     if (!parsed.success)

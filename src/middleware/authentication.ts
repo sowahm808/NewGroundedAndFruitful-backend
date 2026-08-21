@@ -18,6 +18,7 @@ import {
 import { env } from "../config/env.js";
 import { trustedPlatformRoles } from "../auth/claims.js";
 import { ElevationService } from "../auth/elevations.js";
+import { logger } from "../shared/logger.js";
 export { isRole } from "../auth/roles.js";
 
 export async function resolvePrincipal(
@@ -209,39 +210,99 @@ export async function authenticate(
   }
 }
 
-/** Authentication-only boundary for pre-membership registration state. */
-export async function authenticateRegistrationActor(
+/** Registration authentication deliberately does not resolve roles or tenancy. */
+export async function requireFirebaseAuthentication(
   req: Request,
   _res: Response,
   next: NextFunction,
 ) {
   try {
     const header = req.header("authorization");
-    if (!header) return next();
+    if (!header) throw new AuthenticationError();
     const match = /^Bearer\s+([^\s]+)$/i.exec(header.trim());
     if (!match?.[1])
       throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
     const token = await auth.verifyIdToken(match[1], true);
-    const firebaseUser = await auth.getUser(token.uid);
-    if (firebaseUser.disabled) throw new AccountDisabledError();
-    const resolved = await resolvePrincipal(
-      db,
-      token,
-      env.MEMBERSHIP_ENFORCEMENT_MODE,
-      true,
-    );
     req.principal = {
       uid: token.uid,
-      role: resolved.roles[0]!,
-      roles: resolved.roles,
-      baseRoles: resolved.roles,
-      effectiveRoles: resolved.roles,
+      role: undefined as never,
+      roles: [],
+      baseRoles: [],
+      effectiveRoles: [],
       capabilities: [],
-      platformRoles: resolved.platformRoles,
-      organizationIds: resolved.organizationIds,
-      memberships: resolved.memberships,
+      platformRoles: [],
+      organizationIds: [],
+      memberships: [],
       token,
     };
+    logger.info("registration_intent_policy_passed", {
+      requestId: req.requestId,
+      actorId: token.uid,
+      policy: "requireFirebaseAuthentication",
+    });
+    next();
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "auth/user-disabled"
+    ) {
+      const denial = new AccountDisabledError();
+      logger.warn("registration_intent_policy_denied", {
+        requestId: req.requestId,
+        policy: "requireFirebaseAuthentication",
+        denialCode: denial.code,
+      });
+      return next(denial);
+    }
+    const denial =
+      error instanceof AuthenticationError
+        ? error
+        : new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
+    logger.warn("registration_intent_policy_denied", {
+      requestId: req.requestId,
+      policy: "requireFirebaseAuthentication",
+      denialCode: denial.code,
+    });
+    next(denial);
+  }
+}
+
+/** Registration account policy observes memberships but never requires one. */
+export async function requireEnabledRegistrationAccount(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
+  const uid = req.principal?.uid;
+  if (!uid) return next(new AuthenticationError());
+  try {
+    const [firebaseUser, profile, memberships] = await Promise.all([
+      auth.getUser(uid),
+      db.doc(`users/${uid}`).get(),
+      db.collection("memberships").where("userId", "==", uid).limit(1).get(),
+    ]);
+    const context = {
+      requestId: req.requestId,
+      actorId: uid,
+      policy: "requireEnabledAccount",
+      onboardingStatus: profile.exists
+        ? String(
+            profile.get("onboardingStatus") ?? "registration_intent_required",
+          )
+        : "registration_intent_required",
+      hasMemberships: !memberships.empty,
+    };
+    if (firebaseUser.disabled || profile.get("status") === "disabled") {
+      const denial = new AccountDisabledError();
+      logger.warn("registration_intent_policy_denied", {
+        ...context,
+        denialCode: denial.code,
+      });
+      return next(denial);
+    }
+    logger.info("registration_intent_policy_passed", context);
     next();
   } catch (error) {
     next(

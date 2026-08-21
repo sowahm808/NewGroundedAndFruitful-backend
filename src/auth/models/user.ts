@@ -9,6 +9,7 @@ export type OnboardingStatus =
   | "organization_setup"
   | "personal_workspace_required"
   | "organization_setup_required"
+  | "registration_intent_required"
   | "complete"
   | "organization_required"
   | "role_required"
@@ -29,7 +30,8 @@ export interface UserProfile {
     | "personal_setup"
     | "organization_setup"
     | "personal_workspace_required"
-    | "organization_setup_required";
+    | "organization_setup_required"
+    | "registration_intent_required";
   registrationIntent?: "personal" | "organization";
 }
 

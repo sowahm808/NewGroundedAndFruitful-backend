@@ -57,6 +57,8 @@ app.use(express.json({ limit: "64kb" }));
 const healthResponse = {
   status: "ok",
   environment: env.NODE_ENV,
+  revision:
+    process.env.RENDER_GIT_COMMIT ?? process.env.GIT_COMMIT_SHA ?? "unknown",
 } as const;
 
 /*
