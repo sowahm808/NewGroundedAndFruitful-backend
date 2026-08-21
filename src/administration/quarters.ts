@@ -7,7 +7,10 @@ import type {
 } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import type { Principal } from "../auth/authorization.js";
-import { requireAuthenticated, requireOrganizationRole } from "../auth/authorization.js";
+import {
+  requireAuthenticated,
+  requireOrganizationRole,
+} from "../auth/authorization.js";
 import { AppError, NotFoundError } from "../shared/errors.js";
 import type { z } from "zod";
 import type {
@@ -22,6 +25,11 @@ type ListInput = z.infer<typeof quarterListQuerySchema>;
 type CreateInput = z.infer<typeof quarterCreateSchema>;
 type UpdateInput = z.infer<typeof quarterUpdateSchema>;
 type LifecycleInput = z.infer<typeof quarterLifecycleSchema>;
+type WorkspaceProjection = {
+  id: string;
+  name: string;
+  type: "organization";
+};
 
 const quarterError = (status: number, code: string, message: string) =>
   new AppError(status, code, message);
@@ -51,7 +59,9 @@ export class QuarterAdministrationService {
         (membership) =>
           membership.organizationId === organizationId &&
           membership.userId === actor.uid &&
-          membership.roles.some((role) => role === "admin" || role === "super_admin"),
+          membership.roles.some(
+            (role) => role === "admin" || role === "super_admin",
+          ),
       ) === true
     );
   }
@@ -73,16 +83,52 @@ export class QuarterAdministrationService {
     requestedOrganizationId?: string,
   ) {
     if (requestedOrganizationId) return requestedOrganizationId;
-    const organizationIds = [...new Set((actor.memberships ?? [])
-      .filter((membership) => membership.userId === actor.uid &&
-        membership.roles.some((role) => role === "admin" || role === "super_admin"))
-      .map((membership) => membership.organizationId))];
+    const organizationIds = [
+      ...new Set(
+        (actor.memberships ?? [])
+          .filter(
+            (membership) =>
+              membership.userId === actor.uid &&
+              membership.roles.some(
+                (role) => role === "admin" || role === "super_admin",
+              ),
+          )
+          .map((membership) => membership.organizationId),
+      ),
+    ];
     if (organizationIds.length === 1) return organizationIds[0];
 
     return undefined;
   }
 
-  private serialize(doc: DocumentSnapshot | QueryDocumentSnapshot) {
+  private allowedActions(status: Status) {
+    switch (status) {
+      case "draft":
+        return ["view", "edit", "activate"] as const;
+      case "active":
+        return ["view", "close"] as const;
+      case "closed":
+        return ["view", "archive"] as const;
+      case "archived":
+        return ["view"] as const;
+    }
+  }
+
+  private workspace(doc: DocumentSnapshot): WorkspaceProjection {
+    if (!doc.exists || doc.get("type") !== "organization")
+      throw new Error("Quarter workspace is missing or invalid.");
+    return {
+      id: doc.id,
+      name: String(doc.get("name")),
+      type: "organization",
+    };
+  }
+
+  private serialize(
+    doc: DocumentSnapshot | QueryDocumentSnapshot,
+    workspace: WorkspaceProjection,
+  ) {
+    const status = String(doc.get("status")) as Status;
     return {
       id: doc.id,
       name: String(doc.get("name")),
@@ -90,8 +136,10 @@ export class QuarterAdministrationService {
         doc.get("description") == null ? null : String(doc.get("description")),
       startDate: String(doc.get("startDate")),
       endDate: String(doc.get("endDate")),
-      status: String(doc.get("status")) as Status,
+      status,
       organizationId: String(doc.get("organizationId")),
+      workspace,
+      allowedActions: this.allowedActions(status),
       createdAt: iso(doc.get("createdAt")),
       updatedAt: iso(doc.get("updatedAt")),
       createdBy: String(doc.get("createdBy")),
@@ -163,10 +211,28 @@ export class QuarterAdministrationService {
     });
     const total = docs.length;
     const offset = (input.page - 1) * input.pageSize;
+    const pageDocs = docs.slice(offset, offset + input.pageSize);
+    const workspaceIds = [
+      ...new Set(pageDocs.map((doc) => String(doc.get("organizationId")))),
+    ];
+    const workspaceDocs = workspaceIds.length
+      ? await this.db.getAll(
+          ...workspaceIds.map((workspaceId) =>
+            this.db.doc(`workspaces/${workspaceId}`),
+          ),
+        )
+      : [];
+    const workspaces = new Map(
+      workspaceDocs.map((doc) => [doc.id, this.workspace(doc)]),
+    );
     return {
-      items: docs
-        .slice(offset, offset + input.pageSize)
-        .map((doc) => this.serialize(doc)),
+      items: pageDocs.map((doc) => {
+        const organizationId = String(doc.get("organizationId"));
+        const workspace = workspaces.get(organizationId);
+        if (!workspace)
+          throw new Error("Quarter workspace is missing or invalid.");
+        return this.serialize(doc, workspace);
+      }),
       pagination: {
         page: input.page,
         pageSize: input.pageSize,
@@ -184,7 +250,9 @@ export class QuarterAdministrationService {
       !this.canAccess(actor, String(doc.get("organizationId")))
     )
       throw new AppError(404, "QUARTER_NOT_FOUND", "Quarter not found.");
-    return this.serialize(doc);
+    const organizationId = String(doc.get("organizationId"));
+    const workspace = await this.db.doc(`workspaces/${organizationId}`).get();
+    return this.serialize(doc, this.workspace(workspace));
   }
 
   private async unique(

@@ -2036,6 +2036,22 @@ components:
                   },
               }
     QuarterStatus: { type: string, enum: [draft, active, closed, archived] }
+    QuarterAllowedAction:
+      type: string
+      description: >-
+        An action the authenticated caller may currently perform. The server is
+        authoritative; clients must not infer permissions or lifecycle transitions.
+      enum: [view, edit, activate, close, archive]
+    QuarterWorkspace:
+      type: object
+      additionalProperties: false
+      description: Authoritative minimal projection of the quarter's tenant workspace.
+      required: [id, name, type]
+      properties:
+        id: { type: string, description: Canonical workspace identifier. }
+        name:
+          { type: string, description: Current server-owned workspace name. }
+        type: { type: string, const: organization }
     Quarter:
       type: object
       additionalProperties: false
@@ -2048,6 +2064,8 @@ components:
           endDate,
           status,
           organizationId,
+          workspace,
+          allowedActions,
           createdAt,
           updatedAt,
           createdBy,
@@ -2064,8 +2082,17 @@ components:
         organizationId:
           {
             type: string,
-            description: Quarters are organization-scoped because programs and all quarter references are organization-owned.,
+            deprecated: true,
+            description: Backward-compatible tenant identifier. New clients should use workspace.id; this field is preserved during migration.,
           }
+        workspace: { $ref: "#/components/schemas/QuarterWorkspace" }
+        allowedActions:
+          type: array
+          description: >-
+            Server-calculated capabilities for this caller and lifecycle state.
+            Presence in this list does not replace server enforcement on mutation.
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/QuarterAllowedAction" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         createdBy: { type: string }
