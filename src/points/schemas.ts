@@ -45,4 +45,27 @@ export const pointAdjustmentSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 
+// src/points/schemas.ts
+
+export const reconciliationSchema = z
+  .object({
+    quarterId: z.string().min(1).max(128),
+    participantId: z.string().min(1).max(128).optional(),
+    teamId: z.string().min(1).max(128).optional(),
+    dryRun: z.boolean().default(false),
+    batchSize: z.number().int().positive().max(1000).optional(),
+    reason: adjustmentReason.optional(),
+  })
+  .strict();
+
+export const reconciliationRollbackSchema = z
+  .object({
+    generationId: z.string().min(1).max(128),
+    quarterId: z.string().min(1).max(128),
+    reason: adjustmentReason,
+  })
+  .strict();
+
+export type ReconciliationInput = z.infer<typeof reconciliationSchema>;
+export type ReconciliationRollbackInput = z.infer<typeof reconciliationRollbackSchema>;
 export type PointAdjustmentInput = z.infer<typeof pointAdjustmentSchema>;
