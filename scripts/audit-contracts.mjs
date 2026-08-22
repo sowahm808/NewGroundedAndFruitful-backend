@@ -15,7 +15,7 @@ const modules = [
   ["src/mentor/routes.ts", ["/api/v1/mentor"]],
   ["src/observer/routes.ts", ["/api/v1/observer"]],
   ["src/notifications/routes.ts", ["/api/v1/notifications"]],
-  ["src/reports/routes.ts", ["/api/v1/reports"]],
+  ["src/reports/routes.ts", ["/api/v1/reports", "/api/v1/admin/reports"]],
   ["src/administration/routes.ts", ["/api/v1/administration", "/api/v1/admin"]],
   ["src/bible/admin-routes.ts", ["/api/v1/administration", "/api/v1/admin"]],
   ["src/configuration/routes.ts", ["/api/v1/configuration"]],

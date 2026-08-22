@@ -7,6 +7,12 @@ const source = await readFile(
 );
 const document = parse(source);
 const required = {
+  "/admin/reports/definitions": ["get"],
+  "/admin/reports/jobs": ["get", "post"],
+  "/admin/reports/jobs/{reportId}": ["get"],
+  "/admin/reports/jobs/{reportId}/download": ["post"],
+  "/admin/reports/jobs/{reportId}/retry": ["post"],
+  "/admin/reports/jobs/{reportId}/cancel": ["post"],
   "/auth/onboarding/personal-workspace": ["post"],
   "/auth/onboarding/organization": ["post"],
   "/admin/quarters": ["get", "post"],
@@ -55,4 +61,6 @@ if (
   throw new Error(
     "Child Bible OpenAPI schema exposes protected correctness data",
   );
-console.log("Verified the published quarter OpenAPI contract.");
+console.log(
+  "Verified the published quarter and Admin report OpenAPI contracts.",
+);

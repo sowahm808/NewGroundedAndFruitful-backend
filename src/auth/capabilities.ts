@@ -43,6 +43,7 @@ export const adminCapabilities = [
   "admin.point_rules.read",
   "admin.point_rules.manage",
   "admin.reports.read",
+  "admin.reports.manage",
   "admin.awards.read",
   "admin.awards.manage",
   "admin.audit_summaries.read",

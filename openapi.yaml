@@ -1872,8 +1872,175 @@ paths:
           "409": { $ref: "#/components/responses/Conflict" },
           "503": { $ref: "#/components/responses/Internal" },
         }
+  /admin/reports/definitions:
+    get:
+      tags: [Reports]
+      operationId: listAdminReportDefinitions
+      description: Requires admin.reports.read in the active workspace. Results contain only the requested organization.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ReportOrganizationId" }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - {
+            name: sort,
+            in: query,
+            schema:
+              { enum: [name, -name, updatedAt, -updatedAt], default: name },
+          }
+        - {
+            name: status,
+            in: query,
+            schema: { enum: [draft, approved, retired] },
+          }
+      responses:
+        {
+          "200": { description: Paged definitions (possibly empty) },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/reports/jobs:
+    get:
+      tags: [Reports]
+      operationId: listAdminReportJobs
+      description: Requires admin.reports.read in the active workspace. Results contain only the requested organization.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ReportOrganizationId" }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - {
+            name: sort,
+            in: query,
+            schema: { enum: [createdAt, -createdAt], default: -createdAt },
+          }
+        - {
+            name: status,
+            in: query,
+            schema: { enum: [queued, generating, ready, failed, cancelled] },
+          }
+      responses:
+        {
+          "200": { description: Paged jobs (possibly empty) },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+    post:
+      tags: [Reports]
+      operationId: createAdminReportJob
+      description: Requires admin.reports.manage in the active workspace. An identical organization, actor, and idempotency key returns the same job.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ReportJobCreate" } },
+            },
+        }
+      responses:
+        {
+          "202": { description: Queued job },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/reports/jobs/{reportId}:
+    get:
+      tags: [Reports]
+      operationId: getAdminReportJob
+      description: Requires admin.reports.read and active-workspace access to the job tenant.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ReportId" }]
+      responses:
+        {
+          "200": { description: Job status/detail },
+          "404": { $ref: "#/components/responses/NotFound" },
+        }
+  /admin/reports/jobs/{reportId}/download:
+    post:
+      tags: [Reports]
+      operationId: downloadAdminReportJob
+      description: Returns an audited, five-minute maximum signed URL, bounded by the report storage expiry.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ReportId" }]
+      responses:
+        {
+          "200": { description: Short-lived download URL },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/reports/jobs/{reportId}/retry:
+    post:
+      tags: [Reports]
+      operationId: retryAdminReportJob
+      description: Requires admin.reports.manage; only failed jobs may be retried.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ReportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ReportAction" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Requeued job },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/reports/jobs/{reportId}/cancel:
+    post:
+      tags: [Reports]
+      operationId: cancelAdminReportJob
+      description: Requires admin.reports.manage; only queued or generating jobs may be cancelled.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ReportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ReportAction" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Cancelled job },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
 components:
   parameters:
+    ReportId:
+      {
+        name: reportId,
+        in: path,
+        required: true,
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" },
+      }
+    ReportOrganizationId:
+      {
+        name: organizationId,
+        in: query,
+        required: true,
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" },
+      }
+    Page:
+      {
+        name: page,
+        in: query,
+        schema: { type: integer, minimum: 1, default: 1 },
+      }
+    PageSize:
+      {
+        name: pageSize,
+        in: query,
+        schema: { type: integer, minimum: 1, maximum: 100, default: 25 },
+      }
     ImportId:
       {
         name: importId,
@@ -2005,6 +2172,29 @@ components:
           },
       }
   schemas:
+    ReportAction:
+      type: object
+      additionalProperties: false
+      required: [organizationId]
+      properties:
+        { organizationId: { type: string, pattern: "^[A-Za-z0-9_-]+$" } }
+    ReportJobCreate:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          organizationId,
+          participantId,
+          reportType,
+          policyVersion,
+          idempotencyKey,
+        ]
+      properties:
+        organizationId: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+        participantId: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+        reportType: { type: string, pattern: "^[a-z0-9._-]{1,80}$" }
+        policyVersion: { type: string, minLength: 1, maxLength: 40 }
+        idempotencyKey: { type: string, pattern: "^[A-Za-z0-9_-]{8,128}$" }
     ParentDataResponse:
       description: Stable envelope for a single role-approved Parent resource.
       type: object
