@@ -637,81 +637,121 @@ export class AdministrationService {
     );
     return { id: snap.id, ...snap.data() };
   }
-  async roster(
-    p: Principal | undefined,
-    input: {
-      organizationId?: string | undefined;
-      page: number;
-      pageSize: number;
-      search?: string | undefined;
-      status?: string | undefined;
-      teamId?: string | undefined;
-      programId?: string | undefined;
-      sort: "updatedAt" | "-updatedAt";
-    },
-  ) {
-    const { organizationId: oid } = this.participantActor(
-      p,
-      "admin.participants.read",
-      input.organizationId,
+ async roster(
+  p: Principal | undefined,
+  input: {
+    organizationId?: string | undefined;
+    page: number;
+    pageSize: number;
+    search?: string | undefined;
+    status?: string | undefined;
+    teamId?: string | undefined;
+    programId?: string | undefined;
+    sort: "updatedAt" | "-updatedAt";
+  },
+) {
+  const { organizationId: oid } = this.participantActor(
+    p,
+    "admin.participants.read",
+    input.organizationId,
+  );
+
+  let participantQuery = this.db
+    .collection("participants")
+    .where("organizationId", "==", oid);
+
+  if (input.programId)
+    participantQuery = participantQuery.where(
+      "programId",
+      "==",
+      input.programId,
     );
-    let participantQuery = this.db
-      .collection("participants")
-      .where("organizationId", "==", oid);
-    if (input.programId)
-      participantQuery = participantQuery.where(
-        "programId",
-        "==",
-        input.programId,
+  if (input.status)
+    participantQuery = participantQuery.where("status", "==", input.status);
+  if (input.teamId)
+    participantQuery = participantQuery.where(
+      "activeTeamId",
+      "==",
+      input.teamId,
+    );
+
+  const timestamp = (value: unknown) =>
+    typeof value === "object" &&
+    value !== null &&
+    "toMillis" in value &&
+    typeof (value as { toMillis: () => number }).toMillis === "function"
+      ? (value as { toMillis(): number }).toMillis()
+      : value instanceof Date
+        ? value.getTime()
+        : 0;
+
+  const toIsoString = (val: unknown): string => {
+    if (typeof val === "string" && val.length > 0) return val;
+    if (
+      typeof val === "object" &&
+      val !== null &&
+      "toDate" in val &&
+      typeof (val as { toDate: () => Date }).toDate === "function"
+    ) {
+      return (val as { toDate(): Date }).toDate().toISOString();
+    }
+    if (val instanceof Date) return val.toISOString();
+    return new Date().toISOString();
+  };
+
+  const normalizeStatus = (
+    status: unknown,
+  ): "pending" | "active" | "withdrawn" => {
+    if (status === "active" || status === "withdrawn" || status === "pending") {
+      return status;
+    }
+    return "active";
+  };
+
+  const normalizedSearch = input.search?.toLocaleLowerCase();
+
+  const results = (await participantQuery.get()).docs
+    .map((doc) => {
+      const d = doc.data() as Record<string, unknown>;
+      return {
+        id: doc.id,
+        name: String(d.name || d.displayName || d.handle || "Participant"),
+        enrollmentStatus: normalizeStatus(d.enrollmentStatus || d.status),
+        linkedGuardian: typeof d.linkedGuardian === "string" ? d.linkedGuardian : undefined,
+        team: typeof d.team === "string" ? d.team : (typeof d.teamName === "string" ? d.teamName : undefined),
+        currentQuarterStatus: typeof d.currentQuarterStatus === "string" ? d.currentQuarterStatus : undefined,
+        updatedAt: toIsoString(d.updatedAt || d.createdAt),
+        allowedActions: Array.isArray(d.allowedActions) ? d.allowedActions : ["edit", "assign"],
+        rawUpdatedAt: d.updatedAt,
+      };
+    })
+    .filter(
+      (participant) =>
+        !normalizedSearch ||
+        participant.name.toLocaleLowerCase().includes(normalizedSearch),
+    )
+    .sort((a, b) => {
+      const difference = timestamp(a.rawUpdatedAt) - timestamp(b.rawUpdatedAt);
+      return (
+        (input.sort === "-updatedAt" ? -difference : difference) ||
+        a.id.localeCompare(b.id)
       );
-    if (input.status)
-      participantQuery = participantQuery.where("status", "==", input.status);
-    if (input.teamId)
-      participantQuery = participantQuery.where(
-        "activeTeamId",
-        "==",
-        input.teamId,
-      );
-    const timestamp = (value: unknown) =>
-      typeof value === "object" &&
-      value !== null &&
-      "toMillis" in value &&
-      typeof value.toMillis === "function"
-        ? (value as { toMillis(): number }).toMillis()
-        : value instanceof Date
-          ? value.getTime()
-          : 0;
-    const normalizedSearch = input.search?.toLocaleLowerCase();
-    const results = (await participantQuery.get()).docs
-      .map<Data & { id: string }>((doc) => ({ id: doc.id, ...doc.data() }))
-      .filter(
-        (participant) =>
-          !normalizedSearch ||
-          textValue(participant.displayName)
-            .toLocaleLowerCase()
-            .includes(normalizedSearch),
-      )
-      .sort((a, b) => {
-        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
-        return (
-          (input.sort === "-updatedAt" ? -difference : difference) ||
-          a.id.localeCompare(b.id)
-        );
-      });
-    const total = results.length;
-    return {
-      items: results.slice(
-        (input.page - 1) * input.pageSize,
-        input.page * input.pageSize,
-      ),
-      pagination: {
-        page: input.page,
-        pageSize: input.pageSize,
-        total,
-        totalPages: Math.ceil(total / input.pageSize),
-      },
-    };
-  }
+    });
+
+  const total = results.length;
+  const page = input.page || 1;
+  const pageSize = input.pageSize || 25;
+
+  return {
+    items: results.slice((page - 1) * pageSize, page * pageSize),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    },
+  };
+}
   async createTeam(p: Principal | undefined, input: Data) {
     const oid = String(input.organizationId);
     const actor = this.admin(p, oid);
