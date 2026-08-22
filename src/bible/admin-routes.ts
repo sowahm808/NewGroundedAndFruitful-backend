@@ -340,18 +340,32 @@ router.post(
     "/bible-imports/:importId/commit",
   ],
   validateBody(importCommandSchema),
-  run((req) => {
+  run(async (req) => {
     const idempotencyKey =
       req.header("idempotency-key")?.trim() ??
       req.body.idempotencyKey ??
       `commit_${req.params.importId}_${req.body.expectedVersion}`;
 
-    return service.commit(
+    const result = (await service.commit(
       req.principal,
       id(req.params.importId),
       { ...req.body, idempotencyKey },
       req.requestId,
-    );
+    )) as Record<string, any>;
+
+    const committedContentSetId =
+      result?.committedContentSetId ??
+      result?.contentSetId ??
+      result?.contentSet?.id ??
+      result?.id;
+
+    return {
+      importId: req.params.importId,
+      committedContentSetId,
+      status: "committed",
+      version: result?.version ?? req.body.expectedVersion ?? 1,
+      ...result,
+    };
   }),
 );
 
