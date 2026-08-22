@@ -18,6 +18,7 @@ import {
 import { ElevationService } from "../elevations.js";
 import { deriveCapabilities, resolvePersonas } from "../capabilities.js";
 import { createHash } from "node:crypto";
+import { verifyBearerToken } from "../token-verification.js";
 
 export interface SessionContext {
   requestId?: string;
@@ -38,7 +39,10 @@ export class AuthSessionService {
     idToken: string,
     context: SessionContext = {},
   ): Promise<SessionUser> {
-    const decodedToken = await this.verifyIdToken(idToken);
+    const decodedToken = await verifyBearerToken(this.firebaseAuth, idToken, {
+      requestId: context.requestId,
+      policy: "auth_session",
+    });
     const authUser = await this.getAuthUser(decodedToken.uid);
     const existing = await this.users.getUserByUid(decodedToken.uid);
     if (!existing)
@@ -403,17 +407,6 @@ export class AuthSessionService {
     });
   }
 
-  private async verifyIdToken(idToken: string): Promise<DecodedIdToken> {
-    try {
-      return await this.firebaseAuth.verifyIdToken(idToken, true);
-    } catch (error) {
-      const code = firebaseErrorCode(error);
-      const category = tokenFailureCategory(code);
-      logger.warn("session_token_verification_failed", { category });
-      throw new AuthenticationError(category);
-    }
-  }
-
   private async getAuthUser(uid: string): Promise<UserRecord> {
     try {
       return await this.firebaseAuth.getUser(uid);
@@ -530,15 +523,4 @@ function firebaseErrorCode(error: unknown): string {
   if (typeof error !== "object" || error === null || !("code" in error))
     return "unknown";
   return typeof error.code === "string" ? error.code : "unknown";
-}
-
-function tokenFailureCategory(
-  code: string,
-):
-  | "INVALID_AUTHENTICATION_TOKEN"
-  | "EXPIRED_AUTHENTICATION_TOKEN"
-  | "REVOKED_AUTHENTICATION_TOKEN" {
-  if (code === "auth/id-token-expired") return "EXPIRED_AUTHENTICATION_TOKEN";
-  if (code === "auth/id-token-revoked") return "REVOKED_AUTHENTICATION_TOKEN";
-  return "INVALID_AUTHENTICATION_TOKEN";
 }

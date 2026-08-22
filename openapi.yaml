@@ -18,6 +18,18 @@ tags:
     { name: Onboarding },
   ]
 paths:
+  /auth/logout:
+    post:
+      summary: Clear the current client bearer session without global revocation
+      responses:
+        "204": { description: Client may discard its local Firebase session }
+  /auth/logout-all:
+    post:
+      summary: Revoke the authenticated user's Firebase refresh tokens
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: All refresh tokens revoked }
+        "401": { description: Missing, invalid, expired, or revoked token }
   /auth/registration-intent:
     post:
       tags: [Auth]
