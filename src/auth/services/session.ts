@@ -16,7 +16,7 @@ import {
   type PlatformRole,
 } from "../claims.js";
 import { ElevationService } from "../elevations.js";
-import { deriveCapabilities, normalizePersonas } from "../capabilities.js";
+import { deriveCapabilities, resolvePersonas } from "../capabilities.js";
 import { createHash } from "node:crypto";
 
 export interface SessionContext {
@@ -61,16 +61,19 @@ export class AuthSessionService {
       .filter((membership) => membership.userId === decodedToken.uid)
       .map((membership) => {
         const normalized = normalizeRoles(membership.roles ?? membership.role);
-        const personas = normalizePersonas(membership.personas);
+        const workspaceRoles = membership.workspaceRoles ?? [];
+        const personas = resolvePersonas(
+          membership.personas,
+          workspaceRoles,
+          normalized.roles,
+        );
         this.logInvalidRoles(normalized.invalid, decodedToken.uid, context);
         return {
           organizationId: membership.organizationId,
           ...(membership.workspaceId
             ? { workspaceId: membership.workspaceId }
             : {}),
-          ...((membership.workspaceRoles?.length ?? 0) > 0
-            ? { workspaceRoles: membership.workspaceRoles }
-            : {}),
+          ...(workspaceRoles.length > 0 ? { workspaceRoles } : {}),
           ...(personas.length > 0 ? { personas } : {}),
           roles: normalized.roles,
           status: membershipStatus(membership.status, membership.expiresAt),

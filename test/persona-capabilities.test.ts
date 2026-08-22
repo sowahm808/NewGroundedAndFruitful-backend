@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { deriveCapabilities } from "../src/auth/capabilities.js";
+import {
+  deriveCapabilities,
+  resolvePersonas,
+} from "../src/auth/capabilities.js";
 import {
   requireCapability,
   type Principal,
@@ -20,11 +23,25 @@ const principal = (capabilities: string[]): Principal => ({
 
 describe("persona capability policy", () => {
   it("does not equate personal ownership with parent or admin authority", () => {
+    expect(resolvePersonas([], ["owner"], ["owner"])).toEqual([]);
     expect(deriveCapabilities([], ["owner"], ["owner"])).toEqual([]);
     expect(() =>
       requireCapability(principal([]), "parent.children.read"),
     ).toThrow();
   });
+
+  it.each(["child", "parent", "mentor", "observer"] as const)(
+    "restores the %s persona from a canonical legacy membership role",
+    (role) => {
+      const personas = resolvePersonas(undefined, [], [role]);
+      expect(personas).toEqual([role]);
+      expect(deriveCapabilities(personas, [], [role])).toEqual(
+        expect.arrayContaining([
+          `${role}.${role === "mentor" ? "teams" : role === "observer" ? "subjects" : role === "parent" ? "children" : "today"}.read`,
+        ]),
+      );
+    },
+  );
 
   it("derives parent access without administrative authority", () => {
     const capabilities = deriveCapabilities(["parent"], ["owner"], ["owner"]);
