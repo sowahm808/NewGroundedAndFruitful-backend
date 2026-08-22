@@ -171,6 +171,45 @@ describe("ParentService notifications", () => {
       meta: { nextCursor: null },
     });
   });
+
+  it("uses only the selected active workspace when a parent belongs to multiple tenants", async () => {
+    const notification = (id: string, organizationId: string) => ({
+      id,
+      get: (field: string) =>
+        ({
+          organizationId,
+          type: "announcement",
+          title: id,
+          message: id,
+          read: false,
+          createdAt: "2026-08-22T00:00:00.000Z",
+        })[field],
+    });
+    const query = {
+      where: () => query,
+      limit: () => query,
+      get: () =>
+        Promise.resolve({
+          docs: [
+            notification("selected", "org-1"),
+            notification("hidden", "org-2"),
+          ],
+        }),
+    };
+    const service = new ParentService({
+      collection: () => query,
+    } as unknown as Firestore);
+
+    const result = await service.notifications(
+      {
+        uid: "parent-1",
+        organizationIds: ["org-1", "org-2"],
+        activeWorkspaceId: "org-1",
+      },
+      { limit: 20 },
+    );
+    expect(result.data.map((item) => item.id)).toEqual(["selected"]);
+  });
 });
 
 describe("ParentService academic-support requests", () => {

@@ -222,8 +222,16 @@ export class ParentService {
           .limit(1)
           .get()
       : null;
-    const target = team ? number(team.get("quarterTarget")) : 0;
-    const points = teamStats?.exists ? number(teamStats.get("totalPoints")) : 0;
+    const configuredTarget = team?.get("quarterTarget");
+    const recordedPoints = teamStats?.get("totalPoints");
+    const hasTeamProgress =
+      teamStats?.exists === true &&
+      typeof recordedPoints === "number" &&
+      Number.isFinite(recordedPoints) &&
+      typeof configuredTarget === "number" &&
+      Number.isFinite(configuredTarget) &&
+      configuredTarget > 0;
+    const calculatedAt = new Date().toISOString();
     return {
       id: child.id,
       approvedDisplayName:
@@ -246,14 +254,14 @@ export class ParentService {
         available: assignments?.size ?? 0,
       },
       teamProgress:
-        team?.exists && quarter
+        team?.exists && quarter && hasTeamProgress
           ? {
-              points,
-              target,
-              percentage:
-                target > 0
-                  ? Math.min(100, Math.round((points / target) * 100))
-                  : 0,
+              points: recordedPoints,
+              target: configuredTarget,
+              percentage: Math.min(
+                100,
+                Math.round((recordedPoints / configuredTarget) * 100),
+              ),
             }
           : null,
       readingProgress: {
@@ -266,6 +274,11 @@ export class ParentService {
         typeof project.docs[0]!.get("status") === "string"
           ? project.docs[0]!.get("status")
           : null,
+      calculatedAt,
+      sourceQuarterId: quarter?.id ?? null,
+      sourceWeekId: quarter
+        ? `${quarter.id}:week:${String(quarter.weekNumber)}`
+        : null,
     };
   }
 
@@ -329,7 +342,8 @@ export class ParentService {
   async dashboard(principal: Principal) {
     const children = await this.children(principal, { limit: 50 });
     const user = await this.db.doc(`users/${principal.uid}`).get();
-    const organizationId = principal.organizationIds[0];
+    const tenantIds = this.tenantIds(principal);
+    const organizationId = tenantIds[0];
     const currentQuarter = organizationId
       ? await this.currentQuarter(organizationId)
       : null;
@@ -343,7 +357,7 @@ export class ParentService {
       .where("read", "==", false)
       .get();
     const organizations = await Promise.all(
-      principal.organizationIds.map(async (id) => {
+      tenantIds.map(async (id) => {
         const organization = await this.db.doc(`organizations/${id}`).get();
         return {
           id,
@@ -377,14 +391,18 @@ export class ParentService {
           0,
         ),
         familyActivitiesCompleted: activities.docs.filter((x) =>
-          principal.organizationIds.includes(x.get("organizationId")),
+          this.tenantIds(principal).includes(x.get("organizationId")),
         ).length,
         unreadNotifications: notifications.docs.filter((x) =>
-          principal.organizationIds.includes(x.get("organizationId")),
+          this.tenantIds(principal).includes(x.get("organizationId")),
         ).length,
       },
       currentQuarter,
       calculatedAt,
+      sourceQuarterId: currentQuarter?.id ?? null,
+      sourceWeekId: currentQuarter
+        ? `${currentQuarter.id}:week:${String(currentQuarter.weekNumber)}`
+        : null,
     };
   }
 
@@ -396,7 +414,7 @@ export class ParentService {
       .get();
     const sorted = snapshot.docs
       .filter((doc) =>
-        principal.organizationIds.includes(doc.get("organizationId")),
+        this.tenantIds(principal).includes(doc.get("organizationId")),
       )
       .map((doc) => ({
         id: doc.id,
@@ -447,7 +465,7 @@ export class ParentService {
         .filter(
           (link) =>
             link.get("status") === "active" &&
-            principal.organizationIds.includes(link.get("organizationId")),
+            this.tenantIds(principal).includes(link.get("organizationId")),
         )
         .map(
           (link) =>
@@ -494,7 +512,7 @@ export class ParentService {
     if (
       !doc.exists ||
       doc.get("parentUid") !== principal.uid ||
-      !principal.organizationIds.includes(doc.get("organizationId"))
+      !this.tenantIds(principal).includes(doc.get("organizationId"))
     )
       throw new NotFoundError();
     await this.link(principal, String(doc.get("participantId")));
@@ -574,7 +592,7 @@ export class ParentService {
         .filter(
           (x) =>
             !x.get("organizationId") ||
-            principal.organizationIds.includes(x.get("organizationId")),
+            this.tenantIds(principal).includes(x.get("organizationId")),
         )
         .map((x) => ({
           id: x.id,
@@ -681,7 +699,14 @@ export class ParentService {
   ) {
     const linked = await this.link(principal, childId);
     const quarter = await this.currentQuarter(linked.organizationId);
-    if (!quarter) return { data: [], meta: { nextCursor: null } };
+    if (!quarter)
+      return {
+        data: [],
+        meta: { nextCursor: null },
+        calculatedAt: new Date().toISOString(),
+        sourceQuarterId: null,
+        sourceWeekId: null,
+      };
     const [available, completed] = await Promise.all([
       this.db
         .collection("familyActivities")
@@ -728,6 +753,8 @@ export class ParentService {
           start + limit < sorted.length ? (page.at(-1)?.id ?? null) : null,
       },
       calculatedAt: new Date().toISOString(),
+      sourceQuarterId: quarter.id,
+      sourceWeekId: `${quarter.id}:week:${String(quarter.weekNumber)}`,
     };
   }
   async completeFamilyActivity(
@@ -769,7 +796,7 @@ export class ParentService {
     return {
       data: snap.docs
         .filter((x) =>
-          principal.organizationIds.includes(x.get("organizationId")),
+          this.tenantIds(principal).includes(x.get("organizationId")),
         )
         .map((x) => ({
           id: x.id,
@@ -858,7 +885,7 @@ export class ParentService {
         .filter(
           (link) =>
             link.get("status") === "active" &&
-            principal.organizationIds.includes(link.get("organizationId")),
+            this.tenantIds(principal).includes(link.get("organizationId")),
         )
         .map(
           (link) =>
@@ -913,7 +940,7 @@ export class ParentService {
     if (
       !doc.exists ||
       doc.get("requesterUid") !== principal.uid ||
-      !principal.organizationIds.includes(doc.get("organizationId"))
+      !this.tenantIds(principal).includes(doc.get("organizationId"))
     )
       throw new NotFoundError();
     await this.link(principal, String(doc.get("participantId")));
@@ -951,6 +978,8 @@ export class ParentService {
         : { notAvailable: true },
       quarterComparison: { notAvailable: true },
       calculatedAt: new Date().toISOString(),
+      sourceQuarterId: child.quarter?.id ?? null,
+      sourceWeekId: child.sourceWeekId,
     };
   }
   async teamProgress(principal: Principal, teamId: string, quarterId: string) {
@@ -969,7 +998,7 @@ export class ParentService {
     if (
       !team.exists ||
       !quarter.exists ||
-      !principal.organizationIds.includes(team.get("organizationId")) ||
+      !this.tenantIds(principal).includes(team.get("organizationId")) ||
       quarter.get("organizationId") !== team.get("organizationId")
     )
       throw new NotFoundError();
@@ -977,18 +1006,24 @@ export class ParentService {
       (sum, x) => sum + number(x.get("points")),
       0,
     );
-    const target = number(team.get("quarterTarget"));
+    const configuredTarget = team.get("quarterTarget");
+    const hasTarget =
+      typeof configuredTarget === "number" &&
+      Number.isFinite(configuredTarget) &&
+      configuredTarget > 0;
     return {
       teamId,
       approvedDisplayName: team.get("approvedDisplayName") ?? "",
       quarterId,
       totalPoints,
-      target,
-      percentage:
-        target > 0
-          ? Math.min(100, Math.round((totalPoints / target) * 100))
-          : 0,
+      target: hasTarget ? configuredTarget : null,
+      percentage: hasTarget
+        ? Math.min(100, Math.round((totalPoints / configuredTarget) * 100))
+        : null,
+      notAvailable: !hasTarget,
       calculatedAt: new Date().toISOString(),
+      sourceQuarterId: quarterId,
+      sourceWeekId: null,
     };
   }
 }
