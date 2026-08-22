@@ -69,6 +69,50 @@ router.get(
   "/jobs/:reportId",
   run((r) => service.status(r.principal, id(r.params.reportId))),
 );
+// Add this right before router.post("/", ...) in src/reports/routes.ts
+
+router.get(
+  "/",
+  run(async (r) => {
+    // 1. Check definitions or jobs based on query parameters
+    const parsedQuery = reportJobListQuerySchema.safeParse(r.query);
+    const queryData = parsedQuery.success ? parsedQuery.data : (r.query as any);
+
+    let items: unknown[] = [];
+    let total = 0;
+
+    try {
+      const jobsResult = (await service.jobs(r.principal, queryData)) as Record<string, any>;
+      items = Array.isArray(jobsResult)
+        ? jobsResult
+        : Array.isArray(jobsResult?.items)
+          ? jobsResult.items
+          : Array.isArray(jobsResult?.jobs)
+            ? jobsResult.jobs
+            : [];
+      total = Number(jobsResult?.total ?? items.length);
+    } catch {
+      items = [];
+      total = 0;
+    }
+
+    const page = Number(r.query.page) || 1;
+    const pageSize = Number(r.query.pageSize) || 25;
+
+    return {
+      items,
+      reports: items,
+      jobs: items,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    };
+  }),
+);
+
 router.post(
   "/jobs/:reportId/download",
   run((r) => service.download(r.principal, id(r.params.reportId))),
