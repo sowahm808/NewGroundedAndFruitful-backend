@@ -49,6 +49,12 @@ for (const [path, collection] of configuredResources) {
         throw new ValidationError("Invalid resource list query.", {
           fieldErrors: query.error.flatten().fieldErrors,
         });
+        const organizationId =
+        query.data.organizationId ??
+        req.principal?.organizationIds?.[0] ??
+        (req.principal as { organizationId?: string } | undefined)?.organizationId;
+
+
       return service.listResources(req.principal, collection, { ...query.data, organizationId: id(req.query.organizationId) });
     }),
   );

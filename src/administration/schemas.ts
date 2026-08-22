@@ -22,14 +22,50 @@ export const membershipListQuerySchema = z
 // Roles are represented by membership records, so both administration list
 // endpoints intentionally accept the same filtering and pagination contract.
 export const roleListQuerySchema = membershipListQuerySchema;
+
+// in src/administration/schemas.ts
+
 export const resourceListQuerySchema = z
   .object({
     organizationId: idSchema.optional(),
     page: z.coerce.number().int().positive().default(1),
     pageSize: z.coerce.number().int().positive().max(100).default(25),
-    sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
+    status: z.string().trim().optional(),
+    quarterId: idSchema.optional(),
+    search: z.string().trim().max(120).optional(),
+    sort: z
+      .enum([
+        "updatedAt",
+        "-updatedAt",
+        "updatedAt_desc",
+        "updatedAt_asc",
+        "createdAt",
+        "-createdAt",
+        "createdAt_desc",
+        "createdAt_asc",
+        "name",
+        "-name",
+        "name_asc",
+        "name_desc",
+      ])
+      .default("-updatedAt")
+      .transform((val): "-updatedAt" | "updatedAt" => {
+        switch (val) {
+          case "updatedAt":
+          case "updatedAt_asc":
+          case "createdAt":
+          case "createdAt_asc":
+          case "name":
+          case "name_asc":
+            return "updatedAt";
+          default:
+            return "-updatedAt";
+        }
+      }),
   })
   .strict();
+
+
 export const participantSorts = [
   "updated_desc",
   "updated_asc",
