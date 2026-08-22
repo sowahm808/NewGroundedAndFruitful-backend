@@ -30,6 +30,30 @@ export const resourceListQuerySchema = z
     sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
   })
   .strict();
+export const participantSorts = [
+  "updated_desc",
+  "updated_asc",
+  "name_desc",
+  "name_asc",
+  "created_desc",
+  "created_asc",
+] as const;
+
+const participantSortAliases: Record<string, string> = {
+  "-updatedAt": "updated_desc",
+  updatedAt: "updated_asc",
+  updatedAt_desc: "updated_desc",
+  updatedAt_asc: "updated_asc",
+  "-createdAt": "created_desc",
+  createdAt: "created_asc",
+  createdAt_desc: "created_desc",
+  createdAt_asc: "created_asc",
+  "-name": "name_desc",
+  name: "name_asc",
+  name_desc: "name_desc",
+  name_asc: "name_asc",
+};
+
 export const participantListQuerySchema = z
   .object({
     organizationId: idSchema.optional(),
@@ -39,9 +63,34 @@ export const participantListQuerySchema = z
     status: idSchema.optional(),
     teamId: idSchema.optional(),
     programId: idSchema.optional(),
-    sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
+    sort: z
+      .union([
+        z.enum(participantSorts),
+        z.enum([
+          "-updatedAt",
+          "updatedAt",
+          "updatedAt_desc",
+          "updatedAt_asc",
+          "-createdAt",
+          "createdAt",
+          "createdAt_desc",
+          "createdAt_asc",
+          "-name",
+          "name",
+          "name_desc",
+          "name_asc",
+        ]),
+      ])
+      .transform((sort) =>
+        sort in participantSortAliases
+          ? participantSortAliases[sort]
+          : (sort as (typeof participantSorts)[number]),
+      )
+      .default("updated_desc"),
   })
   .strict();
+
+
 export const ianaTimezoneSchema = z
   .string()
   .trim()
