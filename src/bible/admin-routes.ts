@@ -154,41 +154,74 @@ router.post(
     );
   }, 201),
 );
-// router.get(
-//   ["/bible-content/imports", "/bible-imports"],
-//   run((req) => {
-//     const query = importListQuerySchema.safeParse(req.query);
-//     if (!query.success) throw new ValidationError("Invalid import list query.");
-//     return service.listImports(req.principal, query.data);
-//   }),
-// );
-// in your bible router file
 router.get(
   ["/bible-content/imports", "/bible-imports"],
   run(async (req) => {
     const query = importListQuerySchema.safeParse(req.query);
     if (!query.success) throw new ValidationError("Invalid import list query.");
 
-    const result = await service.listImports(req.principal, query.data);
-    const items = (result as { items?: unknown[] }).items ?? (Array.isArray(result) ? result : []);
+    const limit = query.data.pageSize ?? query.data.limit;
+
+    const result = (await service.listImports(req.principal, {
+      ...query.data,
+      limit,
+    })) as Record<string, any>;
+
+    // Safely extract the items array regardless of whether service returns
+    // { items: [...] }, { imports: { items: [...] } }, or a bare array [...]
+    const rawItems = Array.isArray(result)
+      ? result
+      : Array.isArray(result?.items)
+        ? result.items
+        : Array.isArray(result?.imports?.items)
+          ? result.imports.items
+          : Array.isArray(result?.imports)
+            ? result.imports
+            : [];
+
     const page = query.data.page ?? 1;
-    const pageSize = query.data.pageSize ?? query.data.limit ?? 25;
-    const total = (result as { total?: number }).total ?? items.length;
+    const total = Number(result?.total ?? result?.pagination?.total ?? rawItems.length);
 
     return {
       imports: {
-        items,
+        items: rawItems,
         pagination: {
           page,
-          pageSize,
+          pageSize: limit,
           total,
-          totalPages: Math.ceil(total / pageSize) || 1,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
         },
       },
-      meta: (result as { meta?: unknown }).meta ?? { nextCursor: null },
+      meta: result?.meta ?? { nextCursor: null },
     };
   }),
 );
+// router.get(
+//   ["/bible-content/imports", "/bible-imports"],
+//   run(async (req) => {
+//     const query = importListQuerySchema.safeParse(req.query);
+//     if (!query.success) throw new ValidationError("Invalid import list query.");
+
+//     const result = await service.listImports(req.principal, query.data);
+//     const items = (result as { items?: unknown[] }).items ?? (Array.isArray(result) ? result : []);
+//     const page = query.data.page ?? 1;
+//     const pageSize = query.data.pageSize ?? query.data.limit ?? 25;
+//     const total = (result as { total?: number }).total ?? items.length;
+
+//     return {
+//       imports: {
+//         items,
+//         pagination: {
+//           page,
+//           pageSize,
+//           total,
+//           totalPages: Math.ceil(total / pageSize) || 1,
+//         },
+//       },
+//       meta: (result as { meta?: unknown }).meta ?? { nextCursor: null },
+//     };
+//   }),
+// );
 
 router.get(
   ["/bible-content/imports/:importId", "/bible-imports/:importId"],
