@@ -137,7 +137,7 @@ export const teamListQuerySchema = z
       }),
   })
   .strict();
-  
+  export type TeamListQueryInput = z.infer<typeof teamListQuerySchema>;
 export const ianaTimezoneSchema = z
   .string()
   .trim()
