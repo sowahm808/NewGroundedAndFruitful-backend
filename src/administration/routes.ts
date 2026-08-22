@@ -49,9 +49,11 @@ for (const [path, collection] of configuredResources) {
         throw new ValidationError("Invalid resource list query.", {
           fieldErrors: query.error.flatten().fieldErrors,
         });
-      return service.listResources(req.principal, collection, query.data);
+      return service.listResources(req.principal, collection, { ...query.data, organizationId: id(req.query.organizationId) });
     }),
   );
+
+
   router.get(
     `/${path}/:resourceId`,
     run((req) =>
