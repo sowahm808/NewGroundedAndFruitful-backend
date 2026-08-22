@@ -16,6 +16,7 @@ import {
   NotFoundError,
 } from "../shared/errors.js";
 import type { Role } from "../auth/roles.js";
+import type { TeamListQueryInput } from "./schemas.js";
 
 type Data = Record<string, unknown>;
 const textValue = (value: unknown): string =>
