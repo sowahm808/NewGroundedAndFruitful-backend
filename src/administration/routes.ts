@@ -40,6 +40,7 @@ const configuredResources = [
   ["surveys", "surveys"],
   ["point-rules", "pointRules"],
 ] as const;
+
 for (const [path, collection] of configuredResources) {
   router.get(
     `/${path}`,
@@ -49,16 +50,18 @@ for (const [path, collection] of configuredResources) {
         throw new ValidationError("Invalid resource list query.", {
           fieldErrors: query.error.flatten().fieldErrors,
         });
-        const organizationId =
+
+      const organizationId =
         query.data.organizationId ??
         req.principal?.organizationIds?.[0] ??
         (req.principal as { organizationId?: string } | undefined)?.organizationId;
 
-
-      return service.listResources(req.principal, collection, { ...query.data, organizationId: id(req.query.organizationId) });
+      return service.listResources(req.principal, collection, {
+        ...query.data,
+        organizationId,
+      });
     }),
   );
-
 
   router.get(
     `/${path}/:resourceId`,
@@ -101,6 +104,7 @@ for (const [path, collection] of configuredResources) {
     ),
   );
 }
+
 const query = <T>(
   result: {
     success: boolean;
@@ -200,28 +204,33 @@ router.get(
     return service.listMemberships(req.principal, query.data);
   }),
 );
+// Replace lines 162-182 with safe fallback handling:
 router.get(
   "/reports",
-  run((req) =>
-    service.resources(req.principal, "reports", id(req.query.organizationId)),
-  ),
+  run((req) => {
+    const orgId =
+      (typeof req.query.organizationId === "string" && req.query.organizationId) ||
+      req.principal?.organizationIds?.[0];
+    return service.resources(req.principal, "reports", id(orgId));
+  }),
 );
 router.get(
   "/awards",
-  run((req) =>
-    service.resources(req.principal, "awards", id(req.query.organizationId)),
-  ),
+  run((req) => {
+    const orgId =
+      (typeof req.query.organizationId === "string" && req.query.organizationId) ||
+      req.principal?.organizationIds?.[0];
+    return service.resources(req.principal, "awards", id(orgId));
+  }),
 );
 router.get(
   "/audits",
-  run((req) =>
-    service.resources(
-      req.principal,
-      "auditLogs",
-      id(req.query.organizationId),
-      true,
-    ),
-  ),
+  run((req) => {
+    const orgId =
+      (typeof req.query.organizationId === "string" && req.query.organizationId) ||
+      req.principal?.organizationIds?.[0];
+    return service.resources(req.principal, "auditLogs", id(orgId), true);
+  }),
 );
 
 router.post(
