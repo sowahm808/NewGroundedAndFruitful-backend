@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Principal } from "../auth/authorization.js";
 import {
   requireAuthenticated,
+  requireCapability,
   requireParentOf,
 } from "../auth/authorization.js";
 import {
@@ -49,6 +50,108 @@ export class ReportService {
     private db: Firestore,
     private bucket?: ReportBucket,
   ) {}
+  private admin(
+    p: Principal | undefined,
+    organizationId: string,
+    capability: string,
+  ) {
+    const actor = requireCapability(p, capability);
+    const membership = actor.memberships?.find(
+      (item) =>
+        item.userId === actor.uid && item.organizationId === organizationId,
+    );
+    if (
+      !membership ||
+      actor.activeWorkspaceId !==
+        (membership.workspaceId ?? membership.organizationId)
+    )
+      throw new AuthorizationError();
+    return actor;
+  }
+  private value(value: unknown): number | string {
+    if (value && typeof value === "object" && "toMillis" in value)
+      return (value as { toMillis(): number }).toMillis();
+    return typeof value === "string" ? value.toLowerCase() : 0;
+  }
+  private async listCollection(
+    collection: "reportPolicies" | "reportJobs",
+    organizationId: string,
+    page: number,
+    pageSize: number,
+    sort: string,
+    status?: string,
+  ) {
+    const snapshot = await this.db
+      .collection(collection)
+      .where("organizationId", "==", organizationId)
+      .get();
+    const field = sort.replace("-", ""),
+      direction = sort.startsWith("-") ? -1 : 1;
+    const all = snapshot.docs
+      .map<Record<string, unknown> & { id: string }>((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+      .filter((item) => !status || item.status === status)
+      .sort(
+        (a, b) =>
+          direction *
+          (this.value(a[field]) < this.value(b[field])
+            ? -1
+            : this.value(a[field]) > this.value(b[field])
+              ? 1
+              : a.id.localeCompare(b.id)),
+      );
+    return {
+      items: all.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total: all.length,
+        totalPages: Math.ceil(all.length / pageSize),
+      },
+    };
+  }
+  async definitions(
+    p: Principal | undefined,
+    query: {
+      organizationId: string;
+      page: number;
+      pageSize: number;
+      sort: string;
+      status?: string | undefined;
+    },
+  ) {
+    this.admin(p, query.organizationId, "admin.reports.read");
+    return this.listCollection(
+      "reportPolicies",
+      query.organizationId,
+      query.page,
+      query.pageSize,
+      query.sort,
+      query.status,
+    );
+  }
+  async jobs(
+    p: Principal | undefined,
+    query: {
+      organizationId: string;
+      page: number;
+      pageSize: number;
+      sort: string;
+      status?: string | undefined;
+    },
+  ) {
+    this.admin(p, query.organizationId, "admin.reports.read");
+    return this.listCollection(
+      "reportJobs",
+      query.organizationId,
+      query.page,
+      query.pageSize,
+      query.sort,
+      query.status,
+    );
+  }
   private async scope(
     p: Principal | undefined,
     input: Pick<RequestInput, "organizationId" | "participantId">,
@@ -71,6 +174,8 @@ export class ReportService {
     return actor;
   }
   async request(p: Principal | undefined, input: RequestInput) {
+    if (p?.roles.some((role) => role === "admin" || role === "super_admin"))
+      this.admin(p, input.organizationId, "admin.reports.manage");
     const actor = await this.scope(p, input);
     const policy = await this.db
       .doc(`reportPolicies/${input.reportType}_${input.policyVersion}`)
@@ -109,13 +214,47 @@ export class ReportService {
     }
     return { id, status: "queued" };
   }
+  async cancel(p: Principal | undefined, id: string, organizationId: string) {
+    this.admin(p, organizationId, "admin.reports.manage");
+    const ref = this.db.doc(`reportJobs/${id}`),
+      snap = await ref.get();
+    if (!snap.exists || snap.get("organizationId") !== organizationId)
+      throw new NotFoundError();
+    if (!["queued", "generating"].includes(String(snap.get("status"))))
+      throw new ConflictError(
+        "Only queued or generating reports can be cancelled.",
+      );
+    await ref.update({
+      status: "cancelled",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { id, status: "cancelled" as const };
+  }
+  async retry(p: Principal | undefined, id: string, organizationId: string) {
+    this.admin(p, organizationId, "admin.reports.manage");
+    const ref = this.db.doc(`reportJobs/${id}`),
+      snap = await ref.get();
+    if (!snap.exists || snap.get("organizationId") !== organizationId)
+      throw new NotFoundError();
+    if (snap.get("status") !== "failed")
+      throw new ConflictError("Only failed reports can be retried.");
+    await ref.update({
+      status: "queued",
+      failureCode: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { id, status: "queued" as const };
+  }
   async status(p: Principal | undefined, id: string) {
     const snap = await this.db.doc(`reportJobs/${id}`).get();
     if (!snap.exists) throw new NotFoundError();
-    await this.scope(p, {
+    const scope = {
       organizationId: String(snap.get("organizationId")),
       participantId: String(snap.get("participantId")),
-    });
+    };
+    if (p?.roles.some((role) => role === "admin" || role === "super_admin"))
+      this.admin(p, scope.organizationId, "admin.reports.read");
+    else await this.scope(p, scope);
     return {
       id,
       status: snap.get("status"),
@@ -142,13 +281,11 @@ export class ReportService {
         redactionProfile: String(snap.get("redactionProfile")),
       });
       const objectPath = `private-reports/${String(snap.get("organizationId"))}/${id}`;
-      await this.bucket
-        .file(objectPath)
-        .save(bytes, {
-          contentType: "application/pdf",
-          resumable: false,
-          metadata: { cacheControl: "private,no-store" },
-        });
+      await this.bucket.file(objectPath).save(bytes, {
+        contentType: "application/pdf",
+        resumable: false,
+        metadata: { cacheControl: "private,no-store" },
+      });
       const expiresAt = Timestamp.fromMillis(
         now.getTime() + Number(snap.get("storageExpirySeconds")) * 1000,
       );
@@ -178,10 +315,15 @@ export class ReportService {
     const ref = this.db.doc(`reportJobs/${id}`),
       snap = await ref.get();
     if (!snap.exists) throw new NotFoundError();
-    const actor = await this.scope(p, {
+    const scope = {
       organizationId: String(snap.get("organizationId")),
       participantId: String(snap.get("participantId")),
-    });
+    };
+    const actor = p?.roles.some(
+      (role) => role === "admin" || role === "super_admin",
+    )
+      ? this.admin(p, scope.organizationId, "admin.reports.read")
+      : await this.scope(p, scope);
     const expires = snap.get("expiresAt") as Timestamp | undefined;
     if (
       snap.get("status") !== "ready" ||

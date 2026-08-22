@@ -197,6 +197,7 @@ app.use(
   notificationRoutes,
 );
 app.use("/api/v1/reports", privateResponse, authenticate, reportRoutes);
+app.use("/api/v1/admin/reports", privateResponse, authenticate, reportRoutes);
 // Compatibility route for clients released against the original path. It uses
 // the same identity-only bootstrap policy as the canonical auth route.
 app.use(
