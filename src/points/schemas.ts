@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { pointSourceTypes } from "./domain.js";
+
 const adjustmentReason = z.string().trim().min(3).max(500);
+
 export const awardSchema = z
   .object({
     participantId: z.string().min(1).max(128),
@@ -16,7 +18,6 @@ export const awardSchema = z
     occurredAt: z.coerce.date(),
   })
   .strict();
-
 
 export const pointAdjustmentSchema = z.discriminatedUnion("type", [
   z
@@ -45,17 +46,15 @@ export const pointAdjustmentSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 
-// src/points/schemas.ts
-
 export const reconciliationSchema = z
   .object({
     organizationId: z.string().min(1).max(128),
     quarterId: z.string().min(1).max(128),
     generationId: z.string().min(1).max(128),
+    limit: z.number().int().positive().max(1000),
     participantId: z.string().min(1).max(128).optional(),
     teamId: z.string().min(1).max(128).optional(),
-    dryRun: z.boolean().default(false),
-    limit: z.number().int().positive().max(1000).optional(),
+    dryRun: z.boolean(),
     checkpoint: z.string().min(1).max(256).optional(),
     batchSize: z.number().int().positive().max(1000).optional(),
     reason: adjustmentReason.optional(),
