@@ -76,7 +76,6 @@ describe("administration request contracts", () => {
 });
 
 describe("administration list query schemas", () => {
-<<<<<<< HEAD
   it("rejects invalid participant query values with field-level schema errors", () => {
     const result = participantListQuerySchema.safeParse({
       page: "0",
@@ -91,21 +90,6 @@ describe("administration list query schemas", () => {
         sort: expect.any(Array),
       });
   });
-=======
-  it("accepts and normalizes the frontend participant pagination query", () => {
-    expect(
-      participantListQuerySchema.parse({
-        page: "1",
-        pageSize: "25",
-        sort: "updatedAt_desc",
-      }),
-    ).toEqual({ page: 1, pageSize: 25, sort: "-updatedAt" });
-    expect(
-      participantListQuerySchema.parse({ sort: "updatedAt_asc" }).sort,
-    ).toBe("updatedAt");
-  });
-
->>>>>>> 2b48d8ef08e9b2772a9c5d4726cd7c342e3f4ceb
   it("accepts the frontend roles pagination query without an organization", () => {
     expect(
       roleListQuerySchema.parse({
