@@ -73,7 +73,8 @@ export const importListQuerySchema = z.object({
 });
 export const importCommandSchema = z.object({
   expectedVersion: z.number().int().positive(),
-  idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/),
+  idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/)
+  .optional(),
 });
 export const itemPatchSchema = z.object({
   expectedVersion: z.number().int().positive(),

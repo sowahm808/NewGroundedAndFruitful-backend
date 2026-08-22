@@ -340,45 +340,107 @@ router.post(
     "/bible-imports/:importId/commit",
   ],
   validateBody(importCommandSchema),
-  run((req) =>
-    service.commit(
+  run((req) => {
+    const idempotencyKey =
+      req.header("idempotency-key")?.trim() ??
+      req.body.idempotencyKey ??
+      `commit_${req.params.importId}_${req.body.expectedVersion}`;
+
+    return service.commit(
       req.principal,
       id(req.params.importId),
-      req.body,
+      { ...req.body, idempotencyKey },
       req.requestId,
-    ),
-  ),
+    );
+  }),
 );
+
 router.post(
   [
     "/bible-content/imports/:importId/reprocess",
     "/bible-imports/:importId/reprocess",
   ],
   validateBody(importCommandSchema),
-  run((req) =>
-    service.reprocess(
+  run((req) => {
+    const idempotencyKey =
+      req.header("idempotency-key")?.trim() ??
+      req.body.idempotencyKey ??
+      `reprocess_${req.params.importId}_${req.body.expectedVersion}`;
+
+    return service.reprocess(
       req.principal,
       id(req.params.importId),
-      req.body,
+      { ...req.body, idempotencyKey },
       req.requestId,
-    ),
-  ),
+    );
+  }),
 );
+
 router.post(
   [
     "/bible-content/imports/:importId/reject",
     "/bible-imports/:importId/reject",
   ],
   validateBody(importCommandSchema),
-  run((req) =>
-    service.reject(
+  run((req) => {
+    const idempotencyKey =
+      req.header("idempotency-key")?.trim() ??
+      req.body.idempotencyKey ??
+      `reject_${req.params.importId}_${req.body.expectedVersion}`;
+
+    return service.reject(
       req.principal,
       id(req.params.importId),
-      req.body,
+      { ...req.body, idempotencyKey },
       req.requestId,
-    ),
-  ),
+    );
+  }),
 );
+// router.post(
+//   [
+//     "/bible-content/imports/:importId/commit",
+//     "/bible-imports/:importId/commit",
+//   ],
+//   validateBody(importCommandSchema),
+//   run((req) =>
+//     service.commit(
+//       req.principal,
+//       id(req.params.importId),
+//       req.body,
+//       req.requestId,
+//     ),
+//   ),
+// );
+// router.post(
+//   [
+//     "/bible-content/imports/:importId/reprocess",
+//     "/bible-imports/:importId/reprocess",
+//   ],
+//   validateBody(importCommandSchema),
+//   run((req) =>
+//     service.reprocess(
+//       req.principal,
+//       id(req.params.importId),
+//       req.body,
+//       req.requestId,
+//     ),
+//   ),
+// );
+// router.post(
+//   [
+//     "/bible-content/imports/:importId/reject",
+//     "/bible-imports/:importId/reject",
+//   ],
+//   validateBody(importCommandSchema),
+//   run((req) =>
+//     service.reject(
+//       req.principal,
+//       id(req.params.importId),
+//       req.body,
+//       req.requestId,
+//     ),
+//   ),
+// );
 router.get(
   [
     "/bible-content/imports/:importId/documents/:kind",
