@@ -54,6 +54,8 @@ const participantSortAliases: Record<string, string> = {
   name_asc: "name_asc",
 };
 
+// src/administration/schemas.ts
+
 export const participantListQuerySchema = z
   .object({
     organizationId: idSchema.optional(),
@@ -64,29 +66,40 @@ export const participantListQuerySchema = z
     teamId: idSchema.optional(),
     programId: idSchema.optional(),
     sort: z
-      .union([
-        z.enum(participantSorts),
-        z.enum([
-          "-updatedAt",
-          "updatedAt",
-          "updatedAt_desc",
-          "updatedAt_asc",
-          "-createdAt",
-          "createdAt",
-          "createdAt_desc",
-          "createdAt_asc",
-          "-name",
-          "name",
-          "name_desc",
-          "name_asc",
-        ]),
+      .enum([
+        "updatedAt",
+        "-updatedAt",
+        "updatedAt_desc",
+        "updatedAt_asc",
+        "createdAt",
+        "-createdAt",
+        "createdAt_desc",
+        "createdAt_asc",
+        "name",
+        "-name",
+        "name_desc",
+        "name_asc",
       ])
-      .transform((sort) =>
-        sort in participantSortAliases
-          ? participantSortAliases[sort]
-          : (sort as (typeof participantSorts)[number]),
-      )
-      .default("updated_desc"),
+      .default("-updatedAt")
+      .transform((val): "-updatedAt" | "updatedAt" => {
+        switch (val) {
+          case "updatedAt":
+          case "updatedAt_asc":
+          case "createdAt":
+          case "createdAt_asc":
+          case "name":
+          case "name_asc":
+            return "updatedAt";
+          case "-updatedAt":
+          case "updatedAt_desc":
+          case "-createdAt":
+          case "createdAt_desc":
+          case "-name":
+          case "name_desc":
+          default:
+            return "-updatedAt";
+        }
+      }),
   })
   .strict();
 
