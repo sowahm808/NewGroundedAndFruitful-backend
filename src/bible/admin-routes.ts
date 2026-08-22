@@ -252,10 +252,63 @@ router.get(
 //   }),
 // );
 
+// router.get(
+//   ["/bible-content/imports/:importId", "/bible-imports/:importId"],
+//   run((req) => service.get(req.principal, id(req.params.importId))),
+// );
+
 router.get(
   ["/bible-content/imports/:importId", "/bible-imports/:importId"],
-  run((req) => service.get(req.principal, id(req.params.importId))),
+  run(async (req) => {
+    const raw = (await service.get(req.principal, id(req.params.importId))) as Record<string, any>;
+
+    return {
+      id: raw.id,
+      title: raw.title,
+      status: raw.status,
+      quarter: {
+        id: raw.quarter?.id ?? raw.quarterId ?? "",
+        name: raw.quarter?.name ?? "Current Quarter",
+      },
+      documents: {
+        question: {
+          filename: raw.documents?.question?.filename ?? "quiz.docx",
+          sizeBytes: raw.documents?.question?.sizeBytes ?? raw.documents?.question?.size ?? 0,
+          downloadUrl: raw.documents?.question?.downloadUrl,
+          viewUrl: raw.documents?.question?.viewUrl,
+        },
+        answerKey: {
+          filename: raw.documents?.answerKey?.filename ?? "answer_key.docx",
+          sizeBytes: raw.documents?.answerKey?.sizeBytes ?? raw.documents?.answerKey?.size ?? 0,
+          downloadUrl: raw.documents?.answerKey?.downloadUrl,
+          viewUrl: raw.documents?.answerKey?.viewUrl,
+        },
+      },
+      counts: {
+        activities: raw.counts?.activities ?? raw.summary?.activityCount ?? raw.validationSummary?.activityCount ?? 0,
+        questions: raw.counts?.questions ?? raw.summary?.questionCount ?? 0,
+        errors: raw.counts?.errors ?? raw.summary?.errorCount ?? raw.validationSummary?.errorCount ?? 0,
+        warnings: raw.counts?.warnings ?? raw.summary?.warningCount ?? raw.validationSummary?.warningCount ?? 0,
+      },
+      uploadedBy: raw.uploadedBy ?? "Administrator",
+      uploadedAt: raw.uploadedAt ?? raw.createdAt ?? new Date().toISOString(),
+      updatedAt: raw.updatedAt ?? raw.createdAt ?? new Date().toISOString(),
+      parserVersion: raw.parserVersion ?? "gf-bible-ooxml/2.0.0",
+      version: raw.version ?? 1,
+      allowedActions: raw.allowedActions ?? ["view", "review", "reject", "commit"],
+      reviewBlock: raw.reviewBlock ?? undefined,
+      validation: {
+        dateRange: raw.validation?.dateRange,
+        reconciliation: raw.validation?.reconciliation,
+        diagnostics: raw.validation?.diagnostics,
+        issues: raw.validation?.issues ?? [],
+      },
+      activities: raw.activities ?? [],
+      committedContentSetId: raw.committedContentSetId ?? undefined,
+    };
+  }),
 );
+
 router.patch(
   [
     "/bible-content/imports/:importId/items/:itemId",
