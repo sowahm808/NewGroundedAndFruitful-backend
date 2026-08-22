@@ -67,6 +67,8 @@ export const importListQuerySchema = z.object({
   quarterId: z.string().min(1).max(128).optional(),
   search: z.string().trim().max(100).optional(),
   cursor: z.string().max(512).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
   limit: z.coerce.number().int().min(1).max(50).default(25),
 });
 export const importCommandSchema = z.object({

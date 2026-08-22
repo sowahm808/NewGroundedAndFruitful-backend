@@ -154,14 +154,42 @@ router.post(
     );
   }, 201),
 );
+// router.get(
+//   ["/bible-content/imports", "/bible-imports"],
+//   run((req) => {
+//     const query = importListQuerySchema.safeParse(req.query);
+//     if (!query.success) throw new ValidationError("Invalid import list query.");
+//     return service.listImports(req.principal, query.data);
+//   }),
+// );
+// in your bible router file
 router.get(
   ["/bible-content/imports", "/bible-imports"],
-  run((req) => {
+  run(async (req) => {
     const query = importListQuerySchema.safeParse(req.query);
     if (!query.success) throw new ValidationError("Invalid import list query.");
-    return service.listImports(req.principal, query.data);
+
+    const result = await service.listImports(req.principal, query.data);
+    const items = (result as { items?: unknown[] }).items ?? (Array.isArray(result) ? result : []);
+    const page = query.data.page ?? 1;
+    const pageSize = query.data.pageSize ?? query.data.limit ?? 25;
+    const total = (result as { total?: number }).total ?? items.length;
+
+    return {
+      imports: {
+        items,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize) || 1,
+        },
+      },
+      meta: (result as { meta?: unknown }).meta ?? { nextCursor: null },
+    };
   }),
 );
+
 router.get(
   ["/bible-content/imports/:importId", "/bible-imports/:importId"],
   run((req) => service.get(req.principal, id(req.params.importId))),
