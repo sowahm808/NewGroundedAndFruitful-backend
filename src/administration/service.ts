@@ -572,14 +572,59 @@ export class AdministrationService {
     });
     return { id };
   }
-  async roster(p: Principal | undefined, oid: string, programId?: string) {
-    this.admin(p, oid);
-    let query = this.db
-      .collection("participants")
-      .where("organizationId", "==", oid);
-    if (programId) query = query.where("programId", "==", programId);
-    const snap = await query.get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  async listParticipants(
+    p: Principal | undefined,
+    input: {
+      organizationId?: string | undefined;
+      programId?: string | undefined;
+      page: number;
+      pageSize: number;
+      sort: "updatedAt" | "-updatedAt";
+    },
+  ) {
+    const { organizationId, programId, page, pageSize, sort } = input;
+    let query = this.db.collection("participants");
+    if (organizationId) {
+      this.admin(p, organizationId);
+      query = query.where(
+        "organizationId",
+        "==",
+        organizationId,
+      ) as typeof query;
+    } else {
+      requirePlatformSuperAdmin(p);
+    }
+    if (programId)
+      query = query.where("programId", "==", programId) as typeof query;
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof value.toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : 0;
+    const results: Array<Data & { id: string }> = (await query.get()).docs
+      .map<Data & { id: string }>((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+    const total = results.length;
+    return {
+      items: results.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
   async createTeam(p: Principal | undefined, input: Data) {
     const oid = String(input.organizationId);
