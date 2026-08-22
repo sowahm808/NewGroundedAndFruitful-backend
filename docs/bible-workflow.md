@@ -4,17 +4,23 @@
 
 The former Bible endpoint used generic `bibleActivities`, accepted a polymorphic client response, exposed persisted activity records directly, and silently skipped an award when no point rule existed. There was no two-DOCX import, protected answer model, review gate, local-date assignment, import lifecycle, or atomic Bible-specific completion command.
 
-The production boundary now uses server-resolved child context and the organization's IANA timezone. Import records progress through `needs_review -> validated -> committed`; commit creates only `draft` content. Publishing is an explicit administrator command and requires an `active` quarter. Correctness is calculated and stored privately but is withheld from every child response because the product privacy decision remains unresolved. Participation points come only from the active `bible_activity` rule and are independent of correctness. Completion, immutable ledger creation, aggregates, and redacted audits share one Firestore transaction.
+The production boundary now uses server-resolved child context and the organization's IANA timezone. Import records use `uploaded`, `processing`, `processing_failed`, `needs_correction`, `needs_review`, `committing`, `committed`, `rejected`, `cancelled`, and `expired`. The only normal transitions are `uploaded -> processing`, `processing -> needs_review|needs_correction|processing_failed`, `needs_correction -> processing`, `needs_review -> committing|rejected|cancelled`, `committing -> committed`, and a recoverable `committing -> needs_review`. Terminal states are immutable outside an explicit audited recovery procedure. Commit creates only `draft` content; publishing remains a separate administrator command.
+
+For launch, self-review is permitted: an uploader with an active tenant membership and both review and commit capabilities may commit a clean import. This avoids silently blocking the only administrator. Authorization and `allowedActions` are always derived by the server; blocking parser errors remove `commit`.
 
 ## Endpoint inventory
 
 | Method and path                                               | operationId                              |
 | ------------------------------------------------------------- | ---------------------------------------- |
 | POST `/api/v1/admin/bible-imports`                            | `createBibleImport`                      |
+| GET `/api/v1/admin/bible-imports`                             | `listBibleImports`                       |
 | GET `/api/v1/admin/bible-imports/{importId}`                  | `getBibleImport`                         |
 | PATCH `/api/v1/admin/bible-imports/{importId}/items/{itemId}` | `correctBibleImportItem`                 |
 | POST `/api/v1/admin/bible-imports/{importId}/validate`        | `validateBibleImport`                    |
 | POST `/api/v1/admin/bible-imports/{importId}/commit`          | `commitBibleImport`                      |
+| POST `/api/v1/admin/bible-imports/{importId}/reprocess`       | `reprocessBibleImport`                   |
+| POST `/api/v1/admin/bible-imports/{importId}/reject`          | `rejectBibleImport`                      |
+| GET `/api/v1/admin/bible-imports/{importId}/documents/{kind}` | `downloadBibleImportDocument`            |
 | GET `/api/v1/admin/bible-content`                             | `listBibleContent`                       |
 | GET/PATCH `/api/v1/admin/bible-content/{contentSetId}`        | `getBibleContent` / `updateBibleContent` |
 | POST `/api/v1/admin/bible-content/{contentSetId}/publish`     | `publishBibleContent`                    |

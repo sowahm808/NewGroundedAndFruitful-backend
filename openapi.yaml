@@ -1531,6 +1531,23 @@ paths:
           "422": { $ref: "#/components/responses/Validation" },
         }
   /admin/bible-content/imports:
+    get:
+      tags: [Bible]
+      operationId: listBibleImports
+      description: Lists tenant-scoped import summaries with server-derived review actions.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: quarterId, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 50, default: 25 },
+          }
+      responses:
+        { "200": { description: Bounded import summaries and next cursor } }
     post:
       tags: [Bible]
       operationId: createBibleImport
@@ -1634,6 +1651,57 @@ paths:
         {
           "200": { description: Draft content set identifier },
           "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/bible-content/imports/{importId}/reprocess:
+    post:
+      tags: [Bible]
+      operationId: reprocessBibleImport
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+            },
+        }
+      responses: { "200": { description: Processing import } }
+  /admin/bible-content/imports/{importId}/reject:
+    post:
+      tags: [Bible]
+      operationId: rejectBibleImport
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+            },
+        }
+      responses: { "200": { description: Rejected import } }
+  /admin/bible-content/imports/{importId}/documents/{kind}:
+    get:
+      tags: [Bible]
+      operationId: downloadBibleImportDocument
+      description: Streams a private source document after tenant and reviewer authorization. Answer-key access is audited.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ImportId" }
+        - {
+            name: kind,
+            in: path,
+            required: true,
+            schema: { type: string, enum: [question, answer-key] },
+          }
+      responses:
+        {
+          "200": { description: Private DOCX attachment },
+          "404": { $ref: "#/components/responses/NotFound" },
         }
   /admin/bible-content:
     get:
