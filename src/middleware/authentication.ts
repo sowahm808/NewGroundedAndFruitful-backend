@@ -20,6 +20,10 @@ import { trustedPlatformRoles } from "../auth/claims.js";
 import { ElevationService } from "../auth/elevations.js";
 import { logger } from "../shared/logger.js";
 import { deriveCapabilities, resolvePersonas } from "../auth/capabilities.js";
+import {
+  logBearerHeaderFailure,
+  verifyBearerToken,
+} from "../auth/token-verification.js";
 export { isRole } from "../auth/roles.js";
 
 export async function resolvePrincipal(
@@ -164,11 +168,27 @@ export async function authenticate(
 ) {
   try {
     const header = req.header("authorization");
-    if (!header) return next();
+    if (!header) {
+      logBearerHeaderFailure(
+        req.requestId,
+        "missing_authorization",
+        "protected_route",
+      );
+      return next();
+    }
     const match = /^Bearer\s+([^\s]+)$/i.exec(header.trim());
-    if (!match?.[1])
+    if (!match?.[1]) {
+      logBearerHeaderFailure(
+        req.requestId,
+        "malformed_bearer_header",
+        "protected_route",
+      );
       throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
-    const token: DecodedIdToken = await auth.verifyIdToken(match[1], true);
+    }
+    const token: DecodedIdToken = await verifyBearerToken(auth, match[1], {
+      requestId: req.requestId,
+      policy: "protected_route",
+    });
     const resolved = await resolvePrincipal(db, token);
     const user = await db.doc(`users/${token.uid}`).get();
     const requestedWorkspaceId = req.header("x-workspace-id")?.trim();
@@ -260,11 +280,27 @@ export async function requireFirebaseAuthentication(
 ) {
   try {
     const header = req.header("authorization");
-    if (!header) throw new AuthenticationError();
+    if (!header) {
+      logBearerHeaderFailure(
+        req.requestId,
+        "missing_authorization",
+        "registration_authentication",
+      );
+      throw new AuthenticationError();
+    }
     const match = /^Bearer\s+([^\s]+)$/i.exec(header.trim());
-    if (!match?.[1])
+    if (!match?.[1]) {
+      logBearerHeaderFailure(
+        req.requestId,
+        "malformed_bearer_header",
+        "registration_authentication",
+      );
       throw new AuthenticationError("INVALID_AUTHENTICATION_TOKEN");
-    const token = await auth.verifyIdToken(match[1], true);
+    }
+    const token = await verifyBearerToken(auth, match[1], {
+      requestId: req.requestId,
+      policy: "registration_authentication",
+    });
     req.principal = {
       uid: token.uid,
       role: undefined as never,

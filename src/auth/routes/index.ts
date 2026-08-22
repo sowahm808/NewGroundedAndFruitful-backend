@@ -11,6 +11,7 @@ import { MembershipRepository } from "../repositories/memberships.js";
 import { childLoginSchema } from "../schemas/child-login.js";
 import { ChildLoginService } from "../services/child-login.js";
 import { AuthSessionService } from "../services/session.js";
+import { LogoutService } from "../services/logout.js";
 import {
   authenticate,
   requireEnabledRegistrationAccount,
@@ -51,6 +52,19 @@ const controller = new ChildLoginController(
 const workspaces = new WorkspaceService(db);
 const registrationIntents = new RegistrationIntentService(db);
 const elevations = new ElevationService(db);
+const logout = new LogoutService(auth);
+
+router.post("/logout", (_req, res) => {
+  logout.logout();
+  res.sendStatus(204);
+});
+router.post("/logout-all", requireFirebaseAuthentication, (req, res, next) => {
+  const actor = requireAuthenticated(req.principal);
+  void logout
+    .logoutAll(actor.uid)
+    .then(() => res.sendStatus(204))
+    .catch(next);
+});
 
 router.post(
   "/session",
