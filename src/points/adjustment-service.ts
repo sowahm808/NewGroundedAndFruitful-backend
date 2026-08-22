@@ -16,10 +16,6 @@ import type { PointAdjustmentInput } from "./schemas.js";
 type StoredEntry = Omit<PointLedgerEntry, "occurredAt"> & {
   occurredAt: Date | Timestamp;
   organizationId?: string;
-  ruleId?: string;
-  ruleVersion?: number;
-  ruleAmount?: number;
-  evaluationFacts?: Record<string, unknown>;
 };
 
 export class PointAdjustmentService {
@@ -120,17 +116,6 @@ export class PointAdjustmentService {
         awardedBy: actor.uid,
         occurredAt,
         points,
-        ruleId: original ? "administrator-reversal" : "administrator-adjustment",
-        ruleVersion: 1,
-        ruleAmount: points,
-        evaluationFacts: {
-          authorizedRole: actor.role,
-          organizationId,
-          quarterId,
-          participantId,
-          teamId,
-          ...(original ? { originalEntryId: original.id } : {}),
-        },
         ...(original ? { originalEntryId: original.id } : {}),
         createdAt: FieldValue.serverTimestamp(),
       };

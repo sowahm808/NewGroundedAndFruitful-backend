@@ -155,9 +155,7 @@ product. The order reflects dependencies and risk.
       updates, optimistic concurrency, audited transitions, and point awards.
 - [ ] Add the mentor-guidance workflow to the implemented project APIs.
 - [ ] Academic-support activities and verified completion workflows.
-- [x] Assigned special-activity listing and idempotent participant completion
-      with transactional point awards.
-- [ ] Special-activity definition and approval administration workflows.
+- [ ] Special-activity definition, approval, and completion workflows.
 - [x] Administrator point adjustment/reversal API with reason, original-entry
       linkage, authorization, and audit event.
 
