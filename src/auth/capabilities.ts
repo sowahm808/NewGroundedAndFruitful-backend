@@ -117,6 +117,26 @@ export function normalizePersonas(value: unknown): ProductPersona[] {
   ];
 }
 
+/**
+ * Resolve the personas attached to the active membership. Older memberships
+ * stored the canonical workflow persona in `roles`/`workspaceRoles` before the
+ * dedicated `personas` field was introduced. Treat only an exact canonical
+ * persona role as its matching persona; in particular, `owner` remains a
+ * governance role and never implies parent, admin, or super-admin authority.
+ */
+export function resolvePersonas(
+  explicitPersonas: unknown,
+  workspaceRoles: readonly string[],
+  roles: readonly string[],
+): ProductPersona[] {
+  const explicit = normalizePersonas(explicitPersonas);
+  const legacyAssignments = [...workspaceRoles, ...roles].filter(
+    (assignment): assignment is ProductPersona =>
+      (productPersonas as readonly string[]).includes(assignment),
+  );
+  return [...new Set([...explicit, ...legacyAssignments])];
+}
+
 export function deriveCapabilities(
   personas: readonly ProductPersona[],
   workspaceRoles: readonly string[],

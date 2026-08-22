@@ -19,7 +19,7 @@ import { env } from "../config/env.js";
 import { trustedPlatformRoles } from "../auth/claims.js";
 import { ElevationService } from "../auth/elevations.js";
 import { logger } from "../shared/logger.js";
-import { deriveCapabilities, normalizePersonas } from "../auth/capabilities.js";
+import { deriveCapabilities, resolvePersonas } from "../auth/capabilities.js";
 export { isRole } from "../auth/roles.js";
 
 export async function resolvePrincipal(
@@ -70,6 +70,12 @@ export async function resolvePrincipal(
       !Number.isInteger(data.version)
     )
       continue;
+    const workspaceRoles = Array.isArray(data.workspaceRoles)
+      ? data.workspaceRoles.filter(
+          (role): role is string => typeof role === "string",
+        )
+      : [];
+    const personas = resolvePersonas(data.personas, workspaceRoles, roles);
     memberships.push({
       id: doc.id,
       userId: token.uid,
@@ -78,16 +84,8 @@ export async function resolvePrincipal(
       ...(typeof data.workspaceId === "string"
         ? { workspaceId: data.workspaceId }
         : {}),
-      ...(Array.isArray(data.workspaceRoles)
-        ? {
-            workspaceRoles: data.workspaceRoles.filter(
-              (role): role is string => typeof role === "string",
-            ),
-          }
-        : {}),
-      ...(normalizePersonas(data.personas).length > 0
-        ? { personas: normalizePersonas(data.personas) }
-        : {}),
+      ...(workspaceRoles.length > 0 ? { workspaceRoles } : {}),
+      ...(personas.length > 0 ? { personas } : {}),
       status: "active",
       version: data.version,
       ...(Array.isArray(data.programIds)
@@ -205,8 +203,12 @@ export async function authenticate(
         (membership.workspaceId ?? membership.organizationId) ===
         activeWorkspaceId,
     );
-    const personas = activeMembership?.personas ?? [];
     const workspaceRoles = activeMembership?.workspaceRoles ?? [];
+    const personas = resolvePersonas(
+      activeMembership?.personas,
+      workspaceRoles,
+      activeMembership?.roles ?? [],
+    );
     const derivedCapabilities = deriveCapabilities(
       personas,
       workspaceRoles,
