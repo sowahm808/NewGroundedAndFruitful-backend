@@ -49,10 +49,14 @@ export const pointAdjustmentSchema = z.discriminatedUnion("type", [
 
 export const reconciliationSchema = z
   .object({
+    organizationId: z.string().min(1).max(128),
     quarterId: z.string().min(1).max(128),
+    generationId: z.string().min(1).max(128).optional(),
     participantId: z.string().min(1).max(128).optional(),
     teamId: z.string().min(1).max(128).optional(),
     dryRun: z.boolean().default(false),
+    limit: z.number().int().positive().max(1000).optional(),
+    checkpoint: z.string().min(1).max(256).optional(),
     batchSize: z.number().int().positive().max(1000).optional(),
     reason: adjustmentReason.optional(),
   })
@@ -60,8 +64,9 @@ export const reconciliationSchema = z
 
 export const reconciliationRollbackSchema = z
   .object({
-    generationId: z.string().min(1).max(128),
+    organizationId: z.string().min(1).max(128),
     quarterId: z.string().min(1).max(128),
+    generationId: z.string().min(1).max(128),
     reason: adjustmentReason,
   })
   .strict();

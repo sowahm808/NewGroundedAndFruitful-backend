@@ -81,6 +81,7 @@ export class SourceCompletionService {
     tx.set(this.db.doc(`teamWeeklyStats/${entry.quarterId}_${entry.teamId}_${week}`), { organizationId: entry.organizationId, teamId: entry.teamId, quarterId: entry.quarterId, week, totalPoints: increment, updatedAt }, { merge: true });
   }
 }
+export { SourceCompletionService as CompletionService };
 
 const fingerprint = (type: string, input: SourceAwardInput, actor: string) => createHash("sha256").update(JSON.stringify({ type, ...input, actor })).digest("hex");
 const requiredString = (snap: DocumentSnapshot, field: string) => { const value = snap.get(field); if (typeof value !== "string" || !value) throw new BusinessRuleError("SOURCE_INVALID", `The source ${field} is invalid.`); return value; };
