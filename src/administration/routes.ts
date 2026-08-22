@@ -37,6 +37,7 @@ const configuredResources = [
   ["family-activities", "familyActivities"],
   ["books", "books"],
   ["reading-assignments", "readingAssignments"],
+  ["projects", "projects"], 
   ["surveys", "surveys"],
   ["point-rules", "pointRules"],
 ] as const;
