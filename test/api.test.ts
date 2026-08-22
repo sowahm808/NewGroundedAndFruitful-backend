@@ -119,6 +119,16 @@ describe("HTTP safety contract", () => {
       error: { code: "AUTHENTICATION_REQUIRED" },
     });
   });
+  it("accepts the frontend admin participant list query contract", async () => {
+    const response = await fetch(
+      `${base}/api/v1/admin/participants?page=1&pageSize=25&sort=updatedAt_desc`,
+    );
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(422);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
   it("publishes the frontend admin users route rather than returning 404", async () => {
     const response = await fetch(
       `${base}/api/v1/admin/users?page=1&pageSize=25&sort=-updatedAt`,

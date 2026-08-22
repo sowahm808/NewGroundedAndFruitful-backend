@@ -602,6 +602,7 @@ export class AdministrationService {
     });
     return { id };
   }
+<<<<<<< HEAD
   async participant(p: Principal | undefined, id: string) {
     const snap = await this.db.doc(`participants/${id}`).get();
     if (!snap.exists) throw new NotFoundError();
@@ -647,12 +648,39 @@ export class AdministrationService {
         "==",
         input.teamId,
       );
+=======
+  async listParticipants(
+    p: Principal | undefined,
+    input: {
+      organizationId?: string | undefined;
+      programId?: string | undefined;
+      page: number;
+      pageSize: number;
+      sort: "updatedAt" | "-updatedAt";
+    },
+  ) {
+    const { organizationId, programId, page, pageSize, sort } = input;
+    let query = this.db.collection("participants");
+    if (organizationId) {
+      this.admin(p, organizationId);
+      query = query.where(
+        "organizationId",
+        "==",
+        organizationId,
+      ) as typeof query;
+    } else {
+      requirePlatformSuperAdmin(p);
+    }
+    if (programId)
+      query = query.where("programId", "==", programId) as typeof query;
+>>>>>>> 2b48d8ef08e9b2772a9c5d4726cd7c342e3f4ceb
     const timestamp = (value: unknown) =>
       typeof value === "object" &&
       value !== null &&
       "toMillis" in value &&
       typeof value.toMillis === "function"
         ? (value as { toMillis(): number }).toMillis()
+<<<<<<< HEAD
         : value instanceof Date
           ? value.getTime()
           : 0;
@@ -670,11 +698,24 @@ export class AdministrationService {
         const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
         return (
           (input.sort === "-updatedAt" ? -difference : difference) ||
+=======
+        : 0;
+    const results: Array<Data & { id: string }> = (await query.get()).docs
+      .map<Data & { id: string }>((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (sort === "-updatedAt" ? -difference : difference) ||
+>>>>>>> 2b48d8ef08e9b2772a9c5d4726cd7c342e3f4ceb
           a.id.localeCompare(b.id)
         );
       });
     const total = results.length;
     return {
+<<<<<<< HEAD
       items: results.slice(
         (input.page - 1) * input.pageSize,
         input.page * input.pageSize,
@@ -684,6 +725,14 @@ export class AdministrationService {
         pageSize: input.pageSize,
         total,
         totalPages: Math.ceil(total / input.pageSize),
+=======
+      items: results.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+>>>>>>> 2b48d8ef08e9b2772a9c5d4726cd7c342e3f4ceb
       },
     };
   }
