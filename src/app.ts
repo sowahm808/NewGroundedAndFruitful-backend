@@ -31,11 +31,42 @@ import {
   InternalError,
   NotFoundError,
   RateLimitError,
+  ServiceUnavailableError,
 } from "./shared/errors.js";
 import { logger } from "./shared/logger.js";
 import { storageReadiness } from "./config/storage-readiness.js";
 
 export const app = express();
+
+export const normalizeRequestError = (error: unknown): AppError => {
+  if (error instanceof AppError) return error;
+  const providerCode =
+    error && typeof error === "object" && "code" in error
+      ? String(error.code)
+      : "";
+  const dependencyFailure = new Set([
+    "4",
+    "8",
+    "10",
+    "13",
+    "14",
+    "deadline-exceeded",
+    "resource-exhausted",
+    "aborted",
+    "internal",
+    "unavailable",
+    "firestore/deadline-exceeded",
+    "firestore/resource-exhausted",
+    "firestore/aborted",
+    "firestore/internal",
+    "firestore/unavailable",
+  ]).has(providerCode.toLowerCase());
+  return dependencyFailure
+    ? new ServiceUnavailableError(
+        "A required data service is temporarily unavailable.",
+      )
+    : new InternalError();
+};
 
 app.disable("x-powered-by");
 
@@ -205,7 +236,7 @@ app.use(
       return;
     }
 
-    const safeError = error instanceof AppError ? error : new InternalError();
+    const safeError = normalizeRequestError(error);
 
     const logContext = {
       requestId: req.requestId,

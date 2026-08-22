@@ -1937,6 +1937,35 @@ components:
           },
       }
   schemas:
+    ParentDataResponse:
+      description: Stable envelope for a single role-approved Parent resource.
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { type: object, additionalProperties: true }
+    ParentCollectionResponse:
+      description: Stable, deterministically ordered Parent collection envelope. Empty results are represented by data as an empty array.
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          { type: array, items: { type: object, additionalProperties: true } }
+        meta:
+          type: object
+          additionalProperties: false
+          required: [nextCursor]
+          properties:
+            nextCursor: { type: [string, "null"] }
+    CalculatedSource:
+      description: Identifies when and from which configured period a calculated response was derived. Null identifiers mean the calculation is explicitly unavailable.
+      type: object
+      required: [calculatedAt, sourceQuarterId, sourceWeekId]
+      properties:
+        calculatedAt: { type: string, format: date-time }
+        sourceQuarterId: { type: [string, "null"] }
+        sourceWeekId: { type: [string, "null"] }
     BibleImportUpload:
       type: object
       additionalProperties: false

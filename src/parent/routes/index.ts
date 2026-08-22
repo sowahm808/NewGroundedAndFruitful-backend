@@ -41,10 +41,11 @@ const parse = <T>(
 };
 const idempotencyKey = (req: Request) =>
   parse(idempotencyKeySchema, req.headers["idempotency-key"]);
+const envelope = <T>(data: T) => ({ data });
 
 router.get("/dashboard", async (req, res, next) => {
   try {
-    res.json(await service.dashboard(principal(req)));
+    res.json(envelope(await service.dashboard(principal(req))));
   } catch (e) {
     next(e);
   }
@@ -76,7 +77,12 @@ router.get("/children", async (req, res, next) => {
 router.get("/children/:childId", async (req, res, next) => {
   try {
     res.json(
-      await service.child(principal(req), parse(idSchema, req.params.childId)),
+      envelope(
+        await service.child(
+          principal(req),
+          parse(idSchema, req.params.childId),
+        ),
+      ),
     );
   } catch (e) {
     next(e);
@@ -101,7 +107,7 @@ router.post("/observations", async (req, res, next) => {
       parse(observationSchema, req.body),
       idempotencyKey(req),
     );
-    res.status(result.created ? 201 : 200).json(result);
+    res.status(result.created ? 201 : 200).json(envelope(result));
   } catch (e) {
     next(e);
   }
@@ -109,7 +115,12 @@ router.post("/observations", async (req, res, next) => {
 router.get("/observations/:id", async (req, res, next) => {
   try {
     res.json(
-      await service.observation(principal(req), parse(idSchema, req.params.id)),
+      envelope(
+        await service.observation(
+          principal(req),
+          parse(idSchema, req.params.id),
+        ),
+      ),
     );
   } catch (e) {
     next(e);
@@ -126,7 +137,9 @@ router.get("/character", async (req, res, next) => {
   try {
     const input = parse(characterQuerySchema, req.query);
     res.json(
-      await service.selection(principal(req), input.childId, input.quarterId),
+      envelope(
+        await service.selection(principal(req), input.childId, input.quarterId),
+      ),
     );
   } catch (e) {
     next(e);
@@ -135,9 +148,11 @@ router.get("/character", async (req, res, next) => {
 router.patch("/character", async (req, res, next) => {
   try {
     res.json(
-      await service.setSelection(
-        principal(req),
-        parse(characterPatchSchema, req.body),
+      envelope(
+        await service.setSelection(
+          principal(req),
+          parse(characterPatchSchema, req.body),
+        ),
       ),
     );
   } catch (e) {
@@ -149,10 +164,12 @@ router.get(
   async (req, res, next) => {
     try {
       res.json(
-        await service.selection(
-          principal(req),
-          parse(idSchema, req.params.childId),
-          parse(idSchema, req.params.quarterId),
+        envelope(
+          await service.selection(
+            principal(req),
+            parse(idSchema, req.params.childId),
+            parse(idSchema, req.params.quarterId),
+          ),
         ),
       );
     } catch (e) {
@@ -163,9 +180,11 @@ router.get(
 router.put("/character/selections", async (req, res, next) => {
   try {
     res.json(
-      await service.setSelection(
-        principal(req),
-        parse(characterSelectionSchema, req.body),
+      envelope(
+        await service.setSelection(
+          principal(req),
+          parse(characterSelectionSchema, req.body),
+        ),
       ),
     );
   } catch (e) {
@@ -203,7 +222,7 @@ router.post(
         input.childId,
         parse(idSchema, req.params.activityId),
       );
-      res.status(result.created ? 201 : 200).json(result);
+      res.status(result.created ? 201 : 200).json(envelope(result));
     } catch (e) {
       next(e);
     }
@@ -238,7 +257,7 @@ router.post("/academic-support/requests", async (req, res, next) => {
       parse(supportRequestSchema, req.body),
       idempotencyKey(req),
     );
-    res.status(result.created ? 201 : 200).json(result);
+    res.status(result.created ? 201 : 200).json(envelope(result));
   } catch (e) {
     next(e);
   }
@@ -246,9 +265,11 @@ router.post("/academic-support/requests", async (req, res, next) => {
 router.get("/academic-support/requests/:requestId", async (req, res, next) => {
   try {
     res.json(
-      await service.supportDetail(
-        principal(req),
-        parse(idSchema, req.params.requestId),
+      envelope(
+        await service.supportDetail(
+          principal(req),
+          parse(idSchema, req.params.requestId),
+        ),
       ),
     );
   } catch (e) {
@@ -281,7 +302,7 @@ router.post("/support/requests", async (req, res, next) => {
       parse(supportRequestSchema, req.body),
       idempotencyKey(req),
     );
-    res.status(result.created ? 201 : 200).json(result);
+    res.status(result.created ? 201 : 200).json(envelope(result));
   } catch (e) {
     next(e);
   }
@@ -289,9 +310,11 @@ router.post("/support/requests", async (req, res, next) => {
 router.get("/support/requests/:id", async (req, res, next) => {
   try {
     res.json(
-      await service.supportDetail(
-        principal(req),
-        parse(idSchema, req.params.id),
+      envelope(
+        await service.supportDetail(
+          principal(req),
+          parse(idSchema, req.params.id),
+        ),
       ),
     );
   } catch (e) {
@@ -301,7 +324,12 @@ router.get("/support/requests/:id", async (req, res, next) => {
 router.get("/reports/:childId", async (req, res, next) => {
   try {
     res.json(
-      await service.report(principal(req), parse(idSchema, req.params.childId)),
+      envelope(
+        await service.report(
+          principal(req),
+          parse(idSchema, req.params.childId),
+        ),
+      ),
     );
   } catch (e) {
     next(e);
@@ -310,7 +338,7 @@ router.get("/reports/:childId", async (req, res, next) => {
 router.get("/reports", async (req, res, next) => {
   try {
     const input = parse(reportQuerySchema, req.query);
-    res.json(await service.report(principal(req), input.childId));
+    res.json(envelope(await service.report(principal(req), input.childId)));
   } catch (e) {
     next(e);
   }
@@ -318,10 +346,12 @@ router.get("/reports", async (req, res, next) => {
 router.get("/teams/:teamId/progress", async (req, res, next) => {
   try {
     res.json(
-      await service.teamProgress(
-        principal(req),
-        parse(idSchema, req.params.teamId),
-        parse(idSchema, req.query.quarterId),
+      envelope(
+        await service.teamProgress(
+          principal(req),
+          parse(idSchema, req.params.teamId),
+          parse(idSchema, req.query.quarterId),
+        ),
       ),
     );
   } catch (e) {
