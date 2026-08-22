@@ -109,11 +109,21 @@ export class ParentService {
           typeof organizationId !== "string"
         )
           throw new NotFoundError();
+        const participant = await this.db
+          .doc(`participants/${participantId}`)
+          .get();
+        if (
+          !participant.exists ||
+          participant.get("organizationId") !== organizationId ||
+          participant.get("status") !== "active"
+        )
+          return null;
         return this.summary(participantId, organizationId, link.get("status"));
       }),
     );
     const search = input.search?.toLocaleLowerCase();
     const sorted = summaries
+      .filter((item): item is NonNullable<typeof item> => item !== null)
       .filter(
         (item) =>
           (!input.status || item.status === input.status) &&
