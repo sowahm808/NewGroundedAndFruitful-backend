@@ -97,6 +97,29 @@ export const participantCreateSchema = z
     guardianUserId: idSchema,
   })
   .strict();
+const participantSortAliases = {
+  updatedAt_desc: "-updatedAt",
+  updatedAt_asc: "updatedAt",
+} as const;
+export const participantListQuerySchema = z
+  .object({
+    organizationId: idSchema.optional(),
+    programId: idSchema.optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(25),
+    sort: z
+      .union([
+        z.enum(["updatedAt", "-updatedAt"]),
+        z.enum(["updatedAt_desc", "updatedAt_asc"]),
+      ])
+      .transform((sort) =>
+        sort in participantSortAliases
+          ? participantSortAliases[sort as keyof typeof participantSortAliases]
+          : (sort as "updatedAt" | "-updatedAt"),
+      )
+      .default("-updatedAt"),
+  })
+  .strict();
 export const participantUpdateSchema = z
   .object({
     displayName: name.optional(),

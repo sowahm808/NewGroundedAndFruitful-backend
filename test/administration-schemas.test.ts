@@ -3,6 +3,7 @@ import {
   consentCaptureSchema,
   invitationCreateSchema,
   participantCreateSchema,
+  participantListQuerySchema,
   resourceListQuerySchema,
   roleListQuerySchema,
   roleUpdateSchema,
@@ -75,6 +76,19 @@ describe("administration request contracts", () => {
 });
 
 describe("administration list query schemas", () => {
+  it("accepts and normalizes the frontend participant pagination query", () => {
+    expect(
+      participantListQuerySchema.parse({
+        page: "1",
+        pageSize: "25",
+        sort: "updatedAt_desc",
+      }),
+    ).toEqual({ page: 1, pageSize: 25, sort: "-updatedAt" });
+    expect(
+      participantListQuerySchema.parse({ sort: "updatedAt_asc" }).sort,
+    ).toBe("updatedAt");
+  });
+
   it("accepts the frontend roles pagination query without an organization", () => {
     expect(
       roleListQuerySchema.parse({

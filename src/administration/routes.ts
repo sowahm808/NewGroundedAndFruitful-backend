@@ -290,13 +290,14 @@ router.post(
 );
 router.get(
   "/participants",
-  run((req) =>
-    service.roster(
-      req.principal,
-      id(req.query.organizationId),
-      req.query.programId ? id(req.query.programId) : undefined,
-    ),
-  ),
+  run((req) => {
+    const query = schemas.participantListQuerySchema.safeParse(req.query);
+    if (!query.success)
+      throw new ValidationError("Invalid participant list query.", {
+        fieldErrors: query.error.flatten().fieldErrors,
+      });
+    return service.listParticipants(req.principal, query.data);
+  }),
 );
 router.patch(
   "/participants/:participantId",
