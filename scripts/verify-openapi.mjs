@@ -20,6 +20,8 @@ const required = {
   "/admin/quarters/{quarterId}/activate": ["post"],
   "/admin/quarters/{quarterId}/close": ["post"],
   "/admin/quarters/{quarterId}/archive": ["post"],
+  "/admin/participants": ["get", "post"],
+  "/admin/participants/{participantId}": ["get", "patch", "delete"],
   "/admin/bible-content/imports": ["post"],
   "/admin/bible-content/imports/{importId}": ["get"],
   "/admin/bible-content/imports/{importId}/items/{itemId}": ["patch"],
@@ -47,6 +49,7 @@ for (const schema of [
   "QuarterLifecycle",
   "QuarterResponse",
   "QuarterListResponse",
+  "ParticipantListResponse",
 ]) {
   if (!document.components?.schemas?.[schema])
     throw new Error(`OpenAPI is missing the ${schema} schema`);

@@ -7,6 +7,7 @@ import { AdministrationService } from "./service.js";
 import * as schemas from "./schemas.js";
 import { QuarterAdministrationService } from "./quarters.js";
 import bibleAdminRoutes from "../bible/admin-routes.js";
+import { requireCapability } from "../middleware/authorize.js";
 
 const router = Router(),
   service = new AdministrationService(db, auth),
@@ -285,21 +286,33 @@ router.post(
 );
 router.post(
   "/participants",
+  requireCapability("admin.participants.manage"),
   validateBody(schemas.participantCreateSchema),
   run((req) => service.createParticipant(req.principal, req.body), 201),
 );
 router.get(
   "/participants",
+  requireCapability("admin.participants.read"),
   run((req) =>
     service.roster(
       req.principal,
-      id(req.query.organizationId),
-      req.query.programId ? id(req.query.programId) : undefined,
+      query(
+        schemas.participantListQuerySchema.safeParse(req.query),
+        "Invalid participant list query.",
+      ),
     ),
+  ),
+);
+router.get(
+  "/participants/:participantId",
+  requireCapability("admin.participants.read"),
+  run((req) =>
+    service.participant(req.principal, id(req.params.participantId)),
   ),
 );
 router.patch(
   "/participants/:participantId",
+  requireCapability("admin.participants.manage"),
   validateBody(schemas.participantUpdateSchema),
   run((req) =>
     service.updateParticipant(
@@ -311,6 +324,7 @@ router.patch(
 );
 router.delete(
   "/participants/:participantId",
+  requireCapability("admin.participants.manage"),
   run((req) =>
     service.updateParticipant(
       req.principal,

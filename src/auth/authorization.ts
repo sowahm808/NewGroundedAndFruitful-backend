@@ -17,6 +17,8 @@ export interface Principal {
   personas?: readonly ProductPersona[];
   workspaceRoles?: readonly string[];
   activeWorkspaceId?: string;
+  activeOrganizationId?: string;
+  onboardingStatus?: string;
   organizationIds: readonly string[];
   /** Populated by authentication; optional only for legacy internal call sites. */
   memberships?: readonly ActiveMembership[];

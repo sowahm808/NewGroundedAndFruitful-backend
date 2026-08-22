@@ -254,6 +254,12 @@ export async function authenticate(
       personas,
       workspaceRoles,
       ...(activeWorkspaceId ? { activeWorkspaceId } : {}),
+      ...(activeMembership
+        ? { activeOrganizationId: activeMembership.organizationId }
+        : {}),
+      ...(typeof user.get("onboardingStatus") === "string"
+        ? { onboardingStatus: String(user.get("onboardingStatus")) }
+        : {}),
       platformRoles: resolved.platformRoles,
       organizationIds: resolved.organizationIds,
       memberships: resolved.memberships,

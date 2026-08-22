@@ -3,6 +3,7 @@ import {
   consentCaptureSchema,
   invitationCreateSchema,
   participantCreateSchema,
+  participantListQuerySchema,
   resourceListQuerySchema,
   roleListQuerySchema,
   roleUpdateSchema,
@@ -75,6 +76,20 @@ describe("administration request contracts", () => {
 });
 
 describe("administration list query schemas", () => {
+  it("rejects invalid participant query values with field-level schema errors", () => {
+    const result = participantListQuerySchema.safeParse({
+      page: "0",
+      pageSize: "101",
+      sort: "name",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success)
+      expect(result.error.flatten().fieldErrors).toMatchObject({
+        page: expect.any(Array),
+        pageSize: expect.any(Array),
+        sort: expect.any(Array),
+      });
+  });
   it("accepts the frontend roles pagination query without an organization", () => {
     expect(
       roleListQuerySchema.parse({

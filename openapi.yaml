@@ -1416,6 +1416,67 @@ paths:
               },
           }
         "422": { $ref: "#/components/responses/Validation" }
+  /admin/participants:
+    get:
+      tags: [Administration]
+      operationId: listAdminParticipants
+      summary: List participants in the authenticated active workspace
+      description: The active organization is server-resolved. A compatibility organizationId, when supplied, must match it.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 120 } }
+        - { name: status, in: query, schema: { type: string, minLength: 1 } }
+        - { name: teamId, in: query, schema: { type: string, minLength: 1 } }
+        - { name: programId, in: query, schema: { type: string, minLength: 1 } }
+        - { name: sort, in: query, schema: { type: string, enum: [updatedAt, -updatedAt], default: -updatedAt } }
+        - { name: organizationId, in: query, deprecated: true, description: Compatibility value that must equal the authenticated active organization., schema: { type: string, minLength: 1 } }
+      responses:
+        "200": { description: Paginated participants, content: { application/json: { schema: { $ref: "#/components/schemas/ParticipantListResponse" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+    post:
+      tags: [Administration]
+      operationId: createAdminParticipant
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "201": { description: Participant created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+  /admin/participants/{participantId}:
+    parameters:
+      - { name: participantId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Administration]
+      operationId: getAdminParticipant
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200": { description: Participant in the authenticated active workspace }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Administration]
+      operationId: updateAdminParticipant
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200": { description: Participant updated }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+    delete:
+      tags: [Administration]
+      operationId: archiveAdminParticipant
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200": { description: Participant archived }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /admin/quarters/{quarterId}:
     parameters:
       - { $ref: "#/components/parameters/QuarterId" }
@@ -2340,6 +2401,35 @@ components:
                       },
                   },
               }
+    AdminParticipant:
+      type: object
+      required: [id, organizationId, displayName, status]
+      properties:
+        id: { type: string }
+        organizationId: { type: string }
+        programId: { type: string }
+        activeTeamId: { type: string }
+        displayName: { type: string }
+        status: { type: string }
+        version: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+    ParticipantListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/AdminParticipant" } }
+            pagination:
+              type: object
+              required: [page, pageSize, total, totalPages]
+              properties:
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
     QuarterStatus: { type: string, enum: [draft, active, closed, archived] }
     QuarterAllowedAction:
       type: string

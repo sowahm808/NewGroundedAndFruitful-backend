@@ -30,6 +30,18 @@ export const resourceListQuerySchema = z
     sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
   })
   .strict();
+export const participantListQuerySchema = z
+  .object({
+    organizationId: idSchema.optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(25),
+    search: z.string().trim().min(1).max(120).optional(),
+    status: idSchema.optional(),
+    teamId: idSchema.optional(),
+    programId: idSchema.optional(),
+    sort: z.enum(["updatedAt", "-updatedAt"]).default("-updatedAt"),
+  })
+  .strict();
 export const ianaTimezoneSchema = z
   .string()
   .trim()

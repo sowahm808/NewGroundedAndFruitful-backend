@@ -4,6 +4,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
 import {
   requireAuthenticated,
+  requireCapability,
   requireOrganizationRole,
   requirePlatformSuperAdmin,
   type Principal,
@@ -32,6 +33,27 @@ export class AdministrationService {
   }
   private superAdmin(p: Principal | undefined, organizationId: string) {
     return requireOrganizationRole(p, organizationId, ["super_admin"]);
+  }
+  private participantActor(
+    p: Principal | undefined,
+    capability: "admin.participants.read" | "admin.participants.manage",
+    requestedOrganizationId?: string,
+  ) {
+    const actor = requireCapability(p, capability);
+    const organizationId = actor.activeOrganizationId;
+    if (
+      actor.onboardingStatus !== "complete" ||
+      !organizationId ||
+      (requestedOrganizationId !== undefined &&
+        requestedOrganizationId !== organizationId) ||
+      !actor.memberships?.some(
+        (membership) =>
+          membership.userId === actor.uid &&
+          membership.organizationId === organizationId,
+      )
+    )
+      throw new AuthorizationError();
+    return { actor, organizationId };
   }
   async resources(
     p: Principal | undefined,
@@ -491,7 +513,11 @@ export class AdministrationService {
   }
   async createParticipant(p: Principal | undefined, input: Data) {
     const oid = String(input.organizationId);
-    const actor = this.admin(p, oid);
+    const { actor } = this.participantActor(
+      p,
+      "admin.participants.manage",
+      oid,
+    );
     const ref = this.db.collection("participants").doc();
     await this.db.runTransaction((tx) => {
       tx.create(ref, {
@@ -535,7 +561,11 @@ export class AdministrationService {
     archive = false,
   ) {
     const oid = await this.participantOrganization(id);
-    const actor = this.admin(p, oid);
+    const { actor } = this.participantActor(
+      p,
+      "admin.participants.manage",
+      oid,
+    );
     await this.db.runTransaction(async (tx) => {
       const ref = this.db.doc(`participants/${id}`);
       const current = await tx.get(ref);
@@ -572,14 +602,90 @@ export class AdministrationService {
     });
     return { id };
   }
-  async roster(p: Principal | undefined, oid: string, programId?: string) {
-    this.admin(p, oid);
-    let query = this.db
+  async participant(p: Principal | undefined, id: string) {
+    const snap = await this.db.doc(`participants/${id}`).get();
+    if (!snap.exists) throw new NotFoundError();
+    this.participantActor(
+      p,
+      "admin.participants.read",
+      String(snap.get("organizationId")),
+    );
+    return { id: snap.id, ...snap.data() };
+  }
+  async roster(
+    p: Principal | undefined,
+    input: {
+      organizationId?: string | undefined;
+      page: number;
+      pageSize: number;
+      search?: string | undefined;
+      status?: string | undefined;
+      teamId?: string | undefined;
+      programId?: string | undefined;
+      sort: "updatedAt" | "-updatedAt";
+    },
+  ) {
+    const { organizationId: oid } = this.participantActor(
+      p,
+      "admin.participants.read",
+      input.organizationId,
+    );
+    let participantQuery = this.db
       .collection("participants")
       .where("organizationId", "==", oid);
-    if (programId) query = query.where("programId", "==", programId);
-    const snap = await query.get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (input.programId)
+      participantQuery = participantQuery.where(
+        "programId",
+        "==",
+        input.programId,
+      );
+    if (input.status)
+      participantQuery = participantQuery.where("status", "==", input.status);
+    if (input.teamId)
+      participantQuery = participantQuery.where(
+        "activeTeamId",
+        "==",
+        input.teamId,
+      );
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof value.toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : value instanceof Date
+          ? value.getTime()
+          : 0;
+    const normalizedSearch = input.search?.toLocaleLowerCase();
+    const results = (await participantQuery.get()).docs
+      .map<Data & { id: string }>((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter(
+        (participant) =>
+          !normalizedSearch ||
+          textValue(participant.displayName)
+            .toLocaleLowerCase()
+            .includes(normalizedSearch),
+      )
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (input.sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+    const total = results.length;
+    return {
+      items: results.slice(
+        (input.page - 1) * input.pageSize,
+        input.page * input.pageSize,
+      ),
+      pagination: {
+        page: input.page,
+        pageSize: input.pageSize,
+        total,
+        totalPages: Math.ceil(total / input.pageSize),
+      },
+    };
   }
   async createTeam(p: Principal | undefined, input: Data) {
     const oid = String(input.organizationId);
