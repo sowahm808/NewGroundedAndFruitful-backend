@@ -103,7 +103,41 @@ export const participantListQuerySchema = z
   })
   .strict();
 
+// in src/administration/schemas.ts
 
+export const teamListQuerySchema = z
+  .object({
+    organizationId: idSchema.optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(25),
+    status: z.enum(["active", "archived"]).optional(),
+    search: z.string().trim().max(100).optional(),
+    sort: z
+      .enum([
+        "updatedAt",
+        "-updatedAt",
+        "updatedAt_desc",
+        "updatedAt_asc",
+        "name",
+        "-name",
+        "name_asc",
+        "name_desc",
+      ])
+      .default("-updatedAt")
+      .transform((val): "-updatedAt" | "updatedAt" => {
+        switch (val) {
+          case "updatedAt":
+          case "updatedAt_asc":
+          case "name":
+          case "name_asc":
+            return "updatedAt";
+          default:
+            return "-updatedAt";
+        }
+      }),
+  })
+  .strict();
+  
 export const ianaTimezoneSchema = z
   .string()
   .trim()

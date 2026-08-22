@@ -271,10 +271,28 @@ router.post(
   validateBody(schemas.programCreateSchema),
   run((req) => service.createProgram(req.principal, req.body), 201),
 );
+// in src/administration/routes.ts
+
 router.get(
   "/teams",
-  run((req) => service.teams(req.principal, id(req.query.organizationId))),
+  run((req) => {
+    const query = schemas.teamListQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      throw new ValidationError("Invalid team list query.", {
+        fieldErrors: query.error.flatten().fieldErrors,
+      });
+    }
+
+    const orgId = query.data.organizationId ?? req.principal?.organizationIds?.[0];
+    if (!orgId) {
+      throw new ValidationError("Organization context is required.");
+    }
+
+    // Call service.teams or your paginated teams method
+    return service.teams(req.principal, orgId, query.data);
+  }),
 );
+
 router.get(
   "/teams/:teamId",
   run((req) => service.team(req.principal, id(req.params.teamId))),

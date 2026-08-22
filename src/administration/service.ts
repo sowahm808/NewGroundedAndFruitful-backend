@@ -757,13 +757,36 @@ export class AdministrationService {
   async team(p: Principal | undefined, id: string) {
     return this.scopedDocument(p, "teams", id);
   }
-  async teams(p: Principal | undefined, oid: string) {
+  async teams(
+    p: Principal | undefined,
+    oid: string,
+    query?: TeamListQueryInput,
+  ) {
     this.admin(p, oid);
-    const snap = await this.db
+    let q: FirebaseFirestore.Query = this.db
       .collection("teams")
-      .where("organizationId", "==", oid)
-      .get();
-    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      .where("organizationId", "==", oid);
+
+    if (query?.status) {
+      q = q.where("status", "==", query.status);
+    }
+
+    const snap = await q.get();
+    const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    const page = query?.page ?? 1;
+    const pageSize = query?.pageSize ?? 25;
+    const total = items.length;
+
+    return {
+      items,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    };
   }
   async assignTeamMember(
     p: Principal | undefined,
