@@ -6,7 +6,7 @@ const emptyStringAsUndefined = (value: unknown) =>
 const optionalWithDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(emptyStringAsUndefined, schema);
 
-const schema = z
+export const firebaseEnvSchema = z
   .object({
     NODE_ENV: optionalWithDefault(
       z.enum(["development", "test", "production"]).default("development"),
@@ -21,7 +21,14 @@ const schema = z
     FIREBASE_PROJECT_ID: z.string().min(1).default("grounded-fruitful-local"),
     FIREBASE_CLIENT_EMAIL: z.string().email().optional(),
     FIREBASE_PRIVATE_KEY: z.string().min(1).optional(),
-    FIREBASE_STORAGE_BUCKET: z.string().min(1).optional(),
+    FIREBASE_STORAGE_BUCKET: z
+      .string()
+      .trim()
+      .regex(
+        /^(?=.{3,222}$)[a-z0-9][a-z0-9._-]*[a-z0-9]$/,
+        "FIREBASE_STORAGE_BUCKET must be an exact Cloud Storage bucket name, not a URL.",
+      )
+      .optional(),
     ALLOWED_ORIGINS: z.string().default("http://localhost:4200"),
     CHILD_LOGIN_PEPPER: z
       .string()
@@ -36,6 +43,9 @@ const schema = z
     ),
     PROGRAM_TIMEZONE: optionalWithDefault(z.string().default("UTC")),
     MEMBERSHIP_ENFORCEMENT_MODE: optionalWithDefault(
+      z.enum(["compatibility", "strict"]).default("compatibility"),
+    ),
+    CHILD_CREDENTIAL_MIGRATION_MODE: optionalWithDefault(
       z.enum(["compatibility", "strict"]).default("compatibility"),
     ),
   })
@@ -68,7 +78,7 @@ const schema = z
         "CHILD_LOGIN_PEPPER",
         "CHILD_LOGIN_LOOKUP_SECRET",
       ]) {
-        if (!process.env[name]?.trim())
+        if (!String(value[name as keyof typeof value] ?? "").trim())
           context.addIssue({
             code: z.ZodIssueCode.custom,
             message: `${name} is required in production.`,
@@ -92,7 +102,7 @@ const schema = z
         });
     }
   });
-export const env = schema.parse(process.env);
+export const env = firebaseEnvSchema.parse(process.env);
 export const allowedOrigins = new Set(
   env.ALLOWED_ORIGINS.split(",")
     .map((v) => v.trim())

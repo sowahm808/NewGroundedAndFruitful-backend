@@ -3,11 +3,22 @@ import type { Firestore } from "firebase-admin/firestore";
 import { AuthenticationError, AuthorizationError } from "../shared/errors.js";
 import type { Role } from "./roles.js";
 import type { ActiveMembership } from "./policy.js";
+import type { PlatformRole } from "./claims.js";
+import type { ProductPersona } from "./capabilities.js";
 export type { Role } from "./roles.js";
 export interface Principal {
   uid: string;
   role: Role;
   roles: readonly Role[];
+  platformRoles?: readonly PlatformRole[];
+  baseRoles?: readonly Role[];
+  effectiveRoles?: readonly string[];
+  capabilities?: readonly string[];
+  personas?: readonly ProductPersona[];
+  workspaceRoles?: readonly string[];
+  activeWorkspaceId?: string;
+  activeOrganizationId?: string;
+  onboardingStatus?: string;
   organizationIds: readonly string[];
   /** Populated by authentication; optional only for legacy internal call sites. */
   memberships?: readonly ActiveMembership[];
@@ -34,10 +45,41 @@ export function requireAnyRole(
     throw new AuthorizationError();
   return a;
 }
+export function requireCapability(
+  p: Principal | undefined,
+  capability: string,
+): Principal {
+  const actor = requireAuthenticated(p);
+  if (!actor.capabilities?.includes(capability)) throw new AuthorizationError();
+  return actor;
+}
 export const requireAdmin = (p: Principal | undefined) =>
   requireAnyRole(p, ["admin", "super_admin"]);
 export const requireSuperAdmin = (p: Principal | undefined) =>
   requireRole(p, "super_admin");
+export const requirePlatformSuperAdmin = (p: Principal | undefined) =>
+  requireAuthenticated(p).platformRoles?.includes("super_admin")
+    ? requireAuthenticated(p)
+    : (() => {
+        throw new AuthorizationError();
+      })();
+
+/** Membership documents are the sole source of tenant scope. */
+export function requireOrganizationRole(
+  p: Principal | undefined,
+  organizationId: string,
+  roles: readonly Role[],
+): Principal {
+  const actor = requireAuthenticated(p);
+  const authorized = actor.memberships?.some(
+    (membership) =>
+      membership.userId === actor.uid &&
+      membership.organizationId === organizationId &&
+      membership.roles.some((role) => roles.includes(role)),
+  );
+  if (!authorized) throw new AuthorizationError();
+  return actor;
+}
 export async function requireParentOf(
   db: Firestore,
   p: Principal | undefined,

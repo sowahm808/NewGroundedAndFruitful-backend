@@ -9,12 +9,14 @@ function fixture(roles: unknown = ["parent"]) {
     set: vi.fn(),
   };
   const add = vi.fn().mockResolvedValue(undefined);
+  const membershipGet = vi.fn().mockResolvedValue({ docs: [] });
+  const where = vi.fn(() => ({ get: membershipGet }));
   const db = {
     doc: vi.fn((path: string) => ({ path })),
     runTransaction: vi.fn((callback: (value: typeof transaction) => unknown) =>
       Promise.resolve(callback(transaction)),
     ),
-    collection: vi.fn(() => ({ add })),
+    collection: vi.fn(() => ({ add, where })),
   };
   const auth = {
     getUser: vi
@@ -56,7 +58,8 @@ describe("operational role assignment", () => {
     );
     expect(auth.setCustomUserClaims).toHaveBeenCalledWith("uid-1", {
       theme: "dark",
-      roles: ["parent", "super_admin"],
+      platformRoles: ["super_admin"],
+      roles: ["super_admin"],
     });
   });
 
@@ -85,7 +88,7 @@ describe("operational role assignment", () => {
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(unknown.auth.getUser).not.toHaveBeenCalled();
 
-    const invalidStored = fixture(["owner"]);
+    const invalidStored = fixture(["root"]);
     await expect(
       assignRole(invalidStored.auth as never, invalidStored.db as never, {
         uid: "uid-1",

@@ -1,6 +1,43 @@
 # Backend production audit
 
-Audit date: 2026-08-19. This is a code and configuration audit, not a claim that every product workflow is implemented or production-ready.
+Audit date: 2026-08-20. This is a code and configuration audit, not a claim that every product workflow is implemented or production-ready. The authoritative DOCX is present at `docs/Grounded_Fruitful_Product_Flow_and_Contract_Final.docx`.
+
+## 2026-08-20 baseline and focused remediation
+
+The pre-edit baseline passed `npm ci`, lint, typecheck, 381 unit/API tests, and the TypeScript build. Emulator integration and rules commands were blocked by an npm registry HTTP 403 while resolving the pinned Firebase CLI; `npm audit` was blocked by the same registry policy; Docker was unavailable in the runner; and `openapi:validate` was absent. These are recorded limitations, not passes. No production migration, deployment, or staging verification was performed.
+
+This remediation makes membership expiry fail closed in both session and protected-route role resolution, preserves malformed membership rows as a legacy-fallback boundary, and constrains session onboarding output to `complete`, `role_required`, `pending`, `disabled`, and `session_error`. Suspended or disabled accounts receive a disabled session with no roles; authorization middleware continues to deny protected resources. Tests cover expired and malformed membership behavior. OpenAPI route drift, shared rate limiting, mentor/observer APIs, policy-blocked workflows, and the other partial/absent items below remain launch blockers.
+
+> Current evidence note: the older “Missing or incomplete features” narrative below records the repository's earlier audit stage and is retained as remediation history. The authoritative mounted-route state is now `route-inventory.md`; frontend differences are in `frontend-backend-contract-comparison.md`.
+
+## Current production classification
+
+- [x] Firebase ID tokens are checked with revocation enabled; active membership records are the normal role source, and an inactive/malformed membership prevents legacy fallback.
+- [x] Canonical roles are `child`, `parent`, `mentor`, `observer`, `admin`, and `super_admin`.
+- [x] Firestore and Storage remain deny-by-default for browser domain access; Admin SDK services must authorize independently.
+- [x] JSON is limited to 64 KiB, origins are allowlisted, Helmet and request IDs are enabled, errors are centrally sanitized, and private APIs use `no-store`.
+- [~] Parent and child APIs are mounted, but runtime Firestore parsing, opaque datastore cursors, index-backed bounded list queries, and complete emulator/API authorization coverage are incomplete.
+- [~] Parent child/detail, observation, support, report, and dashboard reads now require active relationships where child data is returned. Relationship scans are bounded, but production cardinality policy and cursor redesign remain required.
+- [ ] Mentor and observer routers are not mounted. The administration router exists at `/administration`, not the historical `/admin` path.
+- [ ] OpenAPI drift enforcement is absent. The specification documents most child routes but omits mounted administration and parent character/detail routes.
+- [!] The proposed parent character preference resource is blocked until product owners define ownership, mutability, quarter windows, and version semantics.
+- [!] Family-activity award completion is blocked: the mounted legacy completion does not atomically create a source completion and immutable point-rule/version snapshot. Do not connect the proposed Angular command to it.
+- [!] Safeguarding intake, academic-support closure authority, report exports/download audit, retention/deletion, and App Check enforcement require product/privacy/legal/infrastructure decisions.
+- [!] Rate limiting is process-local. Production must remain a single instance until a managed shared-store adapter, deployment mode, and failure policy are implemented and tested.
+
+## Baseline and verification evidence
+
+Before the current corrections, `npm ci`, lint, typecheck, 381 unit/API tests, and the production TypeScript build passed. The runner used Node 24.15.0 and emitted an engine warning because the repository intentionally targets Node 22; CI, Docker, `package.json`, and Render otherwise agree on Node 22. Rules/emulator and Docker checks were not part of that baseline command. An attempt to pin `firebase-tools@14.12.1` as a dev dependency received registry HTTP 403, so mandatory scripts retain their exact-version `npx` invocation rather than pretending the dependency was installed.
+
+The baseline exposed material evidence gaps: API tests mostly prove unauthenticated denial, broad child/admin workflows lack emulator tests, OpenAPI has no drift test, and several Firestore services use unchecked casts. Passing tests are not treated as production readiness.
+
+## Deployment, migration, and rollback
+
+No production migration or deployment was run. Membership and child-credential migration scripts are additive/dry-run capable, but no new data migration is required by the active-link and envelope corrections. Before release: export Firestore, establish baseline denial/error metrics, deploy only query-backed indexes, run migrations in staging dry-run mode, inspect collisions/ambiguities, run emulator/rules/API suites with two tenants, deploy in membership compatibility mode to one instance, and smoke-test before frontend enablement. Move to strict membership enforcement only after reconciliation.
+
+Rollback is a Render release rollback plus restoration of the prior frontend feature flag; do not delete observations, requests, completions, ledger entries, memberships, or audit events. Retain `MEMBERSHIP_ENFORCEMENT_MODE=compatibility` until active membership counts and ambiguity reports are approved. If authorization or index errors rise, disable the affected frontend workflow, roll back application code, and preserve additive documents for reconciliation.
+
+Required production environment is documented in `.env.example`: Firebase project/storage and explicit credentials, exact allowed origins, independent child-login pepper and lookup secret, application/node environment, membership mode, and an IANA `PROGRAM_TIMEZONE`. Emulator variables are forbidden in production. No App Check variable exists because monitor/enforce/exemption/rollback behavior has not been designed.
 
 ## Current architecture
 
@@ -60,3 +97,7 @@ The requested success envelope includes `success: true`, but adding it globally 
 This change applies only unambiguous hardening and does not invent product behavior. Deploy Firestore rules before exposing new client collections. Existing point-rule documents must contain `points` as a positive integer, `enabled`, and Firestore `effectiveFrom`; malformed rules become ineligible. Monitor `CONFLICT`, `FORBIDDEN`, and `POINT_RULE_INELIGIBLE` responses after rollout.
 
 Next, approve a non-destructive organization migration: add organization/program membership records, dual-read old and new fields, backfill in batches with checkpoints, verify counts and relationship invariants, deploy organization-scoped indexes, switch reads, and retain a rollback flag until validation completes. Then implement source-specific services that atomically create the completion and ledger award. Do not launch multi-tenant, leaderboard, safeguarding, or privacy-export features before their policies and emulator allow/deny tests are reviewed.
+
+## Current delivery evidence
+
+The command-by-command baseline, deployment order, rollback pointer, environment delta, and consolidated `[x]`/`[~]`/`[ ]`/`[!]` status are recorded in [`backend-delivery-report.md`](backend-delivery-report.md). The authoritative DOCX contract is absent. This absence and the unverified emulator, OpenAPI, security-advisory, and Docker gates prevent a production-readiness declaration.

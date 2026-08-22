@@ -69,6 +69,83 @@ describe("auth session bootstrap", () => {
     expect(bearerToken("bearer token-2")).toBe("token-2");
   });
 
+  it("projects a completed organization registration to the dashboard", async () => {
+    const { subject } = service({
+      profile: {
+        ...activeProfile,
+        registrationIntent: "organization",
+        onboardingStatus: "complete",
+        activeWorkspaceId: "org-1",
+      },
+      memberships: [
+        {
+          userId: "uid-1",
+          organizationId: "org-1",
+          workspaceId: "org-1",
+          roles: ["owner", "admin"],
+          workspaceRoles: ["owner", "admin"],
+          personas: ["admin"],
+          status: "active",
+        },
+      ],
+    });
+    await expect(subject.createSession("token-1")).resolves.toMatchObject({
+      registrationIntent: "organization",
+      onboardingStatus: "complete",
+      nextStep: "dashboard",
+      activeWorkspaceId: "org-1",
+      effectiveRoles: ["owner", "admin"],
+      workspaceRoles: ["owner", "admin"],
+      personas: ["admin"],
+      capabilities: expect.arrayContaining([
+        "admin.dashboard.read",
+        "admin.participants.read",
+        "admin.teams.read",
+        "admin.quarters.read",
+        "admin.bible_content.read",
+        "admin.reports.read",
+      ]),
+    });
+  });
+
+  it("keeps personal ownership separate from its parent persona and capabilities", async () => {
+    const { subject } = service({
+      profile: {
+        ...activeProfile,
+        registrationIntent: "personal",
+        onboardingStatus: "complete",
+        activeWorkspaceId: "personal-1",
+      },
+      memberships: [
+        {
+          userId: "uid-1",
+          organizationId: "personal-1",
+          workspaceId: "personal-1",
+          roles: ["owner"],
+          workspaceRoles: ["owner"],
+          personas: ["parent"],
+          status: "active",
+        },
+      ],
+    });
+    const session = await subject.createSession("token-1");
+    expect(session).toMatchObject({
+      workspaceRoles: ["owner"],
+      personas: ["parent"],
+      effectiveRoles: ["owner", "parent"],
+      capabilities: expect.arrayContaining([
+        "parent.children.read",
+        "support.requests.create",
+      ]),
+    });
+    expect(session.capabilities).not.toEqual(
+      expect.arrayContaining(["admin.quarters.manage"]),
+    );
+    expect(session.effectiveRoles).not.toEqual(
+      expect.arrayContaining(["admin", "super_admin"]),
+    );
+  });
+
   it.each(["child", "parent", "mentor", "observer", "admin", "super_admin"])(
     "returns canonical %s membership role",
     async (role) => {
@@ -84,11 +161,51 @@ describe("auth session bootstrap", () => {
     },
   );
 
+  it("scopes tenant super-admin capabilities to its active membership", async () => {
+    const session = await service({
+      memberships: [
+        {
+          ...membership("super_admin"),
+          workspaceRoles: ["super_admin"],
+        },
+      ],
+    }).subject.createSession("token-1");
+    expect(session.capabilities).toEqual(
+      expect.arrayContaining([
+        "admin.dashboard.read",
+        "admin.quarters.read",
+        "tenant.memberships.manage",
+        "tenant.audit.read",
+      ]),
+    );
+    expect(session.activeWorkspaceId).toBe("org-1");
+  });
+
+  it("recognizes an explicitly provisioned platform operator without tenant scope", async () => {
+    const { subject } = service({
+      profile: { ...activeProfile, roles: ["super_admin"] },
+      auth: {
+        customClaims: {
+          platformRoles: ["super_admin"],
+          roles: ["super_admin"],
+        },
+      },
+    });
+    await expect(subject.createSession("token-1")).resolves.toMatchObject({
+      platformRoles: ["super_admin"],
+      roles: ["super_admin"],
+      onboardingStatus: "complete",
+      memberships: [],
+    });
+  });
+
   it("creates a missing profile without assigning a default role", async () => {
     const { subject, users } = service({ profile: null });
     await expect(subject.createSession("token-1")).resolves.toMatchObject({
       roles: [],
-      onboardingStatus: "role_required",
+      onboardingStatus: "registration_intent_required",
+      nextStep: "choose_account_type",
+      accountStateReason: "registration_intent_missing",
     });
     expect(users.provisionUserProfile).toHaveBeenCalledWith(
       expect.not.objectContaining({ roles: expect.anything() }),
@@ -96,20 +213,40 @@ describe("auth session bootstrap", () => {
   });
 
   it("restores a legacy-only user in compatibility mode and marks migration", async () => {
-    const { subject } = service({ profile: { ...activeProfile, roles: ["parent", "parent"] } });
+    const { subject } = service({
+      profile: { ...activeProfile, roles: ["parent", "parent"] },
+    });
     await expect(subject.createSession("token-1")).resolves.toMatchObject({
       roles: ["parent"],
-      onboardingStatus: "complete",
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
       memberships: [],
       authorization: { source: "legacy_user_profile", migrationRequired: true },
     });
   });
 
+  it("resolves the sole active organization", async () => {
+    await expect(
+      service({ memberships: [membership("admin")] }).subject.createSession(
+        "t",
+      ),
+    ).resolves.toMatchObject({ activeOrganizationId: "org-1" });
+  });
+
   it("requires an active membership in strict mode", async () => {
-    const fixture = service({ profile: { ...activeProfile, roles: ["parent"] } });
-    const strict = new AuthSessionService(fixture.firebaseAuth as never, fixture.users as never, fixture.memberships as never, "strict");
+    const fixture = service({
+      profile: { ...activeProfile, roles: ["parent"] },
+    });
+    const strict = new AuthSessionService(
+      fixture.firebaseAuth as never,
+      fixture.users as never,
+      fixture.memberships as never,
+      "strict",
+    );
     await expect(strict.createSession("token-1")).resolves.toMatchObject({
-      roles: [], onboardingStatus: "role_required",
+      roles: [],
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
       authorization: { source: "none", migrationRequired: false },
     });
   });
@@ -117,14 +254,22 @@ describe("auth session bootstrap", () => {
   it("does not mark a child without participant context complete", async () => {
     const fixture = service({ memberships: [membership("child")] });
     fixture.memberships.hasActiveChildContext.mockResolvedValue(false);
-    await expect(fixture.subject.createSession("token")).resolves.toMatchObject({
-      onboardingStatus: "provisioning_required",
-    });
+    await expect(fixture.subject.createSession("token")).resolves.toMatchObject(
+      {
+        onboardingStatus: "role_required",
+        nextStep: "await_role_assignment",
+      },
+    );
   });
 
   it("keeps multiple membership roles and never trusts profile roles during repeated login", async () => {
     const profile = { ...activeProfile, roles: ["admin", "super_admin"] };
-    const { subject, users } = service({ profile, memberships: [{ ...membership("admin"), roles: ["admin", "super_admin"] }] });
+    const { subject, users } = service({
+      profile,
+      memberships: [
+        { ...membership("admin"), roles: ["admin", "super_admin"] },
+      ],
+    });
     await expect(
       subject.createSession("email-or-google-token"),
     ).resolves.toMatchObject({
@@ -143,41 +288,116 @@ describe("auth session bootstrap", () => {
       }).subject.createSession("t"),
     ).resolves.toMatchObject({
       roles: [],
-      onboardingStatus: "pending_approval",
+      onboardingStatus: "role_required",
+      nextStep: "await_role_assignment",
     });
     await expect(
       service({
         auth: { disabled: true },
         memberships: [membership("parent")],
       }).subject.createSession("t"),
-    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    ).resolves.toMatchObject({ roles: [], onboardingStatus: "disabled" });
     await expect(
       service({
         memberships: [membership("parent", "suspended")],
       }).subject.createSession("t"),
-    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    ).resolves.toMatchObject({ roles: [], onboardingStatus: "disabled" });
   });
 
-  it.each(["pending", "revoked"])("does not bypass a %s membership with stale legacy roles", async (status) => {
-    await expect(service({
-      profile: { ...activeProfile, roles: ["admin"] },
-      memberships: [membership("parent", status)],
-    }).subject.createSession("t")).resolves.toMatchObject({ roles: [], authorization: { source: "none" } });
+  it.each(["pending", "revoked"])(
+    "does not bypass a %s membership with stale legacy roles",
+    async (status) => {
+      await expect(
+        service({
+          profile: { ...activeProfile, roles: ["admin"] },
+          memberships: [membership("parent", status)],
+        }).subject.createSession("t"),
+      ).resolves.toMatchObject({
+        roles: [],
+        authorization: { source: "none" },
+      });
+    },
+  );
+
+  it("fails closed for an expired membership and does not use legacy roles", async () => {
+    await expect(
+      service({
+        profile: { ...activeProfile, roles: ["admin"] },
+        memberships: [
+          { ...membership("parent"), expiresAt: new Date(Date.now() - 1_000) },
+        ],
+      }).subject.createSession("t"),
+    ).resolves.toMatchObject({
+      roles: [],
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
+      memberships: [{ status: "expired" }],
+      authorization: { source: "none" },
+    });
+  });
+
+  it("fails closed for a malformed membership and does not use legacy roles", async () => {
+    await expect(
+      service({
+        profile: { ...activeProfile, roles: ["admin"] },
+        memberships: [
+          { userId: "uid-1", organizationId: "org-1", status: "invalid" },
+        ],
+      }).subject.createSession("t"),
+    ).resolves.toMatchObject({
+      roles: [],
+      onboardingStatus: "account_recovery_required",
+      nextStep: "account_recovery",
+      authorization: { source: "none" },
+    });
   });
 
   it("does not let a suspended membership bypass restriction with stale legacy roles", async () => {
-    await expect(service({
-      profile: { ...activeProfile, roles: ["admin"] },
-      memberships: [membership("parent", "suspended")],
-    }).subject.createSession("t")).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    await expect(
+      service({
+        profile: { ...activeProfile, roles: ["admin"] },
+        memberships: [membership("parent", "suspended")],
+      }).subject.createSession("t"),
+    ).resolves.toMatchObject({ roles: [], onboardingStatus: "disabled" });
+  });
+
+  it("fails closed when active memberships for one organization are ambiguous", async () => {
+    await expect(
+      service({
+        memberships: [membership("parent"), membership("admin")],
+      }).subject.createSession("t"),
+    ).resolves.toMatchObject({
+      roles: [],
+      onboardingStatus: "role_required",
+      nextStep: "await_role_assignment",
+      authorization: { source: "none" },
+    });
+  });
+
+  it("does not let a suspended tenant disable a separate active membership", async () => {
+    await expect(
+      service({
+        memberships: [
+          membership("parent", "suspended", "org-old"),
+          membership("parent", "active", "org-current"),
+        ],
+      }).subject.createSession("t"),
+    ).resolves.toMatchObject({
+      roles: ["parent"],
+      disabled: false,
+      onboardingStatus: "complete",
+    });
   });
 
   it("prefers active membership roles and rejects unknown legacy roles", async () => {
-    await expect(service({
-      profile: { ...activeProfile, roles: ["root", "admin"] },
-      memberships: [membership("parent")],
-    }).subject.createSession("t")).resolves.toMatchObject({
-      roles: ["parent"], authorization: { source: "membership", migrationRequired: false },
+    await expect(
+      service({
+        profile: { ...activeProfile, roles: ["root", "admin"] },
+        memberships: [membership("parent")],
+      }).subject.createSession("t"),
+    ).resolves.toMatchObject({
+      roles: ["parent"],
+      authorization: { source: "membership", migrationRequired: false },
     });
   });
 
@@ -197,6 +417,22 @@ describe("auth session bootstrap", () => {
       "uid-1",
       expect.objectContaining({ roles: ["parent"] }),
     );
+  });
+
+  it("does not rewrite synchronized stored claims merely because the token is stale", async () => {
+    const { subject, firebaseAuth } = service({
+      auth: { customClaims: { platformRoles: [], roles: ["parent"] } },
+      token: { roles: ["admin"] },
+      memberships: [membership("parent")],
+    });
+    await expect(subject.createSession("t")).resolves.toMatchObject({
+      roles: ["parent"],
+      claimSynchronization: {
+        status: "synchronized",
+        tokenRefreshRequired: false,
+      },
+    });
+    expect(firebaseAuth.setCustomUserClaims).not.toHaveBeenCalled();
   });
 
   it("returns a safe retry status when claim synchronization fails", async () => {

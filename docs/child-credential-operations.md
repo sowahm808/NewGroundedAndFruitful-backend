@@ -27,9 +27,11 @@ Collision/invalid reports exit 3 and require manual resolution. Copies retain `m
 ## Deployment and rollback order
 
 1. Configure independent high-entropy `CHILD_LOGIN_LOOKUP_SECRET` and `CHILD_LOGIN_PEPPER` on Render.
-2. Deploy indexes and wait for `childCredentials(participantId, disabled)` to become ready.
+2. Deploy indexes and wait for `childCredentials(participantId, disabled)` to become ready. Child-login throttling is stored in Firestore's `childLoginRateLimits` collection, so every application instance enforces one shared limit; configure a Firestore TTL policy on `expiresAt` to reclaim expired buckets.
 3. Deploy compatibility code, back up, dry-run, review collisions, migrate in bounded pages, and verify each page.
 4. Provision a canary and verify generic failures, lockout, active context, and token exchange. Monitor only redacted event IDs.
 5. For rollback, roll back code before configuration; remove only verified migration copies if needed and revoke affected refresh tokens. Never delete legacy sources.
+
+After every migrated page has been verified and the rollback window has elapsed, set `CHILD_CREDENTIAL_MIGRATION_MODE=strict`. Legacy plaintext-ID reads remain available only in compatibility mode; deletion is deliberately a separate, delayed, operator-approved action.
 
 PIN rotation, handle/family-code changes, disable, and re-enable use the service operations and revoke Firebase refresh tokens. Family-code rotation moves every family credential atomically. Deliver generated values through the one-time channel.

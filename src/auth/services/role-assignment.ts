@@ -13,6 +13,11 @@ import {
   parseCanonicalRoles,
   type Role,
 } from "../roles.js";
+import {
+  authorizedClaims,
+  effectiveRoles,
+  synchronizeClaims,
+} from "../claims.js";
 
 const inputSchema = z.object({
   uid: z.string().trim().min(1).max(128),
@@ -145,16 +150,23 @@ export async function assignRole(
     return { roles, changed };
   });
 
-  const currentClaims = authUser.customClaims ?? {};
-  const currentRoleClaims = parseClaimRoles(currentClaims.roles);
-  const claimsAlreadySynchronized =
-    currentRoleClaims.length === result.roles.length &&
-    result.roles.every((role) => currentRoleClaims.includes(role));
-  if (claimsAlreadySynchronized) return { ...result, claimsSynchronized: true };
   try {
-    await auth.setCustomUserClaims(input.uid, {
-      ...currentClaims,
-      roles: result.roles,
+    const membershipSnapshot = await db
+      .collection("memberships")
+      .where("userId", "==", input.uid)
+      .get();
+    const membershipRoles: Role[] = [];
+    for (const document of membershipSnapshot.docs) {
+      if (document.get("status") !== "active") continue;
+      for (const role of parseClaimRoles(document.get("roles")))
+        if (!membershipRoles.includes(role)) membershipRoles.push(role);
+    }
+    const platformRoles = result.roles.includes("super_admin")
+      ? (["super_admin"] as const)
+      : [];
+    await synchronizeClaims(auth, input.uid, (fresh) => {
+      const roles = effectiveRoles(platformRoles, membershipRoles);
+      return authorizedClaims(fresh.customClaims ?? {}, platformRoles, roles);
     });
     return { ...result, claimsSynchronized: true };
   } catch (error) {

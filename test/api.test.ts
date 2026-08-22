@@ -62,6 +62,7 @@ describe("HTTP safety contract", () => {
     expect(await response.json()).toMatchObject({
       status: "ok",
       environment: "test",
+      revision: "unknown",
     });
   });
 
@@ -71,6 +72,7 @@ describe("HTTP safety contract", () => {
     expect(await response.json()).toMatchObject({
       status: "ok",
       environment: "test",
+      revision: "unknown",
     });
     expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(response.headers.get("x-powered-by")).toBeNull();
@@ -87,6 +89,7 @@ describe("HTTP safety contract", () => {
   it("requires authentication for every parent workflow", async () => {
     for (const path of [
       "dashboard",
+      "notifications",
       "children",
       "observations",
       "academic-support/configuration",
@@ -107,11 +110,175 @@ describe("HTTP safety contract", () => {
       error: { code: "AUTHENTICATION_REQUIRED", requestId: expect.any(String) },
     });
   });
+  it("protects the organization administration API", async () => {
+    const response = await fetch(
+      `${base}/api/v1/administration/participants?organizationId=org-1`,
+    );
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("accepts the frontend admin participant list query contract", async () => {
+    const response = await fetch(
+      `${base}/api/v1/admin/participants?page=1&pageSize=25&sort=updatedAt_desc`,
+    );
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(422);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("publishes the frontend admin users route rather than returning 404", async () => {
+    const response = await fetch(
+      `${base}/api/v1/admin/users?page=1&pageSize=25&sort=-updatedAt`,
+    );
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("publishes the nested Bible content import route", async () => {
+    const response = await fetch(`${base}/api/v1/admin/bible-content/imports`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(415);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "BIBLE_IMPORT_FILE_INVALID" },
+    });
+  });
+  it("parses the documented Bible import text and file part names", async () => {
+    const form = new FormData();
+    form.set("organizationId", "org-1");
+    form.set("quarterId", "quarter-1");
+    form.set("title", "Quarter 1 Bible Quiz");
+    const docxType =
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    form.set(
+      "quizFile",
+      new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], {
+        type: docxType,
+      }),
+      "quiz.docx",
+    );
+    form.set(
+      "answerKeyFile",
+      new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], {
+        type: docxType,
+      }),
+      "answers.docx",
+    );
+    const response = await fetch(`${base}/api/v1/admin/bible-content/imports`, {
+      method: "POST",
+      body: form,
+    });
+    // Passing multipart validation reaches the established authorization gate.
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("returns fieldErrors for missing multipart import parts", async () => {
+    const form = new FormData();
+    form.set("organizationId", "org-1");
+    form.set("title", "Quarter 1 Bible Quiz");
+    const response = await fetch(`${base}/api/v1/admin/bible-content/imports`, {
+      method: "POST",
+      body: form,
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "VALIDATION_ERROR",
+        fieldErrors: {
+          quarterId: expect.any(Array),
+          quizFile: ["quizFile is required."],
+          answerKeyFile: ["answerKeyFile is required."],
+        },
+      },
+    });
+  });
+  it("publishes the authenticated organization onboarding route", async () => {
+    const response = await fetch(`${base}/api/v1/onboarding/organization`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Grounded & Fruitful",
+        slug: "grounded-fruitful",
+        timezone: "UTC",
+      }),
+    });
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("publishes the frontend personal onboarding route", async () => {
+    const response = await fetch(`${base}/api/v1/onboarding/personal`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ timezone: "UTC" }),
+    });
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("publishes the frontend admin memberships route rather than returning 404", async () => {
+    const response = await fetch(
+      `${base}/api/v1/admin/memberships?page=1&pageSize=25&sort=-updatedAt`,
+    );
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("publishes the paginated frontend admin roles route rather than returning 422", async () => {
+    const response = await fetch(
+      `${base}/api/v1/admin/roles?page=1&pageSize=25&sort=-updatedAt`,
+    );
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(422);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
   it("requires a token for auth session provisioning", async () => {
     const response = await fetch(`${base}/api/auth/session`, {
       method: "POST",
     });
     expect(response.status).toBe(401);
+  });
+  it("publishes the registration-intent compatibility route", async () => {
+    const response = await fetch(`${base}/api/v1/auth/registration-intent`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ intent: "organization" }),
+    });
+    expect(response.status).toBe(401);
+    expect(response.status).not.toBe(404);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+  it("does not let the application-level origin guard intercept registration intent", async () => {
+    const response = await fetch(`${base}/api/v1/auth/registration-intent`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://new-registration-client.example",
+      },
+      body: JSON.stringify({ intent: "organization" }),
+    });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
   });
   it("requires a token for GET session bootstrap", async () => {
     const response = await fetch(`${base}/api/v1/auth/session`);
@@ -144,9 +311,11 @@ describe("HTTP safety contract", () => {
     expect(response.status).toBe(422);
     expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(await response.json()).toMatchObject({
-      code: "validation_error",
-      requestId: expect.any(String),
-      details: { fieldErrors: { pin: expect.any(Array) } },
+      error: {
+        code: "VALIDATION_ERROR",
+        requestId: expect.any(String),
+        fieldErrors: { pin: expect.any(Array) },
+      },
     });
   });
   it("returns 404 rather than authenticating unknown routes", async () => {

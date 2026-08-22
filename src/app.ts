@@ -10,8 +10,18 @@ import participantRoutes from "./participants/routes/index.js";
 import pointRoutes from "./points/routes/index.js";
 import parentRoutes from "./parent/routes/index.js";
 import childRoutes from "./child/routes/index.js";
+import administrationRoutes from "./administration/routes.js";
+import configurationRoutes from "./configuration/routes.js";
+import mentorRoutes from "./mentor/routes.js";
+import observerRoutes from "./observer/routes.js";
+import notificationRoutes from "./notifications/routes.js";
+import reportRoutes from "./reports/routes.js";
+import onboardingRoutes from "./onboarding/routes.js";
 import { env } from "./config/env.js";
-import { authenticate } from "./middleware/authentication.js";
+import {
+  authenticate,
+  requireFirebaseAuthentication,
+} from "./middleware/authentication.js";
 import { cors } from "./middleware/cors.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import { requestContext } from "./middleware/request.js";
@@ -21,10 +31,42 @@ import {
   InternalError,
   NotFoundError,
   RateLimitError,
+  ServiceUnavailableError,
 } from "./shared/errors.js";
 import { logger } from "./shared/logger.js";
+import { storageReadiness } from "./config/storage-readiness.js";
 
 export const app = express();
+
+export const normalizeRequestError = (error: unknown): AppError => {
+  if (error instanceof AppError) return error;
+  const providerCode =
+    error && typeof error === "object" && "code" in error
+      ? String(error.code)
+      : "";
+  const dependencyFailure = new Set([
+    "4",
+    "8",
+    "10",
+    "13",
+    "14",
+    "deadline-exceeded",
+    "resource-exhausted",
+    "aborted",
+    "internal",
+    "unavailable",
+    "firestore/deadline-exceeded",
+    "firestore/resource-exhausted",
+    "firestore/aborted",
+    "firestore/internal",
+    "firestore/unavailable",
+  ]).has(providerCode.toLowerCase());
+  return dependencyFailure
+    ? new ServiceUnavailableError(
+        "A required data service is temporarily unavailable.",
+      )
+    : new InternalError();
+};
 
 app.disable("x-powered-by");
 
@@ -50,6 +92,8 @@ app.use(express.json({ limit: "64kb" }));
 const healthResponse = {
   status: "ok",
   environment: env.NODE_ENV,
+  revision:
+    process.env.RENDER_GIT_COMMIT ?? process.env.GIT_COMMIT_SHA ?? "unknown",
 } as const;
 
 /*
@@ -64,13 +108,19 @@ app.get("/", (_req, res) => {
   res.status(200).json(healthResponse);
 });
 
-app.get("/health", (_req, res) => {
-  res.status(200).json(healthResponse);
-});
+const readiness = (_req: Request, res: Response) => {
+  const dependency = storageReadiness();
+  const ready = env.APP_ENV !== "production" || dependency.status === "ready";
+  res.status(ready ? 200 : 503).json({
+    ...healthResponse,
+    status: ready ? "ok" : "unavailable",
+    dependencies: { bibleImportStorage: { status: dependency.status } },
+  });
+};
 
-app.get("/api/v1/health", (_req, res) => {
-  res.status(200).json(healthResponse);
-});
+app.get("/health", readiness);
+
+app.get("/api/v1/health", readiness);
 
 /*
  * Do not expose internal API documentation in production unless it is
@@ -114,6 +164,15 @@ app.use(rateLimit(60_000, 120));
  * Remove it after consumers migrate to /api/v1/auth.
  */
 app.use("/api/auth", privateResponse, authRoutes);
+// Canonical first-organization bootstrap route. Mount this before the general
+// auth router so it receives identity-only authentication rather than the
+// role-resolving application policy used by established accounts.
+app.use(
+  "/api/v1/auth/onboarding",
+  privateResponse,
+  requireFirebaseAuthentication,
+  onboardingRoutes,
+);
 app.use("/api/v1/auth", privateResponse, authRoutes);
 
 /*
@@ -129,6 +188,39 @@ app.use(
 app.use("/api/v1/points", privateResponse, authenticate, pointRoutes);
 app.use("/api/v1/parent", privateResponse, authenticate, parentRoutes);
 app.use("/api/v1/child", privateResponse, authenticate, childRoutes);
+app.use("/api/v1/mentor", privateResponse, authenticate, mentorRoutes);
+app.use("/api/v1/observer", privateResponse, authenticate, observerRoutes);
+app.use(
+  "/api/v1/notifications",
+  privateResponse,
+  authenticate,
+  notificationRoutes,
+);
+app.use("/api/v1/reports", privateResponse, authenticate, reportRoutes);
+app.use("/api/v1/admin/reports", privateResponse, authenticate, reportRoutes);
+// Compatibility route for clients released against the original path. It uses
+// the same identity-only bootstrap policy as the canonical auth route.
+app.use(
+  "/api/v1/onboarding",
+  privateResponse,
+  requireFirebaseAuthentication,
+  onboardingRoutes,
+);
+app.use(
+  "/api/v1/administration",
+  privateResponse,
+  authenticate,
+  administrationRoutes,
+);
+// Keep the public admin contract aligned with the frontend while the longer
+// `/administration` namespace remains available to existing consumers.
+app.use("/api/v1/admin", privateResponse, authenticate, administrationRoutes);
+app.use(
+  "/api/v1/configuration",
+  privateResponse,
+  authenticate,
+  configurationRoutes,
+);
 
 app.use((_req, _res, next) => {
   next(new NotFoundError());
@@ -145,7 +237,7 @@ app.use(
       return;
     }
 
-    const safeError = error instanceof AppError ? error : new InternalError();
+    const safeError = normalizeRequestError(error);
 
     const logContext = {
       requestId: req.requestId,
@@ -169,21 +261,21 @@ app.use(
     if (safeError instanceof RateLimitError)
       res.setHeader("retry-after", String(safeError.retryAfterSeconds));
     const body = {
-      code: safeError.code.toLowerCase(),
+      code: safeError.code,
       message: safeError.status === 401 ? "Sign-in failed" : safeError.message,
       requestId: req.requestId,
-      ...(safeError.details ? { details: safeError.details } : {}),
     };
-    const fieldErrors =
+    const errorDetails =
       safeError.details &&
       typeof safeError.details === "object" &&
       "fieldErrors" in safeError.details
-        ? { fieldErrors: safeError.details.fieldErrors }
+        ? {
+            fieldErrors: safeError.details.fieldErrors,
+            ...("details" in safeError.details
+              ? { details: safeError.details.details }
+              : {}),
+          }
         : {};
-    // Keep the old nested member during the version-one envelope migration.
-    res.status(safeError.status).json({
-      ...body,
-      error: { ...body, code: safeError.code, ...fieldErrors },
-    });
+    res.status(safeError.status).json({ error: { ...body, ...errorDetails } });
   },
 );

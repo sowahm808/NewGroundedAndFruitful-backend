@@ -30,9 +30,16 @@ export const childQuerySchema = listSchema.pick({
   status: true,
   search: true,
 });
-export const observationQuerySchema = listSchema
-  .omit({ status: true })
-  .extend({ childId: optionalQueryString(idSchema.optional()) });
+export const notificationQuerySchema = listSchema.pick({
+  limit: true,
+  cursor: true,
+});
+export const observationQuerySchema = listSchema.omit({ status: true }).extend({
+  childId: optionalQueryString(idSchema.optional()),
+  status: optionalQueryString(
+    z.enum(["pending", "approved", "rejected"]).optional(),
+  ),
+});
 export const supportListQuerySchema = listSchema.omit({ status: true }).extend({
   childId: optionalQueryString(idSchema.optional()),
   status: optionalQueryString(
@@ -63,3 +70,22 @@ export const supportRequestSchema = z.object({
   subject: z.string().trim().min(3).max(120),
   description: z.string().trim().min(20).max(2000),
 });
+
+export const characterQuerySchema = z.object({
+  childId: idSchema,
+  quarterId: idSchema,
+});
+export const characterPatchSchema = characterSelectionSchema.extend({
+  expectedVersion: z.number().int().min(0),
+});
+export const familyActivityQuerySchema = listSchema
+  .pick({ limit: true, cursor: true, search: true })
+  .extend({ childId: idSchema });
+export const familyCompletionCommandSchema = z.object({ childId: idSchema });
+export const reportQuerySchema = z.object({ childId: idSchema });
+export const idempotencyKeySchema = z
+  .string()
+  .trim()
+  .min(8)
+  .max(128)
+  .regex(/^[A-Za-z0-9._:-]+$/);

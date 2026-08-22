@@ -1,14 +1,20 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { db } from "../../config/firebase.js";
-import { requireAnyRole } from "../../middleware/authorize.js";
+import { requireCapability } from "../../middleware/authorize.js";
 import { ValidationError } from "../../shared/errors.js";
 import {
+  characterPatchSchema,
+  characterQuerySchema,
   characterSelectionSchema,
   childQuerySchema,
-  familyCompletionSchema,
+  familyActivityQuerySchema,
+  familyCompletionCommandSchema,
   idSchema,
+  idempotencyKeySchema,
   observationSchema,
   observationQuerySchema,
+  notificationQuerySchema,
+  reportQuerySchema,
   supportListQuerySchema,
   supportRequestSchema,
 } from "../schemas.js";
@@ -16,8 +22,8 @@ import { ParentService } from "../service.js";
 
 const router = Router();
 const service = new ParentService(db);
-router.use(requireAnyRole("parent"));
-const principal = (req: Express.Request) => req.principal!;
+router.use(requireCapability("parent.children.read"));
+const principal = (req: Request) => req.principal!;
 const parse = <T>(
   schema: {
     safeParse(
@@ -33,10 +39,25 @@ const parse = <T>(
     throw new ValidationError("Invalid request.", result.error.flatten());
   return result.data;
 };
+const idempotencyKey = (req: Request) =>
+  parse(idempotencyKeySchema, req.headers["idempotency-key"]);
+const envelope = <T>(data: T) => ({ data });
 
 router.get("/dashboard", async (req, res, next) => {
   try {
-    res.json(await service.dashboard(principal(req)));
+    res.json(envelope(await service.dashboard(principal(req))));
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/notifications", async (req, res, next) => {
+  try {
+    res.json(
+      await service.notifications(
+        principal(req),
+        parse(notificationQuerySchema, req.query),
+      ),
+    );
   } catch (e) {
     next(e);
   }
@@ -56,7 +77,12 @@ router.get("/children", async (req, res, next) => {
 router.get("/children/:childId", async (req, res, next) => {
   try {
     res.json(
-      await service.child(principal(req), parse(idSchema, req.params.childId)),
+      envelope(
+        await service.child(
+          principal(req),
+          parse(idSchema, req.params.childId),
+        ),
+      ),
     );
   } catch (e) {
     next(e);
@@ -76,14 +102,12 @@ router.get("/observations", async (req, res, next) => {
 });
 router.post("/observations", async (req, res, next) => {
   try {
-    res
-      .status(201)
-      .json(
-        await service.createObservation(
-          principal(req),
-          parse(observationSchema, req.body),
-        ),
-      );
+    const result = await service.createObservation(
+      principal(req),
+      parse(observationSchema, req.body),
+      idempotencyKey(req),
+    );
+    res.status(result.created ? 201 : 200).json(envelope(result));
   } catch (e) {
     next(e);
   }
@@ -91,7 +115,12 @@ router.post("/observations", async (req, res, next) => {
 router.get("/observations/:id", async (req, res, next) => {
   try {
     res.json(
-      await service.observation(principal(req), parse(idSchema, req.params.id)),
+      envelope(
+        await service.observation(
+          principal(req),
+          parse(idSchema, req.params.id),
+        ),
+      ),
     );
   } catch (e) {
     next(e);
@@ -104,15 +133,43 @@ router.get("/character/qualities", async (req, res, next) => {
     next(e);
   }
 });
+router.get("/character", async (req, res, next) => {
+  try {
+    const input = parse(characterQuerySchema, req.query);
+    res.json(
+      envelope(
+        await service.selection(principal(req), input.childId, input.quarterId),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+router.patch("/character", async (req, res, next) => {
+  try {
+    res.json(
+      envelope(
+        await service.setSelection(
+          principal(req),
+          parse(characterPatchSchema, req.body),
+        ),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
 router.get(
   "/character/selections/:childId/:quarterId",
   async (req, res, next) => {
     try {
       res.json(
-        await service.selection(
-          principal(req),
-          parse(idSchema, req.params.childId),
-          parse(idSchema, req.params.quarterId),
+        envelope(
+          await service.selection(
+            principal(req),
+            parse(idSchema, req.params.childId),
+            parse(idSchema, req.params.quarterId),
+          ),
         ),
       );
     } catch (e) {
@@ -123,9 +180,11 @@ router.get(
 router.put("/character/selections", async (req, res, next) => {
   try {
     res.json(
-      await service.setSelection(
-        principal(req),
-        parse(characterSelectionSchema, req.body),
+      envelope(
+        await service.setSelection(
+          principal(req),
+          parse(characterSelectionSchema, req.body),
+        ),
       ),
     );
   } catch (e) {
@@ -140,19 +199,35 @@ router.get("/family-activities", async (req, res, next) => {
     next(e);
   }
 });
-router.post("/family-activities/completions", async (req, res, next) => {
+router.get("/family/activities", async (req, res, next) => {
   try {
-    const body = parse(familyCompletionSchema, req.body);
-    const result = await service.completeFamilyActivity(
-      principal(req),
-      body.childId,
-      body.activityId,
+    const input = parse(familyActivityQuerySchema, req.query);
+    res.json(
+      await service.familyActivities(principal(req), input.childId, input),
     );
-    res.status(result.created ? 201 : 200).json(result);
   } catch (e) {
     next(e);
   }
 });
+router.post(
+  "/family/activities/:activityId/completions",
+  async (req, res, next) => {
+    try {
+      // The deterministic activity/child document is the idempotency boundary;
+      // the header is still required so clients never accidentally issue an unsafe retry.
+      idempotencyKey(req);
+      const input = parse(familyCompletionCommandSchema, req.body);
+      const result = await service.completeFamilyActivity(
+        principal(req),
+        input.childId,
+        parse(idSchema, req.params.activityId),
+      );
+      res.status(result.created ? 201 : 200).json(envelope(result));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 // Compatibility endpoint used by the academic-support request form. Academic
 // support configuration is currently the set of active, tenant-scoped support
 // categories, so keep both URLs backed by the same service method.
@@ -177,14 +252,12 @@ router.get("/academic-support/requests", async (req, res, next) => {
 });
 router.post("/academic-support/requests", async (req, res, next) => {
   try {
-    res
-      .status(201)
-      .json(
-        await service.createSupport(
-          principal(req),
-          parse(supportRequestSchema, req.body),
-        ),
-      );
+    const result = await service.createSupport(
+      principal(req),
+      parse(supportRequestSchema, req.body),
+      idempotencyKey(req),
+    );
+    res.status(result.created ? 201 : 200).json(envelope(result));
   } catch (e) {
     next(e);
   }
@@ -192,9 +265,11 @@ router.post("/academic-support/requests", async (req, res, next) => {
 router.get("/academic-support/requests/:requestId", async (req, res, next) => {
   try {
     res.json(
-      await service.supportDetail(
-        principal(req),
-        parse(idSchema, req.params.requestId),
+      envelope(
+        await service.supportDetail(
+          principal(req),
+          parse(idSchema, req.params.requestId),
+        ),
       ),
     );
   } catch (e) {
@@ -222,14 +297,12 @@ router.get("/support/requests", async (req, res, next) => {
 });
 router.post("/support/requests", async (req, res, next) => {
   try {
-    res
-      .status(201)
-      .json(
-        await service.createSupport(
-          principal(req),
-          parse(supportRequestSchema, req.body),
-        ),
-      );
+    const result = await service.createSupport(
+      principal(req),
+      parse(supportRequestSchema, req.body),
+      idempotencyKey(req),
+    );
+    res.status(result.created ? 201 : 200).json(envelope(result));
   } catch (e) {
     next(e);
   }
@@ -237,9 +310,11 @@ router.post("/support/requests", async (req, res, next) => {
 router.get("/support/requests/:id", async (req, res, next) => {
   try {
     res.json(
-      await service.supportDetail(
-        principal(req),
-        parse(idSchema, req.params.id),
+      envelope(
+        await service.supportDetail(
+          principal(req),
+          parse(idSchema, req.params.id),
+        ),
       ),
     );
   } catch (e) {
@@ -249,8 +324,21 @@ router.get("/support/requests/:id", async (req, res, next) => {
 router.get("/reports/:childId", async (req, res, next) => {
   try {
     res.json(
-      await service.report(principal(req), parse(idSchema, req.params.childId)),
+      envelope(
+        await service.report(
+          principal(req),
+          parse(idSchema, req.params.childId),
+        ),
+      ),
     );
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/reports", async (req, res, next) => {
+  try {
+    const input = parse(reportQuerySchema, req.query);
+    res.json(envelope(await service.report(principal(req), input.childId)));
   } catch (e) {
     next(e);
   }
@@ -258,10 +346,12 @@ router.get("/reports/:childId", async (req, res, next) => {
 router.get("/teams/:teamId/progress", async (req, res, next) => {
   try {
     res.json(
-      await service.teamProgress(
-        principal(req),
-        parse(idSchema, req.params.teamId),
-        parse(idSchema, req.query.quarterId),
+      envelope(
+        await service.teamProgress(
+          principal(req),
+          parse(idSchema, req.params.teamId),
+          parse(idSchema, req.query.quarterId),
+        ),
       ),
     );
   } catch (e) {

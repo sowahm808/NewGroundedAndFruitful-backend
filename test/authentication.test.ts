@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { AuthorizationError } from "../src/shared/errors.js";
+import {
+  AccountDisabledError,
+  AuthorizationError,
+} from "../src/shared/errors.js";
 import { isRole, resolvePrincipal } from "../src/middleware/authentication.js";
 
 function firestore(
@@ -10,7 +13,10 @@ function firestore(
   const query = {
     where: vi.fn(),
     get: vi.fn().mockResolvedValue({
-      docs: memberships.map((data, index) => ({ id: `membership-${String(index)}`, data: () => data })),
+      docs: memberships.map((data, index) => ({
+        id: `membership-${String(index)}`,
+        data: () => data,
+      })),
     }),
   };
   query.where.mockReturnValue(query);
@@ -42,7 +48,11 @@ describe("server-authoritative authentication role resolution", () => {
         db as never,
         { uid: "parent-1", roles: ["admin"] } as never,
       ),
-    ).resolves.toMatchObject({ roles: ["parent"], organizationIds: ["org-1"], memberships: [{ organizationId: "org-1", status: "active", version: 1 }] });
+    ).resolves.toMatchObject({
+      roles: ["parent"],
+      organizationIds: ["org-1"],
+      memberships: [{ organizationId: "org-1", status: "active", version: 1 }],
+    });
   });
   it("authorizes an active membership before an optional profile is provisioned", async () => {
     const db = firestore(undefined, [
@@ -74,13 +84,46 @@ describe("server-authoritative authentication role resolution", () => {
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
+  it("allows a roleless identity only at the explicit registration boundary", async () => {
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "active" }) as never,
+        { uid: "new-user" } as never,
+        "strict",
+        true,
+      ),
+    ).resolves.toMatchObject({
+      roles: [],
+      memberships: [],
+      organizationIds: [],
+    });
+  });
+  it("returns the stable disabled-account policy error", async () => {
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "disabled" }) as never,
+        { uid: "disabled-user" } as never,
+        "strict",
+        true,
+      ),
+    ).rejects.toBeInstanceOf(AccountDisabledError);
+  });
   it("authorizes a transitional profile role without membership only in compatibility mode", async () => {
     await expect(
       resolvePrincipal(
-        firestore({ status: "active", roles: ["parent"], organizationIds: ["org-1"] }) as never,
+        firestore({
+          status: "active",
+          roles: ["parent"],
+          organizationIds: ["org-1"],
+        }) as never,
         { uid: "parent-1" } as never,
       ),
-    ).resolves.toMatchObject({ roles: ["parent"], organizationIds: ["org-1"], memberships: [], authorizationSource: "legacy_user_profile" });
+    ).resolves.toMatchObject({
+      roles: ["parent"],
+      organizationIds: ["org-1"],
+      memberships: [],
+      authorizationSource: "legacy_user_profile",
+    });
   });
   it("does not invent global organization scope for a legacy super-admin", async () => {
     await expect(
@@ -88,19 +131,64 @@ describe("server-authoritative authentication role resolution", () => {
         firestore({ status: "active", roles: ["super_admin"] }) as never,
         { uid: "root-1" } as never,
       ),
-    ).resolves.toMatchObject({ roles: ["super_admin"], organizationIds: [], memberships: [] });
+    ).resolves.toMatchObject({
+      roles: ["super_admin"],
+      organizationIds: [],
+      memberships: [],
+    });
   });
   it("strict mode rejects a legacy-only principal", async () => {
-    await expect(resolvePrincipal(
-      firestore({ status: "active", roles: ["parent"] }) as never,
-      { uid: "parent-1" } as never,
-      "strict",
-    )).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "active", roles: ["parent"] }) as never,
+        { uid: "parent-1" } as never,
+        "strict",
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
-  it.each(["pending", "suspended", "revoked"])("does not fall back when a %s membership exists", async (status) => {
-    await expect(resolvePrincipal(
-      firestore({ status: "active", roles: ["parent"] }, [{ userId: "parent-1", roles: ["parent"], status }]) as never,
-      { uid: "parent-1" } as never,
-    )).rejects.toBeInstanceOf(AuthorizationError);
+  it.each(["pending", "suspended", "revoked"])(
+    "does not fall back when a %s membership exists",
+    async (status) => {
+      await expect(
+        resolvePrincipal(
+          firestore({ status: "active", roles: ["parent"] }, [
+            { userId: "parent-1", roles: ["parent"], status },
+          ]) as never,
+          { uid: "parent-1" } as never,
+        ),
+      ).rejects.toBeInstanceOf(AuthorizationError);
+    },
+  );
+  it("rejects an expired active membership without falling back", async () => {
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "active", roles: ["admin"] }, [
+          {
+            userId: "parent-1",
+            organizationId: "org-1",
+            roles: ["parent"],
+            status: "active",
+            version: 1,
+            expiresAt: new Date(Date.now() - 1_000),
+          },
+        ]) as never,
+        { uid: "parent-1" } as never,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+  it("rejects duplicate active memberships for the same organization", async () => {
+    const memberships = ["parent", "admin"].map((role) => ({
+      userId: "user-1",
+      organizationId: "org-1",
+      roles: [role],
+      status: "active",
+      version: 1,
+    }));
+    await expect(
+      resolvePrincipal(
+        firestore({ status: "active" }, memberships) as never,
+        { uid: "user-1" } as never,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
 });

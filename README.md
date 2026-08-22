@@ -11,12 +11,20 @@ The point ledger uses a validated idempotency key as its immutable document iden
 ## Endpoints
 
 - `GET /health` and `GET /api/v1/health`
-- `POST /api/v1/auth/child-token`
-- `GET /api/v1/participants/:id`
-- `POST /api/v1/points/completions`
+- `/api/v1/auth` session and child-token operations
+- `/api/v1/child` private child journeys
+- `/api/v1/parent` relationship-scoped parent journeys
+- `/api/v1/participants` participant summaries
+- `/api/v1/points` completions and administrative corrections
+- `/api/v1/administration` bounded tenant administration operations
 - `GET /docs` and `GET /openapi.yaml` (documentation UI is disabled in production)
 
-The complete request/response contract is in [openapi.yaml](openapi.yaml).
+The currently published request/response contract is in [openapi.yaml](openapi.yaml).
+It is incomplete: administration and several parent compatibility routes are
+missing, and automated route drift enforcement remains a launch blocker. Use
+the [route inventory](docs/route-inventory.md) as the operational route list and
+the [frontend handoff](docs/frontend-integration-handoff.md) for integration
+gates.
 
 ## Client authentication flow
 
@@ -44,7 +52,7 @@ The response is `{ "data": { "customToken": "..." } }`. The web client must exch
 
 ## Render deployment
 
-Create distinct Firebase projects and Render environments for staging and production. Configure every variable listed in `.env.example` in Render; secrets must be secret environment values, never repository files. Set `ALLOWED_ORIGINS` to a comma-separated allowlist (for example the two production website origins), and set a random high-entropy `CHILD_LOGIN_PEPPER`. Render builds the multi-stage Docker image, runs compiled JavaScript, probes `/health`, and waits for required GitHub checks before automatic deployment. Grant the runtime service account only the required Firebase permissions.
+Create distinct Firebase projects and Render environments for staging and production. Configure every variable listed in `.env.example` in Render; secrets must be secret environment values, never repository files. `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY` are required together in production. Set `ALLOWED_ORIGINS` to a comma-separated allowlist and generate independent high-entropy values for `CHILD_LOGIN_PEPPER` and `CHILD_LOGIN_LOOKUP_SECRET`. Render builds the multi-stage Docker image, runs compiled JavaScript, probes `/health`, and waits for required GitHub checks before automatic deployment. Grant the runtime service account only the required Firebase permissions.
 
 `MEMBERSHIP_ENFORCEMENT_MODE=compatibility` is the deliberate migration-period setting. It prefers active memberships and uses server-controlled `users/{uid}.roles` only when no membership document exists. Set `strict` only after the membership verification command reports complete role and organization coverage; any other value fails startup validation.
 
@@ -54,4 +62,4 @@ Helmet, strict CORS, 64 KiB JSON limits, global and child-token rate limits, gen
 
 ## Current scope and next steps
 
-The production foundation and first authentication, participant, and point routes are implemented. This is not the complete product backend: see [the production audit](docs/backend-production-audit.md) for confirmed gaps and launch blockers. In particular, the generic completion route is not a source-specific daily workflow and multi-organization isolation is not implemented. The mandatory emulator suite currently covers Firestore rules plus point-transaction atomicity and concurrent idempotency; relationship/session and rollback coverage still remains. Before launch, add approved contracts and migrations, the remaining emulator coverage, a managed shared rate-limit store for horizontal scaling, aggregate-rebuild jobs, and a secrets manager/service-account injection strategy appropriate to the Render plan.
+This is not the complete product backend: see [the production audit](docs/backend-production-audit.md) and [delivery report](docs/backend-delivery-report.md) for confirmed gaps and launch blockers. Do not enable a workflow merely because its route is mounted. Generic point completion, incomplete OpenAPI coverage, missing mentor/observer routers, process-local throttling, incomplete runtime persistence parsing, and missing policy decisions prevent a full production-readiness claim.

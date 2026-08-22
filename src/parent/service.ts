@@ -4,14 +4,20 @@ import type {
   QueryDocumentSnapshot,
 } from "firebase-admin/firestore";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { createHash } from "node:crypto";
 import { env } from "../config/env.js";
 import {
   AuthorizationError,
   BusinessRuleError,
+  ConflictError,
   NotFoundError,
 } from "../shared/errors.js";
 
-type Principal = { uid: string; organizationIds: readonly string[] };
+type Principal = {
+  uid: string;
+  organizationIds: readonly string[];
+  activeWorkspaceId?: string;
+};
 type ChildStatus = "active" | "pending" | "inactive";
 type ListInput = {
   limit: number;
@@ -22,6 +28,8 @@ type ListInput = {
     | "in_progress"
     | "resolved"
     | "closed"
+    | "approved"
+    | "rejected"
     | undefined;
   search?: string | undefined;
   childId?: string | undefined;
@@ -37,9 +45,19 @@ const iso = (value: unknown): string | null =>
         : null;
 const number = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
+const commandId = (actor: string, key: string) =>
+  createHash("sha256").update(`${actor}:${key}`).digest("hex");
+const fingerprint = (value: unknown) =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 export class ParentService {
   constructor(private readonly db: Firestore) {}
+
+  private tenantIds(principal: Principal): readonly string[] {
+    return principal.activeWorkspaceId
+      ? [principal.activeWorkspaceId]
+      : principal.organizationIds;
+  }
 
   private async link(
     principal: Principal,
@@ -59,7 +77,7 @@ export class ParentService {
     const organizationId = link.get("organizationId");
     if (
       typeof organizationId !== "string" ||
-      !principal.organizationIds.includes(organizationId)
+      !this.tenantIds(principal).includes(organizationId)
     )
       throw new AuthorizationError();
     const child = await this.db.doc(`participants/${childId}`).get();
@@ -73,27 +91,46 @@ export class ParentService {
     const links = await this.db
       .collection("parentChildLinks")
       .where("parentUid", "==", principal.uid)
+      .limit(200)
       .get();
     const authorized = links.docs.filter(
       (doc) =>
-        principal.organizationIds.includes(doc.get("organizationId")) &&
-        (!input.status || doc.get("status") === input.status),
+        doc.get("status") === "active" &&
+        this.tenantIds(principal).includes(doc.get("organizationId")) &&
+        typeof doc.get("participantId") === "string" &&
+        typeof doc.get("organizationId") === "string",
     );
     const summaries = await Promise.all(
-      authorized.map(async (link) =>
-        this.summary(
-          link.get("participantId"),
-          link.get("organizationId"),
-          link.get("status"),
-        ),
-      ),
+      authorized.map(async (link) => {
+        const participantId = link.get("participantId");
+        const organizationId = link.get("organizationId");
+        if (
+          typeof participantId !== "string" ||
+          typeof organizationId !== "string"
+        )
+          throw new NotFoundError();
+        const participant = await this.db
+          .doc(`participants/${participantId}`)
+          .get();
+        if (
+          !participant.exists ||
+          participant.get("organizationId") !== organizationId ||
+          participant.get("status") !== "active"
+        )
+          return null;
+        return this.summary(participantId, organizationId, link.get("status"));
+      }),
     );
     const search = input.search?.toLocaleLowerCase();
     const sorted = summaries
+      .filter((item): item is NonNullable<typeof item> => item !== null)
       .filter(
         (item) =>
-          !search ||
-          String(item.approvedDisplayName).toLocaleLowerCase().includes(search),
+          (!input.status || item.status === input.status) &&
+          (!search ||
+            String(item.approvedDisplayName)
+              .toLocaleLowerCase()
+              .includes(search)),
       )
       .sort(
         (a, b) =>
@@ -101,9 +138,11 @@ export class ParentService {
             String(b.approvedDisplayName),
           ) || a.id.localeCompare(b.id),
       );
-    const start = input.cursor
-      ? Math.max(0, sorted.findIndex((item) => item.id === input.cursor) + 1)
-      : 0;
+    const cursorIndex = input.cursor
+      ? sorted.findIndex((item) => item.id === input.cursor)
+      : -1;
+    if (input.cursor && cursorIndex < 0) throw new NotFoundError();
+    const start = cursorIndex + 1;
     const data = sorted.slice(start, start + input.limit);
     return {
       data,
@@ -117,8 +156,8 @@ export class ParentService {
   }
 
   async child(principal: Principal, childId: string) {
-    const { link, organizationId } = await this.link(principal, childId, false);
-    return this.summary(childId, organizationId, link.get("status"));
+    const { organizationId } = await this.link(principal, childId);
+    return this.summary(childId, organizationId, "active");
   }
 
   private async summary(
@@ -129,10 +168,13 @@ export class ParentService {
     const child = await this.db.doc(`participants/${childId}`).get();
     if (!child.exists || child.get("organizationId") !== organizationId)
       throw new NotFoundError();
+    const participantStatus = child.get("status");
     const status: ChildStatus =
-      linkStatus === "pending" || linkStatus === "inactive"
-        ? linkStatus
-        : "active";
+      participantStatus === "pending" || participantStatus === "inactive"
+        ? participantStatus
+        : linkStatus === "active"
+          ? "active"
+          : "inactive";
     const teamId =
       typeof child.get("teamId") === "string"
         ? (child.get("teamId") as string)
@@ -180,8 +222,16 @@ export class ParentService {
           .limit(1)
           .get()
       : null;
-    const target = team ? number(team.get("quarterTarget")) : 0;
-    const points = teamStats?.exists ? number(teamStats.get("totalPoints")) : 0;
+    const configuredTarget = team?.get("quarterTarget");
+    const recordedPoints = teamStats?.get("totalPoints");
+    const hasTeamProgress =
+      teamStats?.exists === true &&
+      typeof recordedPoints === "number" &&
+      Number.isFinite(recordedPoints) &&
+      typeof configuredTarget === "number" &&
+      Number.isFinite(configuredTarget) &&
+      configuredTarget > 0;
+    const calculatedAt = new Date().toISOString();
     return {
       id: child.id,
       approvedDisplayName:
@@ -204,14 +254,14 @@ export class ParentService {
         available: assignments?.size ?? 0,
       },
       teamProgress:
-        team?.exists && quarter
+        team?.exists && quarter && hasTeamProgress
           ? {
-              points,
-              target,
-              percentage:
-                target > 0
-                  ? Math.min(100, Math.round((points / target) * 100))
-                  : 0,
+              points: recordedPoints,
+              target: configuredTarget,
+              percentage: Math.min(
+                100,
+                Math.round((recordedPoints / configuredTarget) * 100),
+              ),
             }
           : null,
       readingProgress: {
@@ -224,6 +274,11 @@ export class ParentService {
         typeof project.docs[0]!.get("status") === "string"
           ? project.docs[0]!.get("status")
           : null,
+      calculatedAt,
+      sourceQuarterId: quarter?.id ?? null,
+      sourceWeekId: quarter
+        ? `${quarter.id}:week:${String(quarter.weekNumber)}`
+        : null,
     };
   }
 
@@ -287,7 +342,8 @@ export class ParentService {
   async dashboard(principal: Principal) {
     const children = await this.children(principal, { limit: 50 });
     const user = await this.db.doc(`users/${principal.uid}`).get();
-    const organizationId = principal.organizationIds[0];
+    const tenantIds = this.tenantIds(principal);
+    const organizationId = tenantIds[0];
     const currentQuarter = organizationId
       ? await this.currentQuarter(organizationId)
       : null;
@@ -300,7 +356,21 @@ export class ParentService {
       .where("recipientUid", "==", principal.uid)
       .where("read", "==", false)
       .get();
+    const organizations = await Promise.all(
+      tenantIds.map(async (id) => {
+        const organization = await this.db.doc(`organizations/${id}`).get();
+        return {
+          id,
+          name:
+            organization.exists && typeof organization.get("name") === "string"
+              ? organization.get("name")
+              : null,
+        };
+      }),
+    );
+    const calculatedAt = new Date().toISOString();
     return {
+      organizations,
       parent: {
         uid: principal.uid,
         displayName:
@@ -321,27 +391,99 @@ export class ParentService {
           0,
         ),
         familyActivitiesCompleted: activities.docs.filter((x) =>
-          principal.organizationIds.includes(x.get("organizationId")),
+          this.tenantIds(principal).includes(x.get("organizationId")),
         ).length,
         unreadNotifications: notifications.docs.filter((x) =>
-          principal.organizationIds.includes(x.get("organizationId")),
+          this.tenantIds(principal).includes(x.get("organizationId")),
         ).length,
       },
       currentQuarter,
-      updatedAt: new Date().toISOString(),
+      calculatedAt,
+      sourceQuarterId: currentQuarter?.id ?? null,
+      sourceWeekId: currentQuarter
+        ? `${currentQuarter.id}:week:${String(currentQuarter.weekNumber)}`
+        : null,
+    };
+  }
+
+  async notifications(principal: Principal, input: ListInput) {
+    const snapshot = await this.db
+      .collection("notifications")
+      .where("recipientUid", "==", principal.uid)
+      .limit(200)
+      .get();
+    const sorted = snapshot.docs
+      .filter((doc) =>
+        this.tenantIds(principal).includes(doc.get("organizationId")),
+      )
+      .map((doc) => ({
+        id: doc.id,
+        organizationId: String(doc.get("organizationId")),
+        type: typeof doc.get("type") === "string" ? doc.get("type") : null,
+        title: typeof doc.get("title") === "string" ? doc.get("title") : null,
+        message:
+          typeof doc.get("message") === "string" ? doc.get("message") : null,
+        read: doc.get("read") === true,
+        createdAt: iso(doc.get("createdAt")),
+      }))
+      .sort(
+        (a, b) =>
+          (b.createdAt ?? "").localeCompare(a.createdAt ?? "") ||
+          a.id.localeCompare(b.id),
+      );
+    const start = input.cursor
+      ? Math.max(0, sorted.findIndex((item) => item.id === input.cursor) + 1)
+      : 0;
+    const data = sorted.slice(start, start + input.limit);
+    return {
+      data,
+      meta: {
+        nextCursor:
+          start + input.limit < sorted.length && data.length > 0
+            ? data.at(-1)!.id
+            : null,
+      },
     };
   }
 
   async observations(principal: Principal, input: ListInput) {
-    const snapshot = await this.db
-      .collection("characterObservations")
-      .where("parentUid", "==", principal.uid)
-      .get();
+    if (input.childId) await this.link(principal, input.childId);
+    const [snapshot, linkSnapshot] = await Promise.all([
+      this.db
+        .collection("characterObservations")
+        .where("parentUid", "==", principal.uid)
+        .limit(200)
+        .get(),
+      this.db
+        .collection("parentChildLinks")
+        .where("parentUid", "==", principal.uid)
+        .limit(200)
+        .get(),
+    ]);
+    const activeLinks = new Set(
+      linkSnapshot.docs
+        .filter(
+          (link) =>
+            link.get("status") === "active" &&
+            this.tenantIds(principal).includes(link.get("organizationId")),
+        )
+        .map(
+          (link) =>
+            `${String(link.get("organizationId"))}:${String(link.get("participantId"))}`,
+        ),
+    );
     const authorized = snapshot.docs
       .filter(
         (doc) =>
-          principal.organizationIds.includes(doc.get("organizationId")) &&
-          (!input.childId || doc.get("participantId") === input.childId),
+          activeLinks.has(
+            `${String(doc.get("organizationId"))}:${String(doc.get("participantId"))}`,
+          ) &&
+          (!input.childId || doc.get("participantId") === input.childId) &&
+          (!input.status || doc.get("moderationStatus") === input.status) &&
+          (!input.search ||
+            String(doc.get("description"))
+              .toLocaleLowerCase()
+              .includes(input.search.toLocaleLowerCase())),
       )
       .sort((a, b) => {
         const createdAtDifference = (
@@ -370,9 +512,10 @@ export class ParentService {
     if (
       !doc.exists ||
       doc.get("parentUid") !== principal.uid ||
-      !principal.organizationIds.includes(doc.get("organizationId"))
+      !this.tenantIds(principal).includes(doc.get("organizationId"))
     )
       throw new NotFoundError();
+    await this.link(principal, String(doc.get("participantId")));
     return this.observationView(doc);
   }
   private observationView(doc: QueryDocumentSnapshot | DocumentSnapshot) {
@@ -394,10 +537,27 @@ export class ParentService {
       description: string;
       observedAt: string;
     },
+    idempotencyKey?: string,
   ) {
     const linked = await this.link(principal, input.childId);
-    const ref = this.db.collection("characterObservations").doc();
-    await this.db.runTransaction((tx) => {
+    const ref = idempotencyKey
+      ? this.db.doc(
+          `characterObservations/${commandId(principal.uid, idempotencyKey)}`,
+        )
+      : this.db.collection("characterObservations").doc();
+    const operationFingerprint = fingerprint(input);
+    const created = await this.db.runTransaction(async (tx) => {
+      const old = await tx.get(ref);
+      if (old.exists) {
+        if (
+          old.get("parentUid") !== principal.uid ||
+          old.get("operationFingerprint") !== operationFingerprint
+        )
+          throw new ConflictError(
+            "Idempotency key was already used for another observation.",
+          );
+        return false;
+      }
       tx.create(ref, {
         parentUid: principal.uid,
         participantId: input.childId,
@@ -406,6 +566,7 @@ export class ParentService {
         description: input.description,
         observedAt: Timestamp.fromDate(new Date(input.observedAt)),
         moderationStatus: "pending",
+        operationFingerprint,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -416,9 +577,9 @@ export class ParentService {
         organizationId: linked.organizationId,
         createdAt: FieldValue.serverTimestamp(),
       });
-      return Promise.resolve();
+      return true;
     });
-    return { id: ref.id, moderationStatus: "pending" };
+    return { id: ref.id, moderationStatus: "pending", created };
   }
 
   async qualities(principal: Principal) {
@@ -431,13 +592,18 @@ export class ParentService {
         .filter(
           (x) =>
             !x.get("organizationId") ||
-            principal.organizationIds.includes(x.get("organizationId")),
+            this.tenantIds(principal).includes(x.get("organizationId")),
         )
         .map((x) => ({
           id: x.id,
           name: x.get("name"),
           description: x.get("description") ?? null,
-        })),
+        }))
+        .sort(
+          (a, b) =>
+            String(a.name).localeCompare(String(b.name)) ||
+            a.id.localeCompare(b.id),
+        ),
       meta: { nextCursor: null },
     };
   }
@@ -451,13 +617,19 @@ export class ParentService {
           childId,
           quarterId,
           qualityIds: doc.get("qualityIds") ?? [],
+          version: number(doc.get("version")),
           updatedAt: iso(doc.get("updatedAt")),
         }
-      : { childId, quarterId, qualityIds: [], updatedAt: null };
+      : { childId, quarterId, qualityIds: [], version: 0, updatedAt: null };
   }
   async setSelection(
     principal: Principal,
-    input: { childId: string; quarterId: string; qualityIds: string[] },
+    input: {
+      childId: string;
+      quarterId: string;
+      qualityIds: string[];
+      expectedVersion?: number;
+    },
   ) {
     const linked = await this.link(principal, input.childId);
     const quarter = await this.db.doc(`quarters/${input.quarterId}`).get();
@@ -488,28 +660,53 @@ export class ParentService {
         "INVALID_CHARACTER_QUALITY",
         "A selected quality is unavailable.",
       );
-    await this.db.runTransaction((tx) => {
+    await this.db.runTransaction(async (tx) => {
+      const ref = this.db.doc(
+        `characterSelections/${input.quarterId}_${input.childId}`,
+      );
+      const old = await tx.get(ref);
+      const currentVersion = old.exists ? number(old.get("version")) : 0;
+      if (
+        input.expectedVersion !== undefined &&
+        input.expectedVersion !== currentVersion
+      )
+        throw new ConflictError("Character selection version is stale.");
       tx.set(
-        this.db.doc(`characterSelections/${input.quarterId}_${input.childId}`),
+        ref,
         {
           participantId: input.childId,
           quarterId: input.quarterId,
           organizationId: linked.organizationId,
           qualityIds: input.qualityIds,
           selectedBy: principal.uid,
+          version: currentVersion + 1,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
-      return Promise.resolve();
     });
     return this.selection(principal, input.childId, input.quarterId);
   }
 
-  async familyActivities(principal: Principal, childId: string) {
+  async familyActivities(
+    principal: Principal,
+    childId: string,
+    input: {
+      limit?: number | undefined;
+      cursor?: string | undefined;
+      search?: string | undefined;
+    } = {},
+  ) {
     const linked = await this.link(principal, childId);
     const quarter = await this.currentQuarter(linked.organizationId);
-    if (!quarter) return { data: [], meta: { nextCursor: null } };
+    if (!quarter)
+      return {
+        data: [],
+        meta: { nextCursor: null },
+        calculatedAt: new Date().toISOString(),
+        sourceQuarterId: null,
+        sourceWeekId: null,
+      };
     const [available, completed] = await Promise.all([
       this.db
         .collection("familyActivities")
@@ -524,15 +721,40 @@ export class ParentService {
         .get(),
     ]);
     const ids = new Set(completed.docs.map((x) => String(x.get("activityId"))));
+    const search = input.search?.toLocaleLowerCase();
+    const sorted = available.docs
+      .filter(
+        (x) =>
+          !search ||
+          String(x.get("title")).toLocaleLowerCase().includes(search),
+      )
+      .sort(
+        (a, b) =>
+          number(a.get("week")) - number(b.get("week")) ||
+          a.id.localeCompare(b.id),
+      );
+    const cursorIndex = input.cursor
+      ? sorted.findIndex((x) => x.id === input.cursor)
+      : -1;
+    if (input.cursor && cursorIndex < 0) throw new NotFoundError();
+    const start = cursorIndex + 1,
+      limit = input.limit ?? 20,
+      page = sorted.slice(start, start + limit);
     return {
-      data: available.docs.map((x) => ({
+      data: page.map((x) => ({
         id: x.id,
         title: x.get("title"),
         description: x.get("description") ?? null,
         week: x.get("week"),
         completed: ids.has(x.id),
       })),
-      meta: { nextCursor: null },
+      meta: {
+        nextCursor:
+          start + limit < sorted.length ? (page.at(-1)?.id ?? null) : null,
+      },
+      calculatedAt: new Date().toISOString(),
+      sourceQuarterId: quarter.id,
+      sourceWeekId: `${quarter.id}:week:${String(quarter.weekNumber)}`,
     };
   }
   async completeFamilyActivity(
@@ -574,13 +796,18 @@ export class ParentService {
     return {
       data: snap.docs
         .filter((x) =>
-          principal.organizationIds.includes(x.get("organizationId")),
+          this.tenantIds(principal).includes(x.get("organizationId")),
         )
         .map((x) => ({
           id: x.id,
           name: x.get("name"),
           description: x.get("description") ?? null,
-        })),
+        }))
+        .sort(
+          (a, b) =>
+            String(a.name).localeCompare(String(b.name)) ||
+            a.id.localeCompare(b.id),
+        ),
       meta: { nextCursor: null },
     };
   }
@@ -592,6 +819,7 @@ export class ParentService {
       subject: string;
       description: string;
     },
+    idempotencyKey?: string,
   ) {
     const linked = await this.link(principal, input.childId);
     const category = await this.db
@@ -603,8 +831,24 @@ export class ParentService {
       category.get("status") !== "active"
     )
       throw new NotFoundError();
-    const ref = this.db.collection("supportRequests").doc();
-    await this.db.runTransaction((tx) => {
+    const ref = idempotencyKey
+      ? this.db.doc(
+          `supportRequests/${commandId(principal.uid, idempotencyKey)}`,
+        )
+      : this.db.collection("supportRequests").doc();
+    const operationFingerprint = fingerprint(input);
+    const created = await this.db.runTransaction(async (tx) => {
+      const old = await tx.get(ref);
+      if (old.exists) {
+        if (
+          old.get("requesterUid") !== principal.uid ||
+          old.get("operationFingerprint") !== operationFingerprint
+        )
+          throw new ConflictError(
+            "Idempotency key was already used for another support request.",
+          );
+        return false;
+      }
       tx.create(ref, {
         participantId: input.childId,
         requesterUid: principal.uid,
@@ -616,10 +860,11 @@ export class ParentService {
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         version: 1,
+        operationFingerprint,
       });
-      return Promise.resolve();
+      return true;
     });
-    return { id: ref.id, status: "open" };
+    return { id: ref.id, status: "open", created };
   }
   async supportList(principal: Principal, input: ListInput) {
     // Keep this query index-independent, then enforce relationship, tenant and
@@ -640,7 +885,7 @@ export class ParentService {
         .filter(
           (link) =>
             link.get("status") === "active" &&
-            principal.organizationIds.includes(link.get("organizationId")),
+            this.tenantIds(principal).includes(link.get("organizationId")),
         )
         .map(
           (link) =>
@@ -695,9 +940,10 @@ export class ParentService {
     if (
       !doc.exists ||
       doc.get("requesterUid") !== principal.uid ||
-      !principal.organizationIds.includes(doc.get("organizationId"))
+      !this.tenantIds(principal).includes(doc.get("organizationId"))
     )
       throw new NotFoundError();
+    await this.link(principal, String(doc.get("participantId")));
     return {
       id,
       childId: doc.get("participantId"),
@@ -731,6 +977,9 @@ export class ParentService {
         ? { ...child.teamProgress, notAvailable: false }
         : { notAvailable: true },
       quarterComparison: { notAvailable: true },
+      calculatedAt: new Date().toISOString(),
+      sourceQuarterId: child.quarter?.id ?? null,
+      sourceWeekId: child.sourceWeekId,
     };
   }
   async teamProgress(principal: Principal, teamId: string, quarterId: string) {
@@ -749,7 +998,7 @@ export class ParentService {
     if (
       !team.exists ||
       !quarter.exists ||
-      !principal.organizationIds.includes(team.get("organizationId")) ||
+      !this.tenantIds(principal).includes(team.get("organizationId")) ||
       quarter.get("organizationId") !== team.get("organizationId")
     )
       throw new NotFoundError();
@@ -757,18 +1006,24 @@ export class ParentService {
       (sum, x) => sum + number(x.get("points")),
       0,
     );
-    const target = number(team.get("quarterTarget"));
+    const configuredTarget = team.get("quarterTarget");
+    const hasTarget =
+      typeof configuredTarget === "number" &&
+      Number.isFinite(configuredTarget) &&
+      configuredTarget > 0;
     return {
       teamId,
       approvedDisplayName: team.get("approvedDisplayName") ?? "",
       quarterId,
       totalPoints,
-      target,
-      percentage:
-        target > 0
-          ? Math.min(100, Math.round((totalPoints / target) * 100))
-          : 0,
+      target: hasTarget ? configuredTarget : null,
+      percentage: hasTarget
+        ? Math.min(100, Math.round((totalPoints / configuredTarget) * 100))
+        : null,
+      notAvailable: !hasTarget,
       calculatedAt: new Date().toISOString(),
+      sourceQuarterId: quarterId,
+      sourceWeekId: null,
     };
   }
 }

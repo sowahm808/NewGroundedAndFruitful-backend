@@ -19,7 +19,7 @@ export async function resolveActiveQuarter(db: Firestore, organizationId: string
   const snap = await db.collection("quarters").where("organizationId", "==", organizationId).get();
   const active = snap.docs.filter((doc) => {
     const d = doc.data(); const start = d.startsAt as Timestamp | undefined; const end = d.endsAt as Timestamp | undefined;
-    return start && end && ["open", "checkpoint", "recognition"].includes(String(d.status)) && start.toMillis() <= now.getTime() && end.toMillis() >= now.getTime();
+    return start && end && ["open", "checkpoint", "recognition"].includes(String(d.status)) && start.toMillis() <= now.getTime() && end.toMillis() > now.getTime();
   });
   if (active.length > 1) throw new ConflictError("Multiple active quarters are configured.");
   if (!active[0]) return null;

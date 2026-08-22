@@ -15,8 +15,390 @@ tags:
     { name: Points },
     { name: Parent },
     { name: Child },
+    { name: Onboarding },
   ]
 paths:
+  /auth/logout:
+    post:
+      summary: Clear the current client bearer session without global revocation
+      responses:
+        "204": { description: Client may discard its local Firebase session }
+  /auth/logout-all:
+    post:
+      summary: Revoke the authenticated user's Firebase refresh tokens
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: All refresh tokens revoked }
+        "401": { description: Missing, invalid, expired, or revoked token }
+  /auth/registration-intent:
+    post:
+      tags: [Auth]
+      operationId: registerAccountIntentCompatibility
+      summary: Idempotently begin personal or organization registration
+      description: >-
+        Records the authenticated Firebase user's own intent without requiring a
+        role or membership. It never creates a workspace, membership, or role.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - {
+                    type: object,
+                    additionalProperties: false,
+                    required: [intent],
+                    properties:
+                      {
+                        intent: { const: personal },
+                        timezone: { type: string, default: UTC },
+                      },
+                  }
+                - {
+                    type: object,
+                    additionalProperties: false,
+                    required: [intent],
+                    properties: { intent: { const: organization } },
+                  }
+      responses:
+        "201":
+          description: Registration intent selected (including an exact retry)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required:
+                      [registrationIntent, onboardingStatus, nextStep, version]
+                    properties:
+                      registrationIntent: { enum: [personal, organization] }
+                      onboardingStatus:
+                        enum:
+                          [
+                            personal_workspace_required,
+                            organization_setup_required,
+                          ]
+                      nextStep:
+                        enum: [personal_workspace_setup, organization_setup]
+                      version: { type: integer, minimum: 1 }
+        "401": { description: Missing, invalid, expired, or revoked token }
+        "403": { description: Account is disabled }
+        "409": { description: Intent conflicts with bootstrapped state }
+        "422": { description: Intent is missing or invalid }
+        "429": { description: Rate limited }
+  /auth/registration:
+    post:
+      tags: [Auth]
+      operationId: registerAccountIntent
+      summary: Idempotently begin personal or organization registration
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - {
+                    type: object,
+                    additionalProperties: false,
+                    required: [intent],
+                    properties:
+                      {
+                        intent: { const: personal },
+                        timezone: { type: string, default: UTC },
+                      },
+                  }
+                - {
+                    type: object,
+                    additionalProperties: false,
+                    required: [intent],
+                    properties: { intent: { const: organization } },
+                  }
+      responses:
+        "201": { description: Registration intent accepted }
+  /auth/session/workspace:
+    put:
+      tags: [Auth]
+      operationId: selectActiveWorkspace
+      description: Selects an active context only after server-side active membership validation; selection never grants access.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    type: object,
+                    additionalProperties: false,
+                    required: [workspaceId],
+                    properties: { workspaceId: { type: string } },
+                  },
+              },
+          }
+      responses:
+        "200": { description: Workspace selected }
+        "403": { description: No active membership in workspace }
+  /auth/elevations:
+    post:
+      tags: [Auth]
+      operationId: grantTemporaryElevation
+      description: Requires an explicitly authorized platform grantor and authentication within five minutes. Self-elevation is forbidden.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [userId, scope, reason, startsAt, expiresAt]
+              properties:
+                userId: { type: string }
+                roles: { type: array, items: { type: string }, maxItems: 10 }
+                capabilities:
+                  {
+                    type: array,
+                    items:
+                      {
+                        type: string,
+                        enum:
+                          [
+                            organizations.manage,
+                            memberships.manage,
+                            quarters.manage,
+                            bible.publish,
+                            roles.elevate,
+                            platform.audit.read,
+                          ],
+                      },
+                  }
+                scope:
+                  {
+                    oneOf:
+                      [
+                        {
+                          type: object,
+                          required: [type],
+                          properties: { type: { const: platform } },
+                        },
+                        {
+                          type: object,
+                          required: [type, workspaceId],
+                          properties:
+                            {
+                              type: { const: workspace },
+                              workspaceId: { type: string },
+                            },
+                        },
+                      ],
+                  }
+                reason: { type: string, minLength: 8, maxLength: 500 }
+                startsAt: { type: string, format: date-time }
+                expiresAt: { type: string, format: date-time }
+                maxUses: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "201": { description: Elevation granted and audited }
+  /auth/elevations/{grantId}/revoke:
+    post:
+      tags: [Auth]
+      operationId: revokeTemporaryElevation
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        [{ in: path, name: grantId, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Elevation immediately revoked and audited }
+  /auth/onboarding/personal-workspace:
+    post:
+      tags: [Onboarding]
+      operationId: onboardPersonalWorkspace
+      description: Atomically creates the single personal tenant, owner governance membership, and parent persona for an authenticated personal registrant. It grants no organization-admin or platform authority.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [timezone]
+              properties:
+                timezone: { type: string, description: Valid IANA timezone }
+      responses:
+        "201":
+          description: Personal workspace onboarding completed (including an exact retry)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required:
+                      [
+                        workspace,
+                        membership,
+                        activeWorkspaceId,
+                        onboardingStatus,
+                        nextStep,
+                        tokenRefreshRequired,
+                      ]
+                    properties:
+                      workspace: { type: object }
+                      membership: { type: object }
+                      activeWorkspaceId: { type: string }
+                      onboardingStatus: { const: complete }
+                      nextStep: { const: dashboard }
+                      tokenRefreshRequired: { const: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+  /onboarding/personal:
+    post:
+      tags: [Onboarding]
+      operationId: onboardPersonalWorkspaceCompatibility
+      summary: Frontend-compatible personal workspace onboarding
+      description: >-
+        Compatibility alias for POST /auth/onboarding/personal-workspace. It
+        atomically creates the authenticated personal registrant's tenant and
+        owner-only membership.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [timezone]
+              properties:
+                timezone: { type: string, description: Valid IANA timezone }
+      responses:
+        "201": { description: Personal workspace onboarding completed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+  /auth/onboarding/organization:
+    post:
+      tags: [Onboarding]
+      operationId: onboardOrganization
+      description: Creates the first organization and owner/admin membership for an authenticated organization registrant. No existing role, workspace, or membership is required.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, slug, timezone]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                slug: { type: string, pattern: "^[a-z0-9-]{3,50}$" }
+                timezone: { type: string, description: IANA timezone }
+      responses:
+        "201":
+          {
+            description: Organization onboarding completed,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        required: [data],
+                        properties:
+                          {
+                            data:
+                              {
+                                type: object,
+                                required:
+                                  [
+                                    workspace,
+                                    membership,
+                                    onboardingStatus,
+                                    nextStep,
+                                    activeWorkspaceId,
+                                    tokenRefreshRequired,
+                                  ],
+                                properties:
+                                  {
+                                    workspace:
+                                      {
+                                        type: object,
+                                        required:
+                                          [
+                                            id,
+                                            type,
+                                            name,
+                                            slug,
+                                            timezone,
+                                            status,
+                                          ],
+                                        properties:
+                                          {
+                                            id: { type: string },
+                                            type: { const: organization },
+                                            name: { type: string },
+                                            slug: { type: string },
+                                            timezone: { type: string },
+                                            status: { const: active },
+                                          },
+                                      },
+                                    membership:
+                                      {
+                                        type: object,
+                                        description: organizationId is a compatibility tenant alias and always equals workspaceId.,
+                                        required:
+                                          [
+                                            id,
+                                            workspaceId,
+                                            organizationId,
+                                            roles,
+                                            status,
+                                          ],
+                                        properties:
+                                          {
+                                            id: { type: string },
+                                            workspaceId: { type: string },
+                                            organizationId: { type: string },
+                                            roles:
+                                              {
+                                                type: array,
+                                                items:
+                                                  {
+                                                    type: string,
+                                                    enum: [owner, admin],
+                                                  },
+                                              },
+                                            status: { const: active },
+                                          },
+                                      },
+                                    onboardingStatus: { const: complete },
+                                    nextStep: { const: dashboard },
+                                    activeWorkspaceId: { type: string },
+                                    tokenRefreshRequired: { const: true },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              },
+          }
+        "400": { $ref: "#/components/responses/Validation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
   /health:
     get:
       tags: [Health]
@@ -113,6 +495,22 @@ paths:
         "200": { description: Authorized parent dashboard }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /parent/notifications:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      description: Lists notifications addressed to the authenticated parent and scoped to an active membership organization.
+      parameters:
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 50 },
+          }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Tenant-scoped parent notifications }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /parent/children:
     get:
       tags: [Parent]
@@ -149,26 +547,83 @@ paths:
     post:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
+      parameters:
+        - {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema: { type: string, minLength: 8, maxLength: 128 },
+          }
+      description: Submits constructive positive recognition for moderation. This command does not award points.
       responses:
         { "201": { description: Observation persisted for moderation } }
-  /parent/family-activities:
+  /parent/character:
     get:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: childId, in: query, required: true, schema: { type: string } }
+        - {
+            name: quarterId,
+            in: query,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Versioned character selection or honest empty selection,
+            },
+        }
+    patch:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      description: Updates a selection using expectedVersion optimistic concurrency. Cannot modify child submissions.
+      responses:
+        {
+          "200": { description: Updated selection },
+          "409": { description: Stale version },
+        }
+  /parent/family/activities:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: childId, in: query, required: true, schema: { type: string } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 50, default: 20 },
+          }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string, maxLength: 80 } }
       responses:
         {
           "200":
             { description: Configured activities and child completion state },
         }
-  /parent/family-activities/completions:
+  /parent/family/activities/{activityId}/completions:
     post:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
+      parameters:
+        - {
+            name: activityId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema: { type: string, minLength: 8, maxLength: 128 },
+          }
+      description: Records a linked child's completion idempotently. Parents cannot provide a point amount.
       responses:
-        {
-          "201": { description: Completion created },
-          "200": { description: Existing idempotent completion },
-        }
+        "201": { description: Completion created }
+        "200": { description: Exact retry returned existing completion }
   /parent/academic-support/configuration:
     get:
       tags: [Parent]
@@ -261,6 +716,16 @@ paths:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
       responses: { "201": { description: Support request created } }
+  /parent/reports:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: childId, in: query, required: true, schema: { type: string } }
+      description: Returns approved progress only, explicit unavailable states, and a server calculation timestamp.
+      responses:
+        "200": { description: Relationship-scoped child report }
+        "404": { $ref: "#/components/responses/NotFound" }
   /parent/reports/{childId}:
     get:
       tags: [Parent]
@@ -301,35 +766,76 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-  /points/completions:
+  /points/sources/{source}/completions:
     post:
       tags: [Points]
-      operationId: recordCompletion
+      operationId: recordVerifiedSourceCompletion
+      description: The implementation exposes only static, source-specific paths; arbitrary source values are not routed.
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "201":
+          {
+            description: Source completion and immutable ledger entry created atomically,
+          }
+        "200": { description: Exact idempotent retry }
+        "409": { description: Conflicting idempotency-key reuse }
+
+  /points/adjustments:
+    post:
+      tags: [Points]
+      operationId: adjustPoints
+      description: Creates an immutable administrator adjustment or reverses one eligible original award. Reversals are limited to one per original entry.
       security: [{ firebaseBearer: [] }]
       parameters:
-        [
-          {
-            name: Idempotency-Key,
-            in: header,
-            required: true,
-            schema:
-              { type: string, maxLength: 200, pattern: "^[A-Za-z0-9:_-]+$" },
-          },
-        ]
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 200, pattern: "^[A-Za-z0-9:_-]+$" }
       requestBody:
-        {
-          required: true,
-          content:
-            {
-              application/json:
-                { schema: { $ref: "#/components/schemas/Completion" } },
-            },
-        }
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required:
+                    [
+                      type,
+                      participantId,
+                      teamId,
+                      quarterId,
+                      points,
+                      reason,
+                      occurredAt,
+                    ]
+                  properties:
+                    type: { const: adjustment }
+                    participantId: { type: string, maxLength: 128 }
+                    teamId: { type: string, maxLength: 128 }
+                    quarterId: { type: string, maxLength: 128 }
+                    points:
+                      {
+                        type: integer,
+                        not: { const: 0 },
+                        description: Signed point delta,
+                      }
+                    reason: { type: string, minLength: 3, maxLength: 500 }
+                    occurredAt: { type: string, format: date-time }
+                - type: object
+                  additionalProperties: false
+                  required: [type, originalEntryId, reason]
+                  properties:
+                    type: { const: reversal }
+                    originalEntryId: { type: string, maxLength: 200 }
+                    reason: { type: string, minLength: 3, maxLength: 500 }
       responses:
-        "201": { description: Immutable ledger entry created }
+        "201": { description: Adjustment and audit entries created atomically }
         "200": { description: Existing entry returned for duplicate key }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Duplicate reversal or idempotency conflict }
         "422": { $ref: "#/components/responses/Validation" }
   /points/adjustments:
     post:
@@ -427,44 +933,6 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: Lifecycle or configuration conflict }
   /child/character:
-    get:
-      tags: [Child]
-      security: [{ firebaseBearer: [] }]
-      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
-      responses:
-        "200":
-          {
-            description: Authorized child response,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
-              },
-          }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: Lifecycle or configuration conflict }
-  /child/bible:
-    get:
-      tags: [Child]
-      security: [{ firebaseBearer: [] }]
-      description: Returns only the authenticated child's tenant-scoped data; collection views use honest null or empty availability states. Responses are private and not cacheable.
-      responses:
-        "200":
-          {
-            description: Authorized child response,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
-              },
-          }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: Lifecycle or configuration conflict }
-  /child/bible/{activityId}:
     get:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
@@ -706,31 +1174,6 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { description: Version or lifecycle conflict }
         "422": { $ref: "#/components/responses/Validation" }
-  /child/bible/{activityId}/responses:
-    post:
-      tags: [Child]
-      security: [{ firebaseBearer: [] }]
-      description: Server resolves participant, organization, quarter, team and completion state. Final completion is idempotent and atomically snapshots an eligible participation-only point rule.
-      requestBody:
-        {
-          required: true,
-          content: { application/json: { schema: { type: object } } },
-        }
-      responses:
-        "200":
-          {
-            description: Saved or idempotently completed,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/ChildSuccess" } },
-              },
-          }
-        "201": { description: Created }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "409": { description: Version or lifecycle conflict }
-        "422": { $ref: "#/components/responses/Validation" }
   /child/reading/{assignmentId}/responses:
     post:
       tags: [Child]
@@ -918,13 +1361,879 @@ paths:
       tags: [Child]
       security: [{ firebaseBearer: [] }]
       responses: { "200": { description: Authenticated child's issued awards } }
+  /admin/quarters:
+    get:
+      tags: [Administration]
+      operationId: listAdminQuarters
+      summary: List organization-scoped quarters
+      description: Admins see only active membership organizations; super_admin may query any organization. Search is a case-insensitive name substring.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - {
+            name: page,
+            in: query,
+            schema: { type: integer, minimum: 1, default: 1 },
+          }
+        - {
+            name: pageSize,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 25 },
+          }
+        - {
+            name: status,
+            in: query,
+            schema: { $ref: "#/components/schemas/QuarterStatus" },
+          }
+        - {
+            name: sort,
+            in: query,
+            schema:
+              {
+                type: string,
+                enum:
+                  [
+                    updated_desc,
+                    updated_asc,
+                    start_date_desc,
+                    start_date_asc,
+                    -updatedAt,
+                    updatedAt,
+                    -startDate,
+                    startDate,
+                  ],
+                default: updated_desc,
+              },
+          }
+        - { name: search, in: query, schema: { type: string, maxLength: 120 } }
+        - {
+            name: organizationId,
+            in: query,
+            description: Must be within the authenticated administrator's server-authorized scope.,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          {
+            description: Paginated quarters,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/QuarterListResponse" },
+                  },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+    post:
+      tags: [Administration]
+      operationId: createAdminQuarter
+      description: Creates a draft at version 1. IDs, lifecycle, timestamps, and audit fields are server controlled. Names are unique per organization. When organizationId is omitted, the server uses the administrator's sole organization or, for a global super administrator, the deployment's sole organization. Ambiguous multi-organization requests return QUARTER_ORGANIZATION_REQUIRED.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/QuarterCreate" },
+                  example:
+                    {
+                      name: Fall 2026,
+                      description: Fall program quarter,
+                      startDate: 2026-09-01,
+                      endDate: 2026-11-30,
+                      organizationId: org_123,
+                    },
+                },
+            },
+        }
+      responses:
+        "201":
+          {
+            description: Created quarter,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/QuarterResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          {
+            description: QUARTER_NAME_CONFLICT,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/Error" } },
+              },
+          }
+        "422": { $ref: "#/components/responses/Validation" }
+  /admin/participants:
+    get:
+      tags: [Administration]
+      operationId: listAdminParticipants
+      summary: List participants in the authenticated active workspace
+      description: The active organization is server-resolved. A compatibility organizationId, when supplied, must match it.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: search, in: query, schema: { type: string, minLength: 1, maxLength: 120 } }
+        - { name: status, in: query, schema: { type: string, minLength: 1 } }
+        - { name: teamId, in: query, schema: { type: string, minLength: 1 } }
+        - { name: programId, in: query, schema: { type: string, minLength: 1 } }
+        - { name: sort, in: query, schema: { type: string, enum: [updatedAt, -updatedAt], default: -updatedAt } }
+        - { name: organizationId, in: query, deprecated: true, description: Compatibility value that must equal the authenticated active organization., schema: { type: string, minLength: 1 } }
+      responses:
+        "200": { description: Paginated participants, content: { application/json: { schema: { $ref: "#/components/schemas/ParticipantListResponse" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+    post:
+      tags: [Administration]
+      operationId: createAdminParticipant
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "201": { description: Participant created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+  /admin/participants/{participantId}:
+    parameters:
+      - { name: participantId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Administration]
+      operationId: getAdminParticipant
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200": { description: Participant in the authenticated active workspace }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Administration]
+      operationId: updateAdminParticipant
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200": { description: Participant updated }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+    delete:
+      tags: [Administration]
+      operationId: archiveAdminParticipant
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200": { description: Participant archived }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/quarters/{quarterId}:
+    parameters:
+      - { $ref: "#/components/parameters/QuarterId" }
+    get:
+      tags: [Administration]
+      operationId: getAdminQuarter
+      description: Returns 404 for missing and out-of-scope records.
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200":
+          {
+            description: Quarter,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/QuarterResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/QuarterNotFound" }
+    patch:
+      tags: [Administration]
+      operationId: updateAdminQuarter
+      description: Updates only a draft. expectedVersion provides optimistic concurrency; a stale value returns QUARTER_VERSION_CONFLICT with HTTP 409. Lifecycle fields are never accepted here.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/QuarterUpdate" },
+                  example:
+                    {
+                      name: Fall 2026,
+                      description: Updated schedule,
+                      expectedVersion: 1,
+                    },
+                },
+            },
+        }
+      responses:
+        "200":
+          {
+            description: Updated quarter,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/QuarterResponse" } },
+              },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/QuarterNotFound" }
+        "409":
+          {
+            description: QUARTER_VERSION_CONFLICT,
+            QUARTER_NAME_CONFLICT,
+            or QUARTER_INVALID_TRANSITION,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/Error" } },
+              },
+          }
+        "422": { $ref: "#/components/responses/Validation" }
+  /admin/quarters/{quarterId}/activate:
+    post:
+      tags: [Administration]
+      operationId: activateAdminQuarter
+      description: Transitions draft to active. Rejects overlapping active quarters in the organization with QUARTER_OVERLAP.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/QuarterId" }]
+      requestBody: { $ref: "#/components/requestBodies/QuarterLifecycle" }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/QuarterSuccess" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/QuarterNotFound" },
+          "409": { $ref: "#/components/responses/QuarterConflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/quarters/{quarterId}/close:
+    post:
+      tags: [Administration]
+      operationId: closeAdminQuarter
+      description: Transitions active to closed. Referenced records remain intact; no quarter endpoint hard-deletes data.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/QuarterId" }]
+      requestBody: { $ref: "#/components/requestBodies/QuarterLifecycle" }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/QuarterSuccess" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/QuarterNotFound" },
+          "409": { $ref: "#/components/responses/QuarterConflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/quarters/{quarterId}/archive:
+    post:
+      tags: [Administration]
+      operationId: archiveAdminQuarter
+      description: Transitions closed to archived. Archived quarters are immutable and remain available to referenced assignments, reports, and point ledgers.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/QuarterId" }]
+      requestBody: { $ref: "#/components/requestBodies/QuarterLifecycle" }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/QuarterSuccess" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/QuarterNotFound" },
+          "409": { $ref: "#/components/responses/QuarterConflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/bible-content/imports:
+    get:
+      tags: [Bible]
+      operationId: listBibleImports
+      description: Lists tenant-scoped import summaries with server-derived review actions.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: quarterId, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 50, default: 25 },
+          }
+      responses:
+        { "200": { description: Bounded import summaries and next cursor } }
+    post:
+      tags: [Bible]
+      operationId: createBibleImport
+      description: Admin-only two-file preview import. Parsing never publishes content.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Stable 8-128 character key. An exact tenant-scoped retry returns the existing import without uploading again.
+          schema: { type: string, pattern: "^[A-Za-z0-9_-]{8,128}$" }
+      requestBody:
+        required: true
+        description: Use the text parts `organizationId`, `quarterId`, and `title`, and exactly one DOCX file part each named `quizFile` and `answerKeyFile`.
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/BibleImportUpload" }
+            encoding:
+              organizationId: { contentType: text/plain }
+              quarterId: { contentType: text/plain }
+              title: { contentType: text/plain }
+              quizFile:
+                {
+                  contentType: application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+                }
+              answerKeyFile:
+                {
+                  contentType: application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+                }
+      responses:
+        {
+          "201": { description: Draft preview },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "415": { $ref: "#/components/responses/Validation" },
+          "422": { $ref: "#/components/responses/Validation" },
+          "500": { $ref: "#/components/responses/Internal" },
+          "503": { $ref: "#/components/responses/Internal" },
+        }
+  /admin/bible-content/imports/{importId}:
+    get:
+      tags: [Bible]
+      operationId: getBibleImport
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      responses:
+        {
+          "200": { description: Tenant-scoped safe preview },
+          "404": { $ref: "#/components/responses/NotFound" },
+        }
+  /admin/bible-content/imports/{importId}/items/{itemId}:
+    patch:
+      tags: [Bible]
+      operationId: correctBibleImportItem
+      description: Corrects preview only; expectedVersion provides optimistic concurrency.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        [
+          { $ref: "#/components/parameters/ImportId" },
+          { name: itemId, in: path, required: true, schema: { type: string } },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleItemPatch" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Corrected preview },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/bible-content/imports/{importId}/validate:
+    post:
+      tags: [Bible]
+      operationId: validateBibleImport
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      responses: { "200": { description: Validation errors and warnings } }
+  /admin/bible-content/imports/{importId}/commit:
+    post:
+      tags: [Bible]
+      operationId: commitBibleImport
+      description: Idempotently commits validated preview as draft; never publishes.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Draft content set identifier },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/bible-content/imports/{importId}/reprocess:
+    post:
+      tags: [Bible]
+      operationId: reprocessBibleImport
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+            },
+        }
+      responses: { "200": { description: Processing import } }
+  /admin/bible-content/imports/{importId}/reject:
+    post:
+      tags: [Bible]
+      operationId: rejectBibleImport
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ImportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+            },
+        }
+      responses: { "200": { description: Rejected import } }
+  /admin/bible-content/imports/{importId}/documents/{kind}:
+    get:
+      tags: [Bible]
+      operationId: downloadBibleImportDocument
+      description: Streams a private source document after tenant and reviewer authorization. Answer-key access is audited.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ImportId" }
+        - {
+            name: kind,
+            in: path,
+            required: true,
+            schema: { type: string, enum: [question, answer-key] },
+          }
+      responses:
+        {
+          "200": { description: Private DOCX attachment },
+          "404": { $ref: "#/components/responses/NotFound" },
+        }
+  /admin/bible-content:
+    get:
+      {
+        tags: [Bible],
+        operationId: listBibleContent,
+        security: [{ firebaseBearer: [] }],
+        responses: { "200": { description: Tenant-scoped content list } },
+      }
+  /admin/bible-content/{contentSetId}:
+    get:
+      {
+        tags: [Bible],
+        operationId: getBibleContent,
+        security: [{ firebaseBearer: [] }],
+        parameters: [{ $ref: "#/components/parameters/ContentSetId" }],
+        responses:
+          {
+            "200":
+              {
+                description: Administrative content including protected answers,
+              },
+          },
+      }
+    patch:
+      tags: [Bible]
+      operationId: updateBibleContent
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ContentSetId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Updated draft },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/bible-content/{contentSetId}/publish:
+    post:
+      {
+        tags: [Bible],
+        operationId: publishBibleContent,
+        security: [{ firebaseBearer: [] }],
+        parameters: [{ $ref: "#/components/parameters/ContentSetId" }],
+        requestBody:
+          {
+            required: true,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+              },
+          },
+        responses:
+          {
+            "200": { description: Published content },
+            "409": { $ref: "#/components/responses/Conflict" },
+          },
+      }
+  /admin/bible-content/{contentSetId}/archive:
+    post:
+      {
+        tags: [Bible],
+        operationId: archiveBibleContent,
+        security: [{ firebaseBearer: [] }],
+        parameters: [{ $ref: "#/components/parameters/ContentSetId" }],
+        requestBody:
+          {
+            required: true,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/BibleLifecycle" } },
+              },
+          },
+        responses: { "200": { description: Archived content } },
+      }
+  /child/bible:
+    get:
+      tags: [Bible]
+      operationId: getChildBibleToday
+      description: Resolves membership, participant, active quarter, timezone, and local date server-side. Child schema structurally excludes correct answers.
+      security: [{ firebaseBearer: [] }]
+      responses:
+        {
+          "200":
+            {
+              description: Assignment or honest no-assignment state,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        { $ref: "#/components/schemas/ChildBibleResponse" },
+                    },
+                },
+            },
+        }
+  /child/bible/history:
+    get:
+      {
+        tags: [Bible],
+        operationId: getChildBibleHistory,
+        security: [{ firebaseBearer: [] }],
+        responses:
+          {
+            "200":
+              {
+                description: Current child's completion summaries without scores or answers,
+              },
+          },
+      }
+  /child/bible/{activityId}/draft:
+    put:
+      tags: [Bible]
+      operationId: saveChildBibleDraft
+      description: Saves private answers without awarding points; expectedVersion is optional optimistic concurrency.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleAnswers" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Draft status },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /child/bible/{activityId}/complete:
+    post:
+      tags: [Bible]
+      operationId: completeChildBibleActivity
+      description: Atomically finalizes private answers and awards configured participation points independent of correctness. Exact retries reuse the key.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        [
+          { $ref: "#/components/parameters/ActivityId" },
+          {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema: { type: string, maxLength: 128 },
+          },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/BibleAnswers" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Child-safe completion without score },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "503": { $ref: "#/components/responses/Internal" },
+        }
+  /admin/reports/definitions:
+    get:
+      tags: [Reports]
+      operationId: listAdminReportDefinitions
+      description: Requires admin.reports.read in the active workspace. Results contain only the requested organization.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ReportOrganizationId" }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - {
+            name: sort,
+            in: query,
+            schema:
+              { enum: [name, -name, updatedAt, -updatedAt], default: name },
+          }
+        - {
+            name: status,
+            in: query,
+            schema: { enum: [draft, approved, retired] },
+          }
+      responses:
+        {
+          "200": { description: Paged definitions (possibly empty) },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/reports/jobs:
+    get:
+      tags: [Reports]
+      operationId: listAdminReportJobs
+      description: Requires admin.reports.read in the active workspace. Results contain only the requested organization.
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ReportOrganizationId" }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - {
+            name: sort,
+            in: query,
+            schema: { enum: [createdAt, -createdAt], default: -createdAt },
+          }
+        - {
+            name: status,
+            in: query,
+            schema: { enum: [queued, generating, ready, failed, cancelled] },
+          }
+      responses:
+        {
+          "200": { description: Paged jobs (possibly empty) },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+    post:
+      tags: [Reports]
+      operationId: createAdminReportJob
+      description: Requires admin.reports.manage in the active workspace. An identical organization, actor, and idempotency key returns the same job.
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ReportJobCreate" } },
+            },
+        }
+      responses:
+        {
+          "202": { description: Queued job },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/reports/jobs/{reportId}:
+    get:
+      tags: [Reports]
+      operationId: getAdminReportJob
+      description: Requires admin.reports.read and active-workspace access to the job tenant.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ReportId" }]
+      responses:
+        {
+          "200": { description: Job status/detail },
+          "404": { $ref: "#/components/responses/NotFound" },
+        }
+  /admin/reports/jobs/{reportId}/download:
+    post:
+      tags: [Reports]
+      operationId: downloadAdminReportJob
+      description: Returns an audited, five-minute maximum signed URL, bounded by the report storage expiry.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ReportId" }]
+      responses:
+        {
+          "200": { description: Short-lived download URL },
+          "409": { $ref: "#/components/responses/Conflict" },
+        }
+  /admin/reports/jobs/{reportId}/retry:
+    post:
+      tags: [Reports]
+      operationId: retryAdminReportJob
+      description: Requires admin.reports.manage; only failed jobs may be retried.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ReportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ReportAction" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Requeued job },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
+  /admin/reports/jobs/{reportId}/cancel:
+    post:
+      tags: [Reports]
+      operationId: cancelAdminReportJob
+      description: Requires admin.reports.manage; only queued or generating jobs may be cancelled.
+      security: [{ firebaseBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ReportId" }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ReportAction" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Cancelled job },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "422": { $ref: "#/components/responses/Validation" },
+        }
 components:
+  parameters:
+    ReportId:
+      {
+        name: reportId,
+        in: path,
+        required: true,
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" },
+      }
+    ReportOrganizationId:
+      {
+        name: organizationId,
+        in: query,
+        required: true,
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" },
+      }
+    Page:
+      {
+        name: page,
+        in: query,
+        schema: { type: integer, minimum: 1, default: 1 },
+      }
+    PageSize:
+      {
+        name: pageSize,
+        in: query,
+        schema: { type: integer, minimum: 1, maximum: 100, default: 25 },
+      }
+    ImportId:
+      {
+        name: importId,
+        in: path,
+        required: true,
+        schema: { type: string, minLength: 1, maxLength: 128 },
+      }
+    ContentSetId:
+      {
+        name: contentSetId,
+        in: path,
+        required: true,
+        schema: { type: string, minLength: 1, maxLength: 128 },
+      }
+    ActivityId:
+      {
+        name: activityId,
+        in: path,
+        required: true,
+        schema: { type: string, minLength: 1, maxLength: 128 },
+      }
+    QuarterId:
+      {
+        name: quarterId,
+        in: path,
+        required: true,
+        schema: { type: string, minLength: 1, maxLength: 128 },
+      }
+  requestBodies:
+    QuarterLifecycle:
+      required: true
+      description: The expectedVersion must match the current record version.
+      content:
+        {
+          application/json:
+            {
+              schema: { $ref: "#/components/schemas/QuarterLifecycle" },
+              example: { expectedVersion: 1 },
+            },
+        }
   securitySchemes:
     {
       firebaseBearer:
         { type: http, scheme: bearer, bearerFormat: Firebase ID token },
     }
   responses:
+    QuarterSuccess:
+      {
+        description: Transitioned quarter,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/QuarterResponse" } },
+          },
+      }
+    QuarterNotFound:
+      {
+        description: QUARTER_NOT_FOUND (also used for an out-of-scope resource),
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
+    QuarterConflict:
+      {
+        description: QUARTER_INVALID_TRANSITION,
+        QUARTER_VERSION_CONFLICT,
+        or QUARTER_OVERLAP,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }
     Unauthorized:
       {
         description: Authentication required,
@@ -943,6 +2252,7 @@ components:
               { schema: { $ref: "#/components/schemas/Error" } },
           },
       }
+    Conflict: { description: Version, lifecycle, or idempotency conflict }
     NotFound:
       {
         description: Not found,
@@ -980,6 +2290,337 @@ components:
           },
       }
   schemas:
+    ReportAction:
+      type: object
+      additionalProperties: false
+      required: [organizationId]
+      properties:
+        { organizationId: { type: string, pattern: "^[A-Za-z0-9_-]+$" } }
+    ReportJobCreate:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          organizationId,
+          participantId,
+          reportType,
+          policyVersion,
+          idempotencyKey,
+        ]
+      properties:
+        organizationId: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+        participantId: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+        reportType: { type: string, pattern: "^[a-z0-9._-]{1,80}$" }
+        policyVersion: { type: string, minLength: 1, maxLength: 40 }
+        idempotencyKey: { type: string, pattern: "^[A-Za-z0-9_-]{8,128}$" }
+    ParentDataResponse:
+      description: Stable envelope for a single role-approved Parent resource.
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { type: object, additionalProperties: true }
+    ParentCollectionResponse:
+      description: Stable, deterministically ordered Parent collection envelope. Empty results are represented by data as an empty array.
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          { type: array, items: { type: object, additionalProperties: true } }
+        meta:
+          type: object
+          additionalProperties: false
+          required: [nextCursor]
+          properties:
+            nextCursor: { type: [string, "null"] }
+    CalculatedSource:
+      description: Identifies when and from which configured period a calculated response was derived. Null identifiers mean the calculation is explicitly unavailable.
+      type: object
+      required: [calculatedAt, sourceQuarterId, sourceWeekId]
+      properties:
+        calculatedAt: { type: string, format: date-time }
+        sourceQuarterId: { type: [string, "null"] }
+        sourceWeekId: { type: [string, "null"] }
+    BibleImportUpload:
+      type: object
+      additionalProperties: false
+      required: [organizationId, quarterId, title, quizFile, answerKeyFile]
+      properties:
+        organizationId: { type: string, minLength: 1, maxLength: 128 }
+        quarterId: { type: string, minLength: 1, maxLength: 128 }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        quizFile:
+          {
+            type: string,
+            format: binary,
+            description: DOCX quiz document; maximum 5 MiB,
+          }
+        answerKeyFile:
+          {
+            type: string,
+            format: binary,
+            description: DOCX answer-key document; maximum 5 MiB,
+          }
+    BibleLifecycle:
+      type: object
+      required: [expectedVersion]
+      properties:
+        {
+          expectedVersion: { type: integer, minimum: 1 },
+          acknowledgeWarnings: { type: boolean },
+          title: { type: string },
+          description: { type: string },
+        }
+    BibleItemPatch:
+      type: object
+      required: [expectedVersion]
+      properties:
+        {
+          expectedVersion: { type: integer, minimum: 1 },
+          title: { type: string },
+          scriptureReference: { type: string },
+        }
+    BibleAnswers:
+      type: object
+      additionalProperties: false
+      required: [answers]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        answers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [questionId, selectedChoiceId]
+            properties:
+              {
+                questionId: { type: string },
+                selectedChoiceId: { type: string, enum: [a, b, c, d, e] },
+              }
+    ChildBibleQuestion:
+      type: object
+      additionalProperties: false
+      required: [id, position, prompt, choices]
+      properties:
+        id: { type: string }
+        position: { type: integer }
+        prompt: { type: string }
+        choices:
+          {
+            type: array,
+            items:
+              {
+                type: object,
+                additionalProperties: false,
+                required: [id, label, text],
+                properties:
+                  {
+                    id: { type: string },
+                    label: { type: string },
+                    text: { type: string },
+                  },
+              },
+          }
+    ChildBibleResponse:
+      description: Child-safe projection; answer keys, source metadata, private answers, and scores are structurally absent.
+      type: object
+      properties:
+        data:
+          type: object
+          required:
+            [available, responseStatus, quarterId, localDate, calculatedAt]
+          properties:
+            available: { type: boolean }
+            reason:
+              {
+                type: [string, "null"],
+                enum: [no_active_quarter, no_assignment, null],
+              }
+            responseStatus:
+              { type: string, enum: [not_started, draft, completed] }
+            quarterId: { type: [string, "null"] }
+            localDate: { type: string, format: date }
+            calculatedAt: { type: string, format: date-time }
+            activity:
+              {
+                type: [object, "null"],
+                properties:
+                  {
+                    id: { type: string },
+                    title: { type: string },
+                    scriptureReference: { type: string },
+                    questions:
+                      {
+                        type: array,
+                        items:
+                          { $ref: "#/components/schemas/ChildBibleQuestion" },
+                      },
+                  },
+              }
+    AdminParticipant:
+      type: object
+      required: [id, organizationId, displayName, status]
+      properties:
+        id: { type: string }
+        organizationId: { type: string }
+        programId: { type: string }
+        activeTeamId: { type: string }
+        displayName: { type: string }
+        status: { type: string }
+        version: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+    ParticipantListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/AdminParticipant" } }
+            pagination:
+              type: object
+              required: [page, pageSize, total, totalPages]
+              properties:
+                page: { type: integer, minimum: 1 }
+                pageSize: { type: integer, minimum: 1, maximum: 100 }
+                total: { type: integer, minimum: 0 }
+                totalPages: { type: integer, minimum: 0 }
+    QuarterStatus: { type: string, enum: [draft, active, closed, archived] }
+    QuarterAllowedAction:
+      type: string
+      description: >-
+        An action the authenticated caller may currently perform. The server is
+        authoritative; clients must not infer permissions or lifecycle transitions.
+      enum: [view, edit, activate, close, archive]
+    QuarterWorkspace:
+      type: object
+      additionalProperties: false
+      description: Authoritative minimal projection of the quarter's tenant workspace.
+      required: [id, name, type]
+      properties:
+        id: { type: string, description: Canonical workspace identifier. }
+        name:
+          { type: string, description: Current server-owned workspace name. }
+        type: { type: string, const: organization }
+    Quarter:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          name,
+          description,
+          startDate,
+          endDate,
+          status,
+          organizationId,
+          workspace,
+          allowedActions,
+          createdAt,
+          updatedAt,
+          createdBy,
+          updatedBy,
+          version,
+        ]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, "null"], maxLength: 2000 }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        status: { $ref: "#/components/schemas/QuarterStatus" }
+        organizationId:
+          {
+            type: string,
+            deprecated: true,
+            description: Backward-compatible tenant identifier. New clients should use workspace.id; this field is preserved during migration.,
+          }
+        workspace: { $ref: "#/components/schemas/QuarterWorkspace" }
+        allowedActions:
+          type: array
+          description: >-
+            Server-calculated capabilities for this caller and lifecycle state.
+            Presence in this list does not replace server enforcement on mutation.
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/QuarterAllowedAction" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        updatedBy: { type: string }
+        version: { type: integer, minimum: 1 }
+    QuarterCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      oneOf:
+        - required: [startDate, endDate]
+        - required: [startsOn, endsOn]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, "null"], maxLength: 2000 }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        startsOn:
+          {
+            type: string,
+            format: date,
+            deprecated: true,
+            description: Compatibility alias for startDate. Do not send both naming styles.,
+          }
+        endsOn:
+          {
+            type: string,
+            format: date,
+            deprecated: true,
+            description: Compatibility alias for endDate. Do not send both naming styles.,
+          }
+        organizationId:
+          {
+            type: string,
+            description: Optional when the target is unambiguous (the administrator's sole organization or the sole deployment organization for a global super administrator); otherwise required.,
+          }
+    QuarterUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, "null"], maxLength: 2000 }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        expectedVersion: { type: integer, minimum: 1 }
+    QuarterLifecycle:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties: { expectedVersion: { type: integer, minimum: 1 } }
+    QuarterResponse:
+      type: object
+      required: [data]
+      properties: { data: { $ref: "#/components/schemas/Quarter" } }
+    QuarterListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              { type: array, items: { $ref: "#/components/schemas/Quarter" } }
+            pagination:
+              type: object
+              required: [page, pageSize, total, totalPages]
+              properties:
+                {
+                  page: { type: integer },
+                  pageSize: { type: integer },
+                  total: { type: integer },
+                  totalPages: { type: integer },
+                }
     ChildSuccess:
       type: object
       required: [data]
@@ -994,23 +2635,37 @@ components:
         required: [status, environment],
         properties:
           {
-            status: { type: string, const: ok },
+            status: { type: string, enum: [ok, unavailable] },
             environment: { type: string },
+            dependencies:
+              {
+                type: object,
+                properties:
+                  {
+                    bibleImportStorage:
+                      {
+                        type: object,
+                        properties:
+                          {
+                            status:
+                              {
+                                type: string,
+                                enum: [checking, ready, unavailable],
+                              },
+                          },
+                      },
+                  },
+              },
           },
       }
     Error:
       {
         type: object,
-        required: [code, message, requestId],
+        required: [error],
         properties:
           {
-            code: { type: string },
-            message: { type: string },
-            details: {},
-            requestId: { type: string },
             error:
               {
-                deprecated: true,
                 type: object,
                 required: [code, message, requestId],
                 properties:
@@ -1018,6 +2673,7 @@ components:
                     code: { type: string },
                     message: { type: string },
                     requestId: { type: string },
+                    fieldErrors: { type: object, additionalProperties: true },
                   },
               },
           },
@@ -1037,10 +2693,14 @@ components:
                     email,
                     displayName,
                     roles,
+                    platformRoles,
                     disabled,
                     onboardingStatus,
+                    nextStep,
                     memberships,
                     authorization,
+                    claimSynchronization,
+                    tokenRefreshRequired,
                   ],
                 properties:
                   {
@@ -1064,6 +2724,37 @@ components:
                               ],
                           },
                       },
+                    platformRoles:
+                      {
+                        type: array,
+                        description: "Trusted global roles provisioned only by an approved server-side process.",
+                        items: { type: string, enum: [super_admin] },
+                      },
+                    activeOrganizationId:
+                      {
+                        type: string,
+                        description: "Present only when exactly one active membership supplies tenant context.",
+                      },
+                    tokenRefreshRequired: { type: boolean },
+                    claimSynchronization:
+                      {
+                        type: object,
+                        required: [status, tokenRefreshRequired],
+                        properties:
+                          {
+                            status:
+                              {
+                                type: string,
+                                enum:
+                                  [
+                                    synchronized,
+                                    refresh_required,
+                                    retry_required,
+                                  ],
+                              },
+                            tokenRefreshRequired: { type: boolean },
+                          },
+                      },
                     disabled: { type: boolean },
                     onboardingStatus:
                       {
@@ -1071,10 +2762,103 @@ components:
                         enum:
                           [
                             complete,
+                            registration_intent_required,
+                            personal_workspace_required,
+                            organization_setup_required,
+                            invitation_required,
+                            account_recovery_required,
+                            organization_required,
                             role_required,
-                            profile_required,
-                            pending_approval,
+                            pending,
+                            disabled,
+                            session_error,
                           ],
+                      },
+                    registrationIntent:
+                      { type: string, enum: [personal, organization] },
+                    nextStep:
+                      {
+                        type: string,
+                        enum:
+                          [
+                            choose_account_type,
+                            personal_workspace_setup,
+                            organization_setup,
+                            accept_invitation,
+                            await_role_assignment,
+                            account_recovery,
+                            dashboard,
+                          ],
+                      },
+                    accountStateReason:
+                      {
+                        type: string,
+                        description: "Stable, non-sensitive reason for the projected recovery state.",
+                        enum:
+                          [
+                            registration_intent_missing,
+                            organization_role_not_assigned,
+                            legacy_account_unclassified,
+                            account_disabled,
+                          ],
+                      },
+                    pendingInvitation:
+                      {
+                        type: boolean,
+                        description: "True when a matching, unexpired invitation can be accepted; invitation secrets and tenant data are omitted.",
+                      },
+                    recoveryReference:
+                      {
+                        type: string,
+                        description: "Stable opaque reference suitable for a support request.",
+                        pattern: "^AR-[A-F0-9]{12}$",
+                      },
+                    activeWorkspaceId: { type: string },
+                    activeWorkspace:
+                      {
+                        type: object,
+                        required: [id, type, name, status],
+                        properties:
+                          {
+                            id: { type: string },
+                            type:
+                              { type: string, enum: [personal, organization] },
+                            name: { type: string },
+                            status: { type: string },
+                          },
+                      },
+                    workspaceRoles: { type: array, items: { type: string } },
+                    personas:
+                      {
+                        type: array,
+                        items:
+                          {
+                            type: string,
+                            enum: [child, parent, mentor, observer],
+                          },
+                      },
+                    capabilities: { type: array, items: { type: string } },
+                    effectiveRoles: { type: array, items: { type: string } },
+                    workspaces:
+                      {
+                        type: array,
+                        items:
+                          {
+                            type: object,
+                            required: [id, type, name, roles, status],
+                            properties:
+                              {
+                                id: { type: string },
+                                type:
+                                  {
+                                    type: string,
+                                    enum: [personal, organization],
+                                  },
+                                name: { type: string },
+                                roles: { type: array, items: { type: string } },
+                                status: { type: string },
+                              },
+                          },
                       },
                     memberships:
                       {
@@ -1085,7 +2869,19 @@ components:
                             required: [organizationId, roles, status],
                             properties:
                               {
+                                workspaceId: { type: string },
                                 organizationId: { type: string },
+                                workspaceRoles:
+                                  { type: array, items: { type: string } },
+                                personas:
+                                  {
+                                    type: array,
+                                    items:
+                                      {
+                                        type: string,
+                                        enum: [child, parent, mentor, observer],
+                                      },
+                                  },
                                 roles:
                                   {
                                     type: array,
@@ -1106,7 +2902,15 @@ components:
                                 status:
                                   {
                                     type: string,
-                                    enum: [active, pending, suspended, revoked],
+                                    enum:
+                                      [
+                                        active,
+                                        pending,
+                                        suspended,
+                                        revoked,
+                                        expired,
+                                        invalid,
+                                      ],
                                   },
                               },
                           },
@@ -1120,7 +2924,13 @@ components:
                             source:
                               {
                                 type: string,
-                                enum: [membership, legacy_user_profile, none],
+                                enum:
+                                  [
+                                    platform_claims_and_memberships,
+                                    membership,
+                                    legacy_user_profile,
+                                    none,
+                                  ],
                               },
                             migrationRequired: { type: boolean },
                           },
@@ -1139,16 +2949,22 @@ components:
             familyCode:
               {
                 type: string,
-                minLength: 4,
-                maxLength: 32,
-                description: NFKC-normalized server-side,
+                minLength: 8,
+                maxLength: 24,
+                pattern: "^[a-z0-9_-]+$",
+                description: NFKC-normalized,
+                trimmed,
+                and lowercased server-side,
               },
             handle:
               {
                 type: string,
                 minLength: 2,
-                maxLength: 32,
-                description: NFKC-normalized server-side,
+                maxLength: 24,
+                pattern: "^[a-z0-9][a-z0-9._-]*$",
+                description: NFKC-normalized,
+                trimmed,
+                and lowercased server-side,
               },
             pin:
               { type: string, format: password, minLength: 4, maxLength: 128 },

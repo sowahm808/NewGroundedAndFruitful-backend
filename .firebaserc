@@ -1,1 +1,9 @@
-{"projects":{"development":"grounded-fruitful","staging":"grounded-fruitful-staging","production":"grounded-fruitful-production"}}
+{
+  "projects": {
+    "development": "grounded-fruitful",
+    "staging": "grounded-fruitful-staging",
+    "production": "grounded-fruitful"
+  },
+  "targets": {},
+  "etags": {}
+}

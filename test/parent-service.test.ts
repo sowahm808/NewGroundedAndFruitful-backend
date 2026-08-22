@@ -24,15 +24,37 @@ describe("ParentService observations", () => {
       observation("other-org", "org-2", "2026-03-01T00:00:00.000Z"),
       observation("new", "org-1", "2026-02-01T00:00:00.000Z"),
     ];
-    const get = () => Promise.resolve({ docs });
-    const where = (field: string, operator: string, value: string) => {
-      expect([field, operator, value]).toEqual(["parentUid", "==", "parent-1"]);
-      return { get };
-    };
+    const links = [
+      {
+        id: "link-old",
+        get: (field: string) =>
+          ({
+            status: "active",
+            organizationId: "org-1",
+            participantId: "child-old",
+          })[field],
+      },
+      {
+        id: "link-new",
+        get: (field: string) =>
+          ({
+            status: "active",
+            organizationId: "org-1",
+            participantId: "child-new",
+          })[field],
+      },
+    ];
     const db = {
       collection: (name: string) => {
-        expect(name).toBe("characterObservations");
-        return { where };
+        const query = {
+          where: () => query,
+          limit: () => query,
+          get: () =>
+            Promise.resolve({
+              docs: name === "characterObservations" ? docs : links,
+            }),
+        };
+        return query;
       },
     } as unknown as Firestore;
     const service = new ParentService(db);
@@ -60,7 +82,9 @@ describe("ParentService observations", () => {
   it("returns an empty collection and propagates repository failures for sanitization", async () => {
     const emptyDb = {
       collection: () => ({
-        where: () => ({ get: () => Promise.resolve({ docs: [] }) }),
+        where: () => ({
+          limit: () => ({ get: () => Promise.resolve({ docs: [] }) }),
+        }),
       }),
     } as unknown as Firestore;
     await expect(
@@ -73,7 +97,9 @@ describe("ParentService observations", () => {
     const failure = new Error("raw Firestore detail");
     const failedDb = {
       collection: () => ({
-        where: () => ({ get: () => Promise.reject(failure) }),
+        where: () => ({
+          limit: () => ({ get: () => Promise.reject(failure) }),
+        }),
       }),
     } as unknown as Firestore;
     await expect(
@@ -82,6 +108,107 @@ describe("ParentService observations", () => {
         { limit: 20 },
       ),
     ).rejects.toBe(failure);
+  });
+});
+
+describe("ParentService notifications", () => {
+  it("returns only the authenticated parent's tenant-scoped notifications", async () => {
+    const notification = (
+      id: string,
+      organizationId: string,
+      createdAt: string,
+    ) => {
+      const values: Record<string, unknown> = {
+        organizationId,
+        type: "announcement",
+        title: `Title ${id}`,
+        message: `Message ${id}`,
+        read: false,
+        createdAt: Timestamp.fromDate(new Date(createdAt)),
+        internalDeliveryData: "must not be returned",
+      };
+      return { id, get: (field: string) => values[field] };
+    };
+    const docs = [
+      notification("older", "org-1", "2026-01-01T00:00:00.000Z"),
+      notification("cross-tenant", "org-2", "2026-03-01T00:00:00.000Z"),
+      notification("newer", "org-1", "2026-02-01T00:00:00.000Z"),
+    ];
+    const query = {
+      where: () => query,
+      limit: () => query,
+      get: () => Promise.resolve({ docs }),
+    };
+    const db = { collection: () => query } as unknown as Firestore;
+    const service = new ParentService(db);
+
+    await expect(
+      service.notifications(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        { limit: 1 },
+      ),
+    ).resolves.toEqual({
+      data: [
+        {
+          id: "newer",
+          organizationId: "org-1",
+          type: "announcement",
+          title: "Title newer",
+          message: "Message newer",
+          read: false,
+          createdAt: "2026-02-01T00:00:00.000Z",
+        },
+      ],
+      meta: { nextCursor: "newer" },
+    });
+    await expect(
+      service.notifications(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        { limit: 20, cursor: "newer" },
+      ),
+    ).resolves.toMatchObject({
+      data: [{ id: "older" }],
+      meta: { nextCursor: null },
+    });
+  });
+
+  it("uses only the selected active workspace when a parent belongs to multiple tenants", async () => {
+    const notification = (id: string, organizationId: string) => ({
+      id,
+      get: (field: string) =>
+        ({
+          organizationId,
+          type: "announcement",
+          title: id,
+          message: id,
+          read: false,
+          createdAt: "2026-08-22T00:00:00.000Z",
+        })[field],
+    });
+    const query = {
+      where: () => query,
+      limit: () => query,
+      get: () =>
+        Promise.resolve({
+          docs: [
+            notification("selected", "org-1"),
+            notification("hidden", "org-2"),
+          ],
+        }),
+    };
+    const service = new ParentService({
+      collection: () => query,
+    } as unknown as Firestore);
+
+    const result = await service.notifications(
+      {
+        uid: "parent-1",
+        organizationIds: ["org-1", "org-2"],
+        activeWorkspaceId: "org-1",
+      },
+      { limit: 20 },
+    );
+    expect(result.data.map((item) => item.id)).toEqual(["selected"]);
   });
 });
 
@@ -172,5 +299,24 @@ describe("ParentService academic-support requests", () => {
         "own",
       ),
     ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("ParentService children relationship scope", () => {
+  it("returns 200-compatible empty data when an authorized parent has no links", async () => {
+    const query = {
+      where: () => query,
+      limit: () => query,
+      get: () => Promise.resolve({ docs: [] }),
+    };
+    const service = new ParentService({
+      collection: () => query,
+    } as unknown as Firestore);
+    await expect(
+      service.children(
+        { uid: "parent-1", organizationIds: ["personal-1"] },
+        { limit: 20 },
+      ),
+    ).resolves.toEqual({ data: [], meta: { nextCursor: null } });
   });
 });

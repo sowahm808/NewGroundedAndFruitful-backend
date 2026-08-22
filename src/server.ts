@@ -1,6 +1,8 @@
 import { app } from "./app.js";
 import { env } from "./config/env.js";
 import { logger } from "./shared/logger.js";
+import { initializeStorageReadiness } from "./config/storage-readiness.js";
+await initializeStorageReadiness();
 const server = app.listen(env.PORT, env.HOST, () =>
   logger.info("server_started", { port: env.PORT, environment: env.APP_ENV }),
 );

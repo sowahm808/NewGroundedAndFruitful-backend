@@ -6,9 +6,89 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function membershipPath(organizationId) {
+      return /databases/$(database)/documents/memberships/$(organizationId + "_" + request.auth.uid);
+    }
+
+    function activeMember(organizationId) {
+      return signedIn() && exists(membershipPath(organizationId)) &&
+        get(membershipPath(organizationId)).data.userId == request.auth.uid &&
+        get(membershipPath(organizationId)).data.organizationId == organizationId &&
+        get(membershipPath(organizationId)).data.status == "active" &&
+        get(membershipPath(organizationId)).data.roles is list;
+    }
+
+    function hasRole(organizationId, role) {
+      return activeMember(organizationId) &&
+        role in get(membershipPath(organizationId)).data.roles;
+    }
+
+    function isPlatformSuperAdmin() {
+      return signedIn() && request.auth.token.roles is list &&
+        "platform_super_admin" in request.auth.token.roles;
+    }
+
+    function canAdminister(organizationId) {
+      return isPlatformSuperAdmin() ||
+        (activeMember(organizationId) &&
+          (hasRole(organizationId, "admin") ||
+           hasRole(organizationId, "super_admin")));
+    }
+
+    function ownsParticipant(participantId, participant) {
+      return participant.firebaseUid == request.auth.uid;
+    }
+
+    function linkedParent(participantId, participant) {
+      let link = get(/databases/$(database)/documents/parentChildLinks/$(request.auth.uid + "_" + participantId)).data;
+      return link.parentUid == request.auth.uid && link.participantId == participantId &&
+        link.organizationId == participant.organizationId && link.status == "active" &&
+        link.revokedAt == null;
+    }
+
+    function observerGrant(participantId, participant) {
+      let grant = get(/databases/$(database)/documents/observerGrants/$(request.auth.uid + "_" + participantId)).data;
+      return grant.observerUid == request.auth.uid && grant.participantId == participantId &&
+        grant.organizationId == participant.organizationId && grant.status == "active" &&
+        grant.revokedAt == null && (!('expiresAt' in grant) || grant.expiresAt > request.time);
+    }
+
     match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      allow get: if signedIn() && request.auth.uid == uid;
       allow write: if false;
+    }
+
+    match /workspaces/{workspaceId} {
+      allow get: if activeMember(workspaceId);
+      allow list, write: if false;
+    }
+
+    // Elevations and their immutable audit trail are evaluated by the Admin SDK.
+    // Browser claims are deliberately never accepted as temporary elevation.
+    match /elevationGrants/{grantId} { allow read, write: if false; }
+    match /auditLogs/{auditId} { allow read, write: if false; }
+
+    // Participant profiles contain only the relationship-safe projection. Notes,
+    // reflections, credentials, and responses live in server-only collections.
+    match /participants/{participantId} {
+      allow get: if signedIn() && (canAdminister(resource.data.organizationId) ||
+        (activeMember(resource.data.organizationId) &&
+         (hasRole(resource.data.organizationId, "child") && ownsParticipant(participantId, resource.data)) ||
+         (hasRole(resource.data.organizationId, "parent") && linkedParent(participantId, resource.data)) ||
+         (hasRole(resource.data.organizationId, "observer") && observerGrant(participantId, resource.data))));
+      allow list, write: if false;
+    }
+
+    match /teams/{teamId} {
+      allow get: if signedIn() && (canAdminister(resource.data.organizationId) ||
+        (activeMember(resource.data.organizationId) &&
+        hasRole(resource.data.organizationId, "mentor") &&
+        get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.mentorUid == request.auth.uid &&
+        get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.teamId == teamId &&
+        get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.organizationId == resource.data.organizationId &&
+        get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.status == "active" &&
+        get(/databases/$(database)/documents/mentorAssignments/$(request.auth.uid + "_" + teamId)).data.revokedAt == null));
+      allow list, write: if false;
     }
 
     // The web application uses Express APIs. All domain data is server-only;

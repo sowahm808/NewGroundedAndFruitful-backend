@@ -6,11 +6,13 @@ export const pointSourceTypes = [
   "family_activity",
   "reading",
   "project_milestone",
+  "project_completion",
   "academic_session",
   "character_observation_bonus",
   "adjustment",
 ] as const;
 export type PointSourceType = (typeof pointSourceTypes)[number];
+export type CompletionSourceType = Exclude<PointSourceType, "adjustment">;
 export interface AwardRequest {
   participantId: string;
   teamId: string;
@@ -21,6 +23,8 @@ export interface AwardRequest {
   awardedBy: string;
   idempotencyKey: string;
   occurredAt: Date;
+  /** Validated organization IANA timezone used for calendar aggregates. */
+  timezone?: string;
 }
 export interface PointRule {
   activityType: Exclude<PointSourceType, "adjustment">;
