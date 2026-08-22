@@ -155,44 +155,73 @@ router.post(
   }, 201),
 );
 router.get(
-  ["/imports", "/bible-content/imports", "/bible-imports"],
+  ["/bible-content/imports", "/bible-imports", "/imports"],
   run(async (req) => {
     const query = importListQuerySchema.safeParse(req.query);
     if (!query.success) throw new ValidationError("Invalid import list query.");
 
-    const limit = query.data.pageSize ?? query.data.limit;
+    const limit = query.data.pageSize ?? query.data.limit ?? 25;
+    const page = query.data.page ?? 1;
 
     const result = (await service.listImports(req.principal, {
       ...query.data,
       limit,
     })) as Record<string, any>;
 
-    // Safely extract the items array regardless of whether service returns
-    // { items: [...] }, { imports: { items: [...] } }, or a bare array [...]
-    const rawItems = Array.isArray(result)
+    const rawList = Array.isArray(result)
       ? result
       : Array.isArray(result?.items)
         ? result.items
         : Array.isArray(result?.imports?.items)
           ? result.imports.items
-          : Array.isArray(result?.imports)
-            ? result.imports
-            : [];
+          : [];
 
-    const page = query.data.page ?? 1;
-    const total = Number(result?.total ?? result?.pagination?.total ?? rawItems.length);
-
-    return {
-      imports: {
-        items: rawItems,
-        pagination: {
-          page,
-          pageSize: limit,
-          total,
-          totalPages: Math.max(1, Math.ceil(total / limit)),
+    const items = rawList.map((doc: any) => ({
+      id: doc.id,
+      title: doc.title,
+      status: doc.status,
+      quarter: {
+        id: doc.quarter?.id ?? "",
+        name: doc.quarter?.name ?? "",
+      },
+      documents: {
+        question: {
+          filename: doc.questionFilename ?? doc.documents?.question?.filename ?? "quiz.docx",
+          sizeBytes: doc.documents?.question?.sizeBytes ?? 0,
+        },
+        answerKey: {
+          filename: doc.answerKeyFilename ?? doc.documents?.answerKey?.filename ?? "answer_key.docx",
+          sizeBytes: doc.documents?.answerKey?.sizeBytes ?? 0,
         },
       },
-      meta: result?.meta ?? { nextCursor: null },
+      counts: {
+        activities: doc.activityCount ?? doc.counts?.activities ?? 0,
+        questions: doc.questionCount ?? doc.counts?.questions ?? 0,
+        errors: doc.errorCount ?? doc.counts?.errors ?? 0,
+        warnings: doc.warningCount ?? doc.counts?.warnings ?? 0,
+      },
+      uploadedBy: doc.uploadedBy ?? "Administrator",
+      uploadedAt: doc.uploadedAt ?? doc.createdAt ?? new Date().toISOString(),
+      updatedAt: doc.updatedAt ?? doc.createdAt ?? new Date().toISOString(),
+      parserVersion: doc.parserVersion ?? "gf-bible-ooxml/2.0.0",
+      version: doc.version ?? 1,
+      allowedActions: doc.allowedActions ?? ["view", "review", "reject", "commit"],
+      activities: doc.activities ?? [],
+      validation: doc.validation ?? { issues: [] },
+      committedContentSetId: doc.committedContentSetId ?? undefined,
+    }));
+
+    const total = Number(result?.total ?? items.length);
+
+    return {
+      items,
+      pagination: {
+        page,
+        pageSize: limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+      aggregates: result?.aggregates ?? {},
     };
   }),
 );
