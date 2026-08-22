@@ -7,6 +7,8 @@ import { logger } from "../shared/logger.js";
 import { idSchema } from "../shared/validation.js";
 import {
   importMetadataSchema,
+  importCommandSchema,
+  importListQuerySchema,
   itemPatchSchema,
   lifecycleSchema,
 } from "./domain.js";
@@ -153,6 +155,14 @@ router.post(
   }, 201),
 );
 router.get(
+  ["/bible-content/imports", "/bible-imports"],
+  run((req) => {
+    const query = importListQuerySchema.safeParse(req.query);
+    if (!query.success) throw new ValidationError("Invalid import list query.");
+    return service.listImports(req.principal, query.data);
+  }),
+);
+router.get(
   ["/bible-content/imports/:importId", "/bible-imports/:importId"],
   run((req) => service.get(req.principal, id(req.params.importId))),
 );
@@ -186,15 +196,74 @@ router.post(
     "/bible-content/imports/:importId/commit",
     "/bible-imports/:importId/commit",
   ],
-  validateBody(lifecycleSchema),
+  validateBody(importCommandSchema),
   run((req) =>
     service.commit(
       req.principal,
       id(req.params.importId),
-      Boolean(req.body.acknowledgeWarnings),
+      req.body,
       req.requestId,
     ),
   ),
+);
+router.post(
+  [
+    "/bible-content/imports/:importId/reprocess",
+    "/bible-imports/:importId/reprocess",
+  ],
+  validateBody(importCommandSchema),
+  run((req) =>
+    service.reprocess(
+      req.principal,
+      id(req.params.importId),
+      req.body,
+      req.requestId,
+    ),
+  ),
+);
+router.post(
+  [
+    "/bible-content/imports/:importId/reject",
+    "/bible-imports/:importId/reject",
+  ],
+  validateBody(importCommandSchema),
+  run((req) =>
+    service.reject(
+      req.principal,
+      id(req.params.importId),
+      req.body,
+      req.requestId,
+    ),
+  ),
+);
+router.get(
+  [
+    "/bible-content/imports/:importId/documents/:kind",
+    "/bible-imports/:importId/documents/:kind",
+  ],
+  async (req, res, next) => {
+    try {
+      const document = await service.downloadDocument(
+        req.principal,
+        id(req.params.importId),
+        req.params.kind === "question"
+          ? "question"
+          : req.params.kind === "answer-key"
+            ? "answerKey"
+            : undefined,
+        req.requestId,
+      );
+      res.setHeader("Content-Type", document.contentType);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(document.filename)}`,
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      res.send(document.data);
+    } catch (e) {
+      next(e);
+    }
+  },
 );
 router.get(
   "/bible-content",

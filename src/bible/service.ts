@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-condition */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   FieldValue,
   type Firestore,
@@ -40,6 +40,7 @@ interface ImportStorage {
   file(path: string): {
     save(data: Buffer, options: Record<string, unknown>): Promise<unknown>;
     delete(options?: Record<string, unknown>): Promise<unknown>;
+    download(): Promise<[Buffer]>;
   };
 }
 const storageFailure = (cause: unknown) => {
@@ -95,6 +96,35 @@ export class BibleAdministrationService {
     )
       throw error(404, "BIBLE_SCOPE_FORBIDDEN", "Bible resource not found.");
     return actor;
+  }
+  private can(actor: Principal, capability: string) {
+    return Boolean(
+      actor.capabilities?.includes(capability) ||
+      actor.capabilities?.includes("admin.bible_content.manage"),
+    );
+  }
+  private actions(actor: Principal, data: Record<string, unknown>) {
+    const actions = this.can(actor, "admin.bible_content.read") ? ["view"] : [];
+    const errors = Number(
+      data.errorCount ?? (data.errors as unknown[] | undefined)?.length ?? 0,
+    );
+    if (
+      data.status === "needs_review" &&
+      this.can(actor, "admin.bible_content.review")
+    )
+      actions.push("review", "reject");
+    if (
+      data.status === "needs_review" &&
+      errors === 0 &&
+      this.can(actor, "admin.bible_content.commit")
+    )
+      actions.push("commit");
+    if (
+      ["processing_failed", "needs_correction"].includes(String(data.status)) &&
+      this.can(actor, "admin.bible_content.review")
+    )
+      actions.push("reprocess");
+    return actions;
   }
   private audit(
     tx: Transaction,
@@ -289,6 +319,22 @@ export class BibleAdministrationService {
             "BIBLE_IMPORT_IDEMPOTENCY_CONFLICT",
             "An import already exists for this request ID.",
           );
+        const sourceDocuments = {
+          question: {
+            originalFilename: safeName(quiz.name),
+            storagePath: quizPath,
+            contentType: quiz.mime,
+            size: quiz.buffer.length,
+            sha256: createHash("sha256").update(quiz.buffer).digest("hex"),
+          },
+          answerKey: {
+            originalFilename: safeName(key.name),
+            storagePath: keyPath,
+            contentType: key.mime,
+            size: key.buffer.length,
+            sha256: createHash("sha256").update(key.buffer).digest("hex"),
+          },
+        };
         tx.create(ref, {
           organizationId: metadata.organizationId,
           quarterId: metadata.quarterId,
@@ -305,11 +351,12 @@ export class BibleAdministrationService {
             size: key.buffer.length,
             storagePath: keyPath,
           },
+          sourceDocuments,
           requestId,
           idempotencyKey: idempotencyKey ?? null,
           sourceChecksums: result.checksums,
           parserVersion: result.parserVersion,
-          items: result.items,
+          templateVersion: "gf-bible-docx/1",
           warnings: result.warnings,
           errors: result.errors,
           validationSummary: {
@@ -317,12 +364,25 @@ export class BibleAdministrationService {
             errorCount: result.errors.length,
             warningCount: result.warnings.length,
           },
+          activityCount: result.items.length,
+          questionCount: result.items.reduce(
+            (count, item) => count + item.questions.length,
+            0,
+          ),
+          warningCount: result.warnings.length,
+          errorCount: result.errors.length,
           version: 1,
           createdBy: actor.uid,
           updatedBy: actor.uid,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
+        for (const item of result.items)
+          tx.create(ref.collection("activities").doc(item.id), {
+            ...item,
+            organizationId: metadata.organizationId,
+            createdAt: FieldValue.serverTimestamp(),
+          });
         this.audit(
           tx,
           "bible.import.created",
@@ -408,24 +468,177 @@ export class BibleAdministrationService {
   }
   async get(principal: Principal | undefined, id: string) {
     const d = await this.scoped(id, principal);
+    const actor = this.actor(principal, String(d.get("organizationId")));
+    const [quarter, preview, timeline] = await Promise.all([
+      this.db.doc(`quarters/${String(d.get("quarterId"))}`).get(),
+      d.ref.collection("activities").orderBy("position").limit(25).get(),
+      this.db
+        .collection("auditLogs")
+        .where("targetId", "==", id)
+        .limit(50)
+        .get(),
+    ]);
+    const source = d.get("sourceDocuments") as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    const question = source?.question ?? d.get("quizFile") ?? {};
+    const answerKey = source?.answerKey ?? d.get("answerKeyFile") ?? {};
+    const data = d.data()!;
     return {
       id: d.id,
       organizationId: d.get("organizationId"),
+      organization: { id: d.get("organizationId") },
       quarterId: d.get("quarterId"),
+      quarter: quarter.exists
+        ? {
+            id: quarter.id,
+            name: quarter.get("name") ?? quarter.get("title") ?? "",
+            startDate: quarter.get("startDate"),
+            endDate: quarter.get("endDate"),
+          }
+        : null,
       title: d.get("title"),
       status: d.get("status"),
-      quizFile: d.get("quizFile"),
-      answerKeyFile: d.get("answerKeyFile"),
+      documents: {
+        question: {
+          filename: question.originalFilename ?? question.displayName,
+          size: question.size,
+        },
+        answerKey: {
+          filename: answerKey.originalFilename ?? answerKey.displayName,
+          size: answerKey.size,
+        },
+      },
       sourceChecksums: d.get("sourceChecksums"),
       parserVersion: d.get("parserVersion"),
-      items: d.get("items") ?? [],
+      activities: preview.docs.map((item) => item.data()),
+      preview: { limit: 25, hasMore: preview.size === 25 },
       warnings: d.get("warnings") ?? [],
       errors: d.get("errors") ?? [],
       validationSummary: d.get("validationSummary"),
+      summary: {
+        activityCount: Number(
+          d.get("activityCount") ??
+            d.get("validationSummary.activityCount") ??
+            preview.size,
+        ),
+        questionCount: Number(d.get("questionCount") ?? 0),
+        warningCount: Number(
+          d.get("warningCount") ?? (d.get("warnings") ?? []).length,
+        ),
+        errorCount: Number(
+          d.get("errorCount") ?? (d.get("errors") ?? []).length,
+        ),
+      },
+      processing: {
+        startedAt: iso(d.get("processingStartedAt")),
+        completedAt: iso(d.get("processingCompletedAt")),
+      },
+      templateVersion: d.get("templateVersion") ?? null,
+      allowedActions: this.actions(actor, data),
+      timeline: timeline.docs.map((entry) => ({
+        event: entry.get("event"),
+        timestamp: iso(entry.get("timestamp")),
+      })),
       version: d.get("version"),
       committedContentSetId: d.get("committedContentSetId") ?? null,
       createdAt: iso(d.get("createdAt")),
       updatedAt: iso(d.get("updatedAt")),
+    };
+  }
+  async listImports(
+    principal: Principal | undefined,
+    query: {
+      status?: string | undefined;
+      quarterId?: string | undefined;
+      search?: string | undefined;
+      cursor?: string | undefined;
+      limit: number;
+    },
+  ) {
+    const actor = this.actor(principal);
+    let ref: FirebaseFirestore.Query = this.db.collection("bibleImports");
+    if (query.status) ref = ref.where("status", "==", query.status);
+    if (query.quarterId) ref = ref.where("quarterId", "==", query.quarterId);
+    ref = ref.orderBy("updatedAt", "desc").orderBy("__name__", "desc");
+    if (query.cursor) {
+      let decoded: { updatedAt: string; id: string };
+      try {
+        decoded = JSON.parse(
+          Buffer.from(query.cursor, "base64url").toString(),
+        ) as typeof decoded;
+      } catch {
+        throw new ValidationError("Invalid import list cursor.");
+      }
+      ref = ref.startAfter(new Date(decoded.updatedAt), decoded.id);
+    }
+    const snap = await ref.limit(query.limit + 1).get();
+    const scoped = snap.docs.filter(
+      (d) =>
+        actor.roles.includes("super_admin") ||
+        actor.organizationIds.includes(String(d.get("organizationId"))),
+    );
+    const visible = scoped.filter(
+      (d) =>
+        !query.search ||
+        String(d.get("title") ?? "")
+          .toLowerCase()
+          .includes(query.search.toLowerCase()),
+    );
+    const page = visible.slice(0, query.limit);
+    const quarters = await Promise.all(
+      page.map((d) =>
+        this.db.doc(`quarters/${String(d.get("quarterId"))}`).get(),
+      ),
+    );
+    return {
+      items: page.map((d, index) => {
+        const data = d.data(),
+          source = data.sourceDocuments ?? {};
+        return {
+          id: d.id,
+          title: data.title,
+          status: data.status,
+          quarter: quarters[index]!.exists
+            ? {
+                id: quarters[index]!.id,
+                name:
+                  quarters[index]!.get("name") ??
+                  quarters[index]!.get("title") ??
+                  "",
+                startDate: quarters[index]!.get("startDate"),
+                endDate: quarters[index]!.get("endDate"),
+              }
+            : null,
+          questionFilename:
+            source.question?.originalFilename ?? data.quizFile?.displayName,
+          answerKeyFilename:
+            source.answerKey?.originalFilename ??
+            data.answerKeyFile?.displayName,
+          activityCount: Number(
+            data.activityCount ?? data.validationSummary?.activityCount ?? 0,
+          ),
+          questionCount: Number(data.questionCount ?? 0),
+          warningCount: Number(data.warningCount ?? data.warnings?.length ?? 0),
+          errorCount: Number(data.errorCount ?? data.errors?.length ?? 0),
+          createdAt: iso(data.createdAt),
+          updatedAt: iso(data.updatedAt),
+          version: data.version,
+          committedContentSetId: data.committedContentSetId ?? null,
+          allowedActions: this.actions(actor, data),
+        };
+      }),
+      meta: {
+        nextCursor:
+          snap.size > query.limit && page.length
+            ? Buffer.from(
+                JSON.stringify({
+                  updatedAt: iso(page.at(-1)!.get("updatedAt")),
+                  id: page.at(-1)!.id,
+                }),
+              ).toString("base64url")
+            : null,
+      },
     };
   }
   async patchItem(
@@ -442,8 +655,9 @@ export class BibleAdministrationService {
   ) {
     const old = await this.scoped(importId, principal),
       actor = this.actor(principal, String(old.get("organizationId")));
+    const itemRef = old.ref.collection("activities").doc(itemId);
     await this.db.runTransaction(async (tx) => {
-      const d = await tx.get(old.ref);
+      const [d, item] = await Promise.all([tx.get(old.ref), tx.get(itemRef)]);
       const changes = {
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.scriptureReference === undefined
@@ -453,28 +667,16 @@ export class BibleAdministrationService {
           ? {}
           : { questions: input.questions }),
       };
-      const items = (d.get("items") as BiblePreviewItem[]).map((item) =>
-          item.id === itemId
-            ? {
-                ...item,
-                ...changes,
-                version: item.version + 1,
-              }
-            : item,
-        ),
-        found = (d.get("items") as BiblePreviewItem[]).find(
-          (item) => item.id === itemId,
-        );
-      if (!found)
+      if (!item.exists)
         throw error(404, "BIBLE_CONTENT_NOT_FOUND", "Preview item not found.");
-      if (found.version !== input.expectedVersion)
+      if (Number(item.get("version")) !== input.expectedVersion)
         throw error(
           409,
           "BIBLE_IMPORT_VERSION_CONFLICT",
           "Preview item version changed.",
         );
+      tx.update(itemRef, { ...changes, version: input.expectedVersion + 1 });
       tx.update(old.ref, {
-        items,
         version: Number(d.get("version")) + 1,
         status: "needs_review",
         updatedBy: actor.uid,
@@ -487,7 +689,7 @@ export class BibleAdministrationService {
         String(d.get("organizationId")),
         importId,
         requestId,
-        { itemId, newVersion: found.version + 1 },
+        { itemId, newVersion: input.expectedVersion + 1 },
       );
     });
     return this.get(principal, importId);
@@ -499,7 +701,8 @@ export class BibleAdministrationService {
   ) {
     const old = await this.scoped(id, principal),
       actor = this.actor(principal, String(old.get("organizationId")));
-    const items = old.get("items") as BiblePreviewItem[],
+    const parsed = await old.ref.collection("activities").limit(200).get();
+    const items = parsed.docs.map((item) => item.data() as BiblePreviewItem),
       errors = [...((old.get("errors") as string[]) ?? [])];
     if (new Set(items.map((x) => x.localDate)).size !== items.length)
       errors.push("Duplicate activity date.");
@@ -508,7 +711,7 @@ export class BibleAdministrationService {
         if (!q.choices.some((c) => c.id === q.correctChoiceId))
           errors.push(`Correct choice missing for ${item.localDate}/${q.id}.`);
       }
-    const status = errors.length ? "needs_review" : "validated";
+    const status = errors.length ? "needs_correction" : "needs_review";
     await this.db.runTransaction(async (tx) => {
       tx.update(old.ref, {
         status,
@@ -536,7 +739,7 @@ export class BibleAdministrationService {
   async commit(
     principal: Principal | undefined,
     id: string,
-    ack: boolean,
+    input: { expectedVersion: number; idempotencyKey: string },
     requestId: string,
   ) {
     const old = await this.scoped(id, principal),
@@ -546,24 +749,41 @@ export class BibleAdministrationService {
         contentSetId: String(old.get("committedContentSetId")),
         idempotent: true,
       };
-    if (old.get("status") !== "validated")
+    if (!this.can(actor, "admin.bible_content.commit"))
+      throw new AuthorizationError();
+    if (old.get("status") !== "needs_review")
       throw error(
         409,
         "BIBLE_CONTENT_INVALID_STATE",
-        "Import must be validated before commit.",
+        "Import must be ready for review before commit.",
       );
-    if (((old.get("warnings") as unknown[]) ?? []).length && !ack)
+    if (Number(old.get("version")) !== input.expectedVersion)
+      throw error(
+        409,
+        "BIBLE_IMPORT_VERSION_CONFLICT",
+        "Import version changed.",
+      );
+    if (((old.get("errors") as unknown[]) ?? []).length)
       throw error(
         422,
         "BIBLE_IMPORT_VALIDATION_FAILED",
-        "Explicit warning acknowledgement is required.",
+        "Blocking import errors must be corrected before commit.",
       );
     const content = this.db.doc(`bibleContentSets/${id}`),
-      items = old.get("items") as BiblePreviewItem[];
+      parsed = await old.ref.collection("activities").orderBy("position").get(),
+      items = parsed.empty
+        ? ((old.get("items") as BiblePreviewItem[]) ?? [])
+        : parsed.docs.map((d) => d.data() as BiblePreviewItem);
     await this.db.runTransaction(async (tx) => {
       const latest = await tx.get(old.ref),
         existing = await tx.get(content);
       if (latest.get("status") === "committed") return;
+      if (Number(latest.get("version")) !== input.expectedVersion)
+        throw error(
+          409,
+          "BIBLE_IMPORT_VERSION_CONFLICT",
+          "Import version changed.",
+        );
       if (existing.exists)
         throw error(
           409,
@@ -582,6 +802,7 @@ export class BibleAdministrationService {
         },
         sourceChecksums: old.get("sourceChecksums"),
         importId: id,
+        importCommitIdempotencyKey: input.idempotencyKey,
         version: 1,
         status: "draft",
         createdBy: actor.uid,
@@ -609,6 +830,8 @@ export class BibleAdministrationService {
       tx.update(old.ref, {
         status: "committed",
         committedContentSetId: content.id,
+        commitIdempotencyKey: input.idempotencyKey,
+        version: input.expectedVersion + 1,
         updatedAt: FieldValue.serverTimestamp(),
       });
       this.audit(
@@ -621,7 +844,150 @@ export class BibleAdministrationService {
         { contentSetId: content.id, status: "draft" },
       );
     });
-    return { contentSetId: content.id, idempotent: false };
+    return {
+      contentSetId: content.id,
+      status: "draft",
+      navigationTarget: `/admin/bible/content/${content.id}`,
+      idempotent: false,
+    };
+  }
+  async reject(
+    principal: Principal | undefined,
+    id: string,
+    input: { expectedVersion: number; idempotencyKey: string },
+    requestId: string,
+  ) {
+    const old = await this.scoped(id, principal),
+      actor = this.actor(principal, String(old.get("organizationId")));
+    if (!this.can(actor, "admin.bible_content.review"))
+      throw new AuthorizationError();
+    await this.db.runTransaction(async (tx) => {
+      const current = await tx.get(old.ref);
+      if (
+        current.get("status") === "rejected" &&
+        current.get("rejectIdempotencyKey") === input.idempotencyKey
+      )
+        return;
+      if (
+        current.get("status") !== "needs_review" ||
+        Number(current.get("version")) !== input.expectedVersion
+      )
+        throw error(
+          409,
+          "BIBLE_CONTENT_INVALID_STATE",
+          "Import cannot be rejected in its current state.",
+        );
+      tx.update(old.ref, {
+        status: "rejected",
+        rejectIdempotencyKey: input.idempotencyKey,
+        version: input.expectedVersion + 1,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: actor.uid,
+      });
+      this.audit(
+        tx,
+        "bible.import.rejected",
+        actor.uid,
+        String(current.get("organizationId")),
+        id,
+        requestId,
+        { version: input.expectedVersion + 1 },
+      );
+    });
+    return this.get(principal, id);
+  }
+  async reprocess(
+    principal: Principal | undefined,
+    id: string,
+    input: { expectedVersion: number; idempotencyKey: string },
+    requestId: string,
+  ) {
+    const old = await this.scoped(id, principal),
+      actor = this.actor(principal, String(old.get("organizationId")));
+    if (!this.can(actor, "admin.bible_content.review"))
+      throw new AuthorizationError();
+    await this.db.runTransaction(async (tx) => {
+      const current = await tx.get(old.ref);
+      if (
+        !["needs_correction", "processing_failed"].includes(
+          String(current.get("status")),
+        ) ||
+        Number(current.get("version")) !== input.expectedVersion
+      )
+        throw error(
+          409,
+          "BIBLE_CONTENT_INVALID_STATE",
+          "Import cannot be reprocessed in its current state.",
+        );
+      tx.update(old.ref, {
+        status: "processing",
+        reprocessIdempotencyKey: input.idempotencyKey,
+        version: input.expectedVersion + 1,
+        processingStartedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      this.audit(
+        tx,
+        "bible.import.reprocessing_requested",
+        actor.uid,
+        String(current.get("organizationId")),
+        id,
+        requestId,
+        { version: input.expectedVersion + 1 },
+      );
+    });
+    return this.get(principal, id);
+  }
+  async downloadDocument(
+    principal: Principal | undefined,
+    id: string,
+    kind: "question" | "answerKey" | undefined,
+    requestId: string,
+  ) {
+    if (!kind)
+      throw error(404, "BIBLE_CONTENT_NOT_FOUND", "Document not found.");
+    const old = await this.scoped(id, principal),
+      actor = this.actor(principal, String(old.get("organizationId")));
+    if (!this.can(actor, "admin.bible_content.source_documents.read"))
+      throw new AuthorizationError();
+    if (!this.bucket)
+      throw error(
+        503,
+        "BIBLE_IMPORT_STORAGE_NOT_CONFIGURED",
+        "Bible import storage is not configured.",
+      );
+    const source =
+      old.get(`sourceDocuments.${kind}`) ??
+      old.get(kind === "question" ? "quizFile" : "answerKeyFile");
+    if (!source?.storagePath)
+      throw error(404, "BIBLE_CONTENT_NOT_FOUND", "Document not found.");
+    if (kind === "answerKey")
+      await this.db.runTransaction(async (tx) =>
+        this.audit(
+          tx,
+          "bible.import.answer_key_accessed",
+          actor.uid,
+          String(old.get("organizationId")),
+          id,
+          requestId,
+          { document: "answerKey" },
+        ),
+      );
+    const [data] = await this.bucket
+      .file(String(source.storagePath))
+      .download();
+    return {
+      data,
+      filename: safeName(
+        String(
+          source.originalFilename ?? source.displayName ?? "document.docx",
+        ),
+      ),
+      contentType: String(
+        source.contentType ??
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    };
   }
   async listContent(principal: Principal | undefined) {
     const actor = this.actor(principal);

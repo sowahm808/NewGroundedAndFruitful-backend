@@ -44,6 +44,34 @@ export const importMetadataSchema = z.object({
 export const lifecycleSchema = z.object({
   expectedVersion: z.number().int().positive(),
   acknowledgeWarnings: z.boolean().optional(),
+  idempotencyKey: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{8,128}$/)
+    .optional(),
+});
+export const importListQuerySchema = z.object({
+  status: z
+    .enum([
+      "uploaded",
+      "processing",
+      "processing_failed",
+      "needs_correction",
+      "needs_review",
+      "committing",
+      "committed",
+      "rejected",
+      "cancelled",
+      "expired",
+    ])
+    .optional(),
+  quarterId: z.string().min(1).max(128).optional(),
+  search: z.string().trim().max(100).optional(),
+  cursor: z.string().max(512).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(25),
+});
+export const importCommandSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/),
 });
 export const itemPatchSchema = z.object({
   expectedVersion: z.number().int().positive(),
