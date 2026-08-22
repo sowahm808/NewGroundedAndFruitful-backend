@@ -51,7 +51,7 @@ export const reconciliationSchema = z
   .object({
     organizationId: z.string().min(1).max(128),
     quarterId: z.string().min(1).max(128),
-    generationId: z.string().min(1).max(128).optional(),
+    generationId: z.string().min(1).max(128).default(() => crypto.randomUUID()),
     participantId: z.string().min(1).max(128).optional(),
     teamId: z.string().min(1).max(128).optional(),
     dryRun: z.boolean().default(false),

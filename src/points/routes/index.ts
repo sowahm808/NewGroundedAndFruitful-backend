@@ -1,3 +1,4 @@
+// src/points/routes/index.ts
 import { Router } from "express";
 import { db } from "../../config/firebase.js";
 import {
@@ -8,11 +9,11 @@ import { validateBody } from "../../middleware/validate.js";
 import { ValidationError } from "../../shared/errors.js";
 import { awardSchema, pointAdjustmentSchema } from "../schemas.js";
 import { PointAdjustmentService } from "../adjustment-service.js";
-import { CompletionService } from "../completion-service.js";
-import { PointRepository } from "../repository.js";
-const router = Router(),
-  service = new CompletionService(db, new PointRepository(db));
+import { SourceCompletionService } from "../completion-service.js";
+
+const router = Router();
 const adjustmentService = new PointAdjustmentService(db);
+
 router.post(
   "/completions",
   requireAuthenticated,
@@ -24,7 +25,15 @@ router.post(
         throw new ValidationError(
           "A valid Idempotency-Key header is required.",
         );
-      const result = await service.record(req.principal, req.body, key);
+
+      const { sourceType, participantId, sourceId } = req.body;
+      const service = new SourceCompletionService(db, sourceType);
+      const result = await service.record(
+        req.principal,
+        { participantId, sourceId },
+        key,
+      );
+
       res.status(result.created ? 201 : 200).json({
         data: {
           id: result.entry.id,
@@ -37,6 +46,7 @@ router.post(
     }
   },
 );
+
 router.post(
   "/adjustments",
   requireAdmin,
@@ -66,4 +76,5 @@ router.post(
     }
   },
 );
+
 export default router;
