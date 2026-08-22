@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude 'lib/**' --exclude 'test/integration/**'",
-    "test:integration": "npx --yes firebase-tools@14.12.1 emulators:exec --only auth,firestore --project demo-grounded-fruitful-integration \"node scripts/verify-test-environment.mjs && vitest run test/integration/point-repository.integration.test.ts test/integration/provisioning.integration.test.ts test/integration/registration-intent.integration.test.ts --exclude 'lib/**'\"",
+    "test:integration": "npx --yes firebase-tools@14.12.1 emulators:exec --only auth,firestore --project demo-grounded-fruitful-integration \"node scripts/verify-test-environment.mjs && vitest run test/integration/parent-relationships.integration.test.ts test/integration/point-repository.integration.test.ts test/integration/provisioning.integration.test.ts test/integration/registration-intent.integration.test.ts --exclude 'lib/**'\"",
     "build": "npm run clean && tsc -p tsconfig.json",
     "start": "node lib/src/server.js",
     "emulators": "npx --yes firebase-tools@14.12.1 emulators:start",
