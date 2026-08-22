@@ -155,7 +155,7 @@ router.post(
   }, 201),
 );
 router.get(
-  ["/bible-content/imports", "/bible-imports"],
+  ["/imports", "/bible-content/imports", "/bible-imports"],
   run(async (req) => {
     const query = importListQuerySchema.safeParse(req.query);
     if (!query.success) throw new ValidationError("Invalid import list query.");
