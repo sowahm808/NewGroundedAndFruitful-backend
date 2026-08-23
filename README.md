@@ -50,6 +50,8 @@ The response is `{ "data": { "customToken": "..." } }`. The web client must exch
 3. Run `npm run emulators`, then `npm run seed` in another terminal.
 4. Run `npm run dev`. Never use production credentials with the emulator or seed scripts.
 
+The seed supplies linked, empty, suspended, cross-tenant, and every-persona workflow scenarios. See [the emulator seed guide](docs/emulator-seed.md) for emulator-only sign-in details and privacy canaries.
+
 ## Render deployment
 
 Create distinct Firebase projects and Render environments for staging and production. Configure every variable listed in `.env.example` in Render; secrets must be secret environment values, never repository files. `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY` are required together in production. Set `ALLOWED_ORIGINS` to a comma-separated allowlist and generate independent high-entropy values for `CHILD_LOGIN_PEPPER` and `CHILD_LOGIN_LOOKUP_SECRET`. Render builds the multi-stage Docker image, runs compiled JavaScript, probes `/health`, and waits for required GitHub checks before automatic deployment. Grant the runtime service account only the required Firebase permissions.
