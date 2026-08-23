@@ -475,8 +475,30 @@ router.delete(
 );
 router.post(
   "/invitations",
-  validateBody(schemas.invitationCreateSchema),
-  run((req) => service.invite(req.principal, req.body), 201),
+  run(async (req) => {
+    const orgId =
+      (typeof req.body.organizationId === "string" && req.body.organizationId) ||
+      req.principal?.organizationIds?.[0] ||
+      (req.principal as { organizationId?: string } | undefined)?.organizationId;
+
+    if (!orgId) {
+      throw new ValidationError("Organization context is required.");
+    }
+
+    const payload = {
+      ...req.body,
+      organizationId: orgId,
+    };
+
+    const parsed = schemas.invitationCreateSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new ValidationError("Invalid invitation payload.", {
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      });
+    }
+
+    return service.invite(req.principal, parsed.data);
+  }, 201),
 );
 router.post(
   "/invitations/:invitationId/accept",
