@@ -34,17 +34,47 @@ const id = (value: unknown) => {
   return parsed.data;
 };
 
+// const resolveOrgId = (req: Parameters<RequestHandler>[0], explicitOrgId?: unknown): string => {
+//   const orgId =
+//     (typeof explicitOrgId === "string" && explicitOrgId.length > 0 && explicitOrgId) ||
+//     req.principal?.organizationIds?.[0] ||
+//     req.principal?.activeOrganizationId ||
+//     (req.principal as { organizationId?: string } | undefined)?.organizationId;
+
+//   if (!orgId) {
+//     throw new ValidationError("Organization context is required.");
+//   }
+//   return orgId;
+// };
+
 const resolveOrgId = (req: Parameters<RequestHandler>[0], explicitOrgId?: unknown): string => {
+  const principal = req.principal as Record<string, unknown> | undefined;
+  const memberships = Array.isArray(principal?.memberships)
+    ? (principal.memberships as Array<Record<string, unknown>>)
+    : [];
+
   const orgId =
-    (typeof explicitOrgId === "string" && explicitOrgId.length > 0 && explicitOrgId) ||
-    req.principal?.organizationIds?.[0] ||
-    req.principal?.activeOrganizationId ||
-    (req.principal as { organizationId?: string } | undefined)?.organizationId;
+    // 1. Explicit parameter in body or query
+    (typeof explicitOrgId === "string" && explicitOrgId.trim().length > 0 && explicitOrgId.trim()) ||
+    // 2. Request headers
+    (typeof req.headers["x-organization-id"] === "string" && req.headers["x-organization-id"]) ||
+    (typeof req.headers["x-workspace-id"] === "string" && req.headers["x-workspace-id"]) ||
+    // 3. Principal active context fields
+    (typeof principal?.activeOrganizationId === "string" && principal.activeOrganizationId) ||
+    (typeof principal?.activeWorkspaceId === "string" && principal.activeWorkspaceId) ||
+    (typeof principal?.workspaceId === "string" && principal.workspaceId) ||
+    (typeof principal?.organizationId === "string" && principal.organizationId) ||
+    // 4. Principal array fields
+    (Array.isArray(principal?.organizationIds) && typeof principal.organizationIds[0] === "string" && principal.organizationIds[0]) ||
+    (Array.isArray(principal?.workspaceIds) && typeof principal.workspaceIds[0] === "string" && principal.workspaceIds[0]) ||
+    // 5. First active membership fallback
+    (typeof memberships[0]?.organizationId === "string" && memberships[0].organizationId) ||
+    (typeof memberships[0]?.workspaceId === "string" && memberships[0].workspaceId);
 
   if (!orgId) {
     throw new ValidationError("Organization context is required.");
   }
-  return orgId;
+  return String(orgId);
 };
 
 const configuredResources = [
