@@ -53,31 +53,55 @@ const query = <T>(
 /**
  * Resolves the tenant organization context across request parts, auth claims, and database fallbacks.
  */
-export const resolveTenantOrganizationId = async (
-  req: Parameters<RequestHandler>[0],
+export const tenantOrganizationCandidate = (
+  req: {
+    query?: { organizationId?: unknown; workspaceId?: unknown };
+    body?: { organizationId?: unknown; workspaceId?: unknown };
+    headers: Record<string, unknown>;
+    principal?: unknown;
+  },
   explicitValue?: unknown,
-): Promise<string> => {
+): string | undefined => {
   const principal = req.principal as Record<string, unknown> | undefined;
   const memberships = Array.isArray(principal?.memberships)
     ? (principal.memberships as Array<Record<string, unknown>>)
     : [];
 
-  const candidate =
-    (typeof explicitValue === "string" && explicitValue.trim()) ||
-    (typeof req.query?.organizationId === "string" && req.query.organizationId.trim()) ||
-    (typeof req.body?.organizationId === "string" && req.body.organizationId.trim()) ||
-    (typeof req.headers["x-organization-id"] === "string" && req.headers["x-organization-id"].trim()) ||
-    (typeof req.headers["x-workspace-id"] === "string" && req.headers["x-workspace-id"].trim()) ||
+  const candidates = [
+    explicitValue,
+    req.query?.organizationId,
+    req.query?.workspaceId,
+    req.body?.organizationId,
+    req.body?.workspaceId,
+    req.headers["x-organization-id"],
+    req.headers["x-workspace-id"],
     principal?.activeOrganizationId ||
-    principal?.activeWorkspaceId ||
-    principal?.workspaceId ||
-    principal?.organizationId ||
-    (Array.isArray(principal?.organizationIds) && principal.organizationIds[0]) ||
-    (Array.isArray(principal?.workspaceIds) && principal.workspaceIds[0]) ||
-    memberships[0]?.organizationId ||
-    memberships[0]?.workspaceId;
+      principal?.activeWorkspaceId ||
+      principal?.workspaceId ||
+      principal?.organizationId,
+    Array.isArray(principal?.organizationIds)
+      ? principal.organizationIds[0]
+      : undefined,
+    Array.isArray(principal?.workspaceIds)
+      ? principal.workspaceIds[0]
+      : undefined,
+    memberships[0]?.organizationId || memberships[0]?.workspaceId,
+  ];
 
-  if (candidate) return String(candidate);
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+};
+
+export const resolveTenantOrganizationId = async (
+  req: Parameters<RequestHandler>[0],
+  explicitValue?: unknown,
+): Promise<string> => {
+  const principal = req.principal as Record<string, unknown> | undefined;
+  const candidate = tenantOrganizationCandidate(req, explicitValue);
+
+  if (candidate) return candidate;
 
   // Fallback: Query Firestore for the user's active membership
   if (principal?.uid) {
@@ -90,9 +114,17 @@ export const resolveTenantOrganizationId = async (
     if (!snap.empty) {
       const adminDoc = snap.docs.find((d) => {
         const roles = d.get("roles") ?? [d.get("role")];
-        return Array.isArray(roles) && (roles.includes("admin") || roles.includes("super_admin") || roles.includes("owner"));
+        return (
+          Array.isArray(roles) &&
+          (roles.includes("admin") ||
+            roles.includes("super_admin") ||
+            roles.includes("owner"))
+        );
       });
-      return String((adminDoc ?? snap.docs[0])!.get("organizationId") || (adminDoc ?? snap.docs[0])!.get("workspaceId"));
+      const membership = adminDoc ?? snap.docs[0]!;
+      return String(
+        membership.get("organizationId") || membership.get("workspaceId"),
+      );
     }
   }
 
@@ -188,7 +220,10 @@ for (const [path, collection] of configuredResources) {
 router.get(
   "/quarters",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.query.organizationId,
+    );
     const parsedQuery = schemas.quarterListQuerySchema.safeParse({
       ...req.query,
       organizationId: orgId,
@@ -293,7 +328,10 @@ router.get(
 router.get(
   "/reports",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.query.organizationId,
+    );
     return service.resources(req.principal, "reports", id(orgId));
   }),
 );
@@ -301,7 +339,10 @@ router.get(
 router.get(
   "/awards",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.query.organizationId,
+    );
     return service.resources(req.principal, "awards", id(orgId));
   }),
 );
@@ -309,7 +350,10 @@ router.get(
 router.get(
   "/audits",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.query.organizationId,
+    );
     return service.resources(req.principal, "auditLogs", id(orgId), true);
   }),
 );
@@ -385,7 +429,10 @@ router.post(
 router.get(
   "/teams",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.query.organizationId,
+    );
     const parsedQuery = schemas.teamListQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {
       throw new ValidationError("Invalid team list query.", {
@@ -405,10 +452,12 @@ router.get(
 router.post(
   "/teams",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.body.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.body.organizationId,
+    );
 
     const payload = {
-      ...req.body,
       organizationId: orgId,
       name: req.body.name,
       displayName: req.body.displayName || req.body.name,
@@ -501,9 +550,13 @@ router.post(
   "/participants",
   requireCapability("admin.participants.manage"),
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.body.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.body.organizationId,
+    );
     const guardianUserId =
-      (typeof req.body.guardianUserId === "string" && req.body.guardianUserId) ||
+      (typeof req.body.guardianUserId === "string" &&
+        req.body.guardianUserId) ||
       req.principal?.uid ||
       "";
 
@@ -600,7 +653,10 @@ router.get(
 router.post(
   "/invitations",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.body.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.body.organizationId,
+    );
 
     const payload = {
       ...req.body,
