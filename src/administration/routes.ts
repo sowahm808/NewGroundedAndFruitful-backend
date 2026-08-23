@@ -323,9 +323,37 @@ router.post(
 router.post(
   "/participants",
   requireCapability("admin.participants.manage"),
-  validateBody(schemas.participantCreateSchema),
-  run((req) => service.createParticipant(req.principal, req.body), 201),
+  run(async (req) => {
+    const orgId =
+      (typeof req.body.organizationId === "string" && req.body.organizationId) ||
+      req.principal?.organizationIds?.[0] ||
+      (req.principal as { organizationId?: string } | undefined)?.organizationId ||
+      "";
+
+    const guardianUserId =
+      (typeof req.body.guardianUserId === "string" && req.body.guardianUserId) ||
+      req.principal?.uid ||
+      "";
+
+    const payload = {
+      ...req.body,
+      organizationId: orgId,
+      guardianUserId,
+      programId: req.body.programId || "default-program",
+      birthDate: req.body.birthDate || "2015-01-01",
+    };
+
+    const parsed = schemas.participantCreateSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new ValidationError("Invalid participant payload.", {
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      });
+    }
+
+    return service.createParticipant(req.principal, parsed.data);
+  }, 201),
 );
+
 router.get(
   "/participants",
   requireCapability("admin.participants.read"),

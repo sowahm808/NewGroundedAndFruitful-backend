@@ -232,15 +232,20 @@ export const parentOnboardingSchema = z
     participantId: idSchema.optional(),
   })
   .strict();
+// in src/administration/schemas.ts
+
 export const participantCreateSchema = z
   .object({
-    organizationId: idSchema,
-    programId: idSchema,
+    organizationId: idSchema.optional(),
+    programId: idSchema.optional(),
     displayName: name,
-    birthDate: z.string().date(),
-    guardianUserId: idSchema,
-  })
-  .strict();
+    handle: z.string().trim().min(2).max(40).optional(),
+    birthDate: z.string().optional().default("2015-01-01"),
+    guardianUserId: idSchema.optional(),
+    activeTeamId: idSchema.optional(),
+    status: z.enum(["pending", "active", "withdrawn"]).default("active"),
+  });
+
 export const participantUpdateSchema = z
   .object({
     displayName: name.optional(),
@@ -250,6 +255,7 @@ export const participantUpdateSchema = z
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0);
+  
 export const teamCreateSchema = z
   .object({
     organizationId: idSchema,
