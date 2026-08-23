@@ -51,16 +51,27 @@ const database = (documents: ReturnType<typeof document>[]) => {
   return {
     collection: vi.fn().mockReturnValue(collection),
     doc: vi.fn((path: string) => ({
-      get: vi
-        .fn()
-        .mockResolvedValue(
-          documents.find((item) => path.endsWith(`/${item.id}`)) ?? {
-            exists: false,
-          },
-        ),
+      get: vi.fn().mockResolvedValue(
+        documents.find((item) => path.endsWith(`/${item.id}`)) ?? {
+          exists: false,
+        },
+      ),
     })),
   };
 };
+
+const databaseByCollection = (
+  collections: Record<string, ReturnType<typeof document>[]>,
+) => ({
+  collection: vi.fn((name: string) => {
+    const query = {
+      where: vi.fn(),
+      get: vi.fn().mockResolvedValue({ docs: collections[name] ?? [] }),
+    };
+    query.where.mockReturnValue(query);
+    return query;
+  }),
+});
 
 describe("Admin Participants authorization and list contract", () => {
   it("lists from the active organization without a client organizationId", async () => {
@@ -92,8 +103,84 @@ describe("Admin Participants authorization and list contract", () => {
     });
   });
 
+  it("hydrates roster fields from organization-scoped records", async () => {
+    const db = databaseByCollection({
+      participants: [
+        document("participant-1", {
+          organizationId: "org-1",
+          displayName: "Ada",
+          status: "active",
+          activeTeamId: "team-1",
+          updatedAt: new Date("2026-08-01T00:00:00Z"),
+        }),
+        document("participant-2", {
+          organizationId: "org-1",
+          displayName: "Grace",
+          status: "withdrawn",
+          updatedAt: new Date("2026-07-01T00:00:00Z"),
+        }),
+      ],
+      quarters: [
+        document("quarter-1", {
+          organizationId: "org-1",
+          status: "active",
+          name: "Fall 2026",
+        }),
+      ],
+      teams: [
+        document("team-1", {
+          organizationId: "org-1",
+          approvedDisplayName: "Orchard Team",
+        }),
+      ],
+      parentChildLinks: [
+        document("link-1", {
+          organizationId: "org-1",
+          status: "active",
+          participantId: "participant-1",
+          parentUid: "parent-1",
+        }),
+      ],
+      parentProfiles: [
+        document("parent-1", {
+          organizationId: "org-1",
+          displayName: "Alex Guardian",
+        }),
+      ],
+    });
+    const service = new AdministrationService(db as never, {} as never);
+
+    const result = await service.roster(
+      principal(),
+      participantListQuerySchema.parse({ pageSize: "25" }),
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        id: "participant-1",
+        linkedGuardian: "Alex Guardian",
+        team: "Orchard Team",
+        currentQuarterStatus: "Fall 2026",
+        allowedActions: ["edit", "assign"],
+      }),
+      expect.objectContaining({
+        id: "participant-2",
+        currentQuarterStatus: "Not Enrolled",
+        allowedActions: ["edit", "assign"],
+      }),
+    ]);
+    expect(db.collection).toHaveBeenCalledWith("quarters");
+    expect(db.collection).toHaveBeenCalledWith("teams");
+    expect(db.collection).toHaveBeenCalledWith("parentChildLinks");
+    expect(db.collection).toHaveBeenCalledWith("parentProfiles");
+    expect(db.collection).toHaveBeenCalledWith("users");
+  });
+
   it("returns an empty offset page instead of failing", async () => {
-    const service = new AdministrationService(database([]) as never, {} as never);
+    const service = new AdministrationService(
+      database([]) as never,
+      {} as never,
+    );
     await expect(
       service.roster(principal(), participantListQuerySchema.parse({})),
     ).resolves.toEqual({
@@ -103,7 +190,10 @@ describe("Admin Participants authorization and list contract", () => {
   });
 
   it("rejects a conflicting compatibility organizationId", async () => {
-    const service = new AdministrationService(database([]) as never, {} as never);
+    const service = new AdministrationService(
+      database([]) as never,
+      {} as never,
+    );
     await expect(
       service.roster(
         principal(),
@@ -113,7 +203,10 @@ describe("Admin Participants authorization and list contract", () => {
   });
 
   it("rejects missing capability and an inactive membership", async () => {
-    const service = new AdministrationService(database([]) as never, {} as never);
+    const service = new AdministrationService(
+      database([]) as never,
+      {} as never,
+    );
     await expect(
       service.roster(principal([]), participantListQuerySchema.parse({})),
     ).rejects.toBeInstanceOf(AuthorizationError);
@@ -142,7 +235,10 @@ describe("Admin Participants authorization and list contract", () => {
   });
 
   it("requires manage capability before participant creation", async () => {
-    const service = new AdministrationService(database([]) as never, {} as never);
+    const service = new AdministrationService(
+      database([]) as never,
+      {} as never,
+    );
     await expect(
       service.createParticipant(principal(["admin.participants.read"]), {
         organizationId: "org-1",
