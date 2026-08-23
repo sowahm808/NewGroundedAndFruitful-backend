@@ -257,22 +257,38 @@ export const participantUpdateSchema = z
   .refine((v) => Object.keys(v).length > 0);
   
 export const teamCreateSchema = z
-  .object({
+ .object({
     organizationId: idSchema,
-    programId: idSchema,
     name,
-    capacity: z.number().int().positive().max(1000),
+    displayName: name.optional(),
+    approvedDisplayName: name.optional(),
+    programId: idSchema.optional().nullable(),
+    quarterId: idSchema.optional().nullable(),
+    capacity: z.coerce.number().int().positive().max(1000).default(5),
+    targetPoints: z.coerce.number().int().min(100).default(5000),
   })
   .strict();
+
+  export type TeamCreateInput = z.infer<typeof teamCreateSchema>;
+
 export const teamUpdateSchema = z
   .object({
     name: name.optional(),
+    displayName: name.optional(),
+    approvedDisplayName: name.optional(),
+    programId: idSchema.optional().nullable(),
+    quarterId: idSchema.optional().nullable(),
     status: z.enum(["active", "archived"]).optional(),
-    capacity: z.number().int().positive().max(1000).optional(),
+    capacity: z.coerce.number().int().positive().max(1000).optional(),
+    targetPoints: z.coerce.number().int().min(100).optional(),
     version: versionSchema,
   })
   .strict()
-  .refine((v) => Object.keys(v).length > 0);
+  .refine((v) => Object.keys(v).length > 1, {
+    message: "At least one editable field besides version is required.",
+  });
+
+export type TeamUpdateInput = z.infer<typeof teamUpdateSchema>;
 export const teamMemberSchema = z.object({ participantId: idSchema }).strict();
 export const teamMentorSchema = z
   .object({ userId: idSchema, expiresAt: z.string().datetime().optional() })
