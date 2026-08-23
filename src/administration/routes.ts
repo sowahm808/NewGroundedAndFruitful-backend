@@ -47,6 +47,36 @@ const id = (value: unknown) => {
 //   return orgId;
 // };
 
+// const resolveOrgId = (req: Parameters<RequestHandler>[0], explicitOrgId?: unknown): string => {
+//   const principal = req.principal as Record<string, unknown> | undefined;
+//   const memberships = Array.isArray(principal?.memberships)
+//     ? (principal.memberships as Array<Record<string, unknown>>)
+//     : [];
+
+//   const orgId =
+//     // 1. Explicit parameter in body or query
+//     (typeof explicitOrgId === "string" && explicitOrgId.trim().length > 0 && explicitOrgId.trim()) ||
+//     // 2. Request headers
+//     (typeof req.headers["x-organization-id"] === "string" && req.headers["x-organization-id"]) ||
+//     (typeof req.headers["x-workspace-id"] === "string" && req.headers["x-workspace-id"]) ||
+//     // 3. Principal active context fields
+//     (typeof principal?.activeOrganizationId === "string" && principal.activeOrganizationId) ||
+//     (typeof principal?.activeWorkspaceId === "string" && principal.activeWorkspaceId) ||
+//     (typeof principal?.workspaceId === "string" && principal.workspaceId) ||
+//     (typeof principal?.organizationId === "string" && principal.organizationId) ||
+//     // 4. Principal array fields
+//     (Array.isArray(principal?.organizationIds) && typeof principal.organizationIds[0] === "string" && principal.organizationIds[0]) ||
+//     (Array.isArray(principal?.workspaceIds) && typeof principal.workspaceIds[0] === "string" && principal.workspaceIds[0]) ||
+//     // 5. First active membership fallback
+//     (typeof memberships[0]?.organizationId === "string" && memberships[0].organizationId) ||
+//     (typeof memberships[0]?.workspaceId === "string" && memberships[0].workspaceId);
+
+//   if (!orgId) {
+//     throw new ValidationError("Organization context is required.");
+//   }
+//   return String(orgId);
+// };
+
 const resolveOrgId = (req: Parameters<RequestHandler>[0], explicitOrgId?: unknown): string => {
   const principal = req.principal as Record<string, unknown> | undefined;
   const memberships = Array.isArray(principal?.memberships)
@@ -54,12 +84,14 @@ const resolveOrgId = (req: Parameters<RequestHandler>[0], explicitOrgId?: unknow
     : [];
 
   const orgId =
-    // 1. Explicit parameter in body or query
+    // 1. Explicit parameter in query or body
     (typeof explicitOrgId === "string" && explicitOrgId.trim().length > 0 && explicitOrgId.trim()) ||
+    (typeof req.query?.organizationId === "string" && req.query.organizationId.trim()) ||
+    (typeof req.body?.organizationId === "string" && req.body.organizationId.trim()) ||
     // 2. Request headers
     (typeof req.headers["x-organization-id"] === "string" && req.headers["x-organization-id"]) ||
     (typeof req.headers["x-workspace-id"] === "string" && req.headers["x-workspace-id"]) ||
-    // 3. Principal active context fields
+    // 3. Principal workspace context
     (typeof principal?.activeOrganizationId === "string" && principal.activeOrganizationId) ||
     (typeof principal?.activeWorkspaceId === "string" && principal.activeWorkspaceId) ||
     (typeof principal?.workspaceId === "string" && principal.workspaceId) ||
@@ -67,7 +99,7 @@ const resolveOrgId = (req: Parameters<RequestHandler>[0], explicitOrgId?: unknow
     // 4. Principal array fields
     (Array.isArray(principal?.organizationIds) && typeof principal.organizationIds[0] === "string" && principal.organizationIds[0]) ||
     (Array.isArray(principal?.workspaceIds) && typeof principal.workspaceIds[0] === "string" && principal.workspaceIds[0]) ||
-    // 5. First active membership fallback
+    // 5. Active membership fallback
     (typeof memberships[0]?.organizationId === "string" && memberships[0].organizationId) ||
     (typeof memberships[0]?.workspaceId === "string" && memberships[0].workspaceId);
 
