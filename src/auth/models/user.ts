@@ -112,4 +112,5 @@ export interface SessionUser {
       | "none";
     migrationRequired: boolean;
   };
+  migrationRequired: boolean;
 }

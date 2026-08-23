@@ -30,7 +30,7 @@ export class AdministrationService {
     return requireAuthenticated(p);
   }
   private admin(p: Principal | undefined, organizationId: string) {
-    return requireOrganizationRole(p, organizationId, ["admin", "super_admin"]);
+    return requireOrganizationRole(p, organizationId, ["owner", "admin", "super_admin"]);
   }
   private superAdmin(p: Principal | undefined, organizationId: string) {
     return requireOrganizationRole(p, organizationId, ["super_admin"]);
