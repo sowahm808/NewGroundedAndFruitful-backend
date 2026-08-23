@@ -113,11 +113,62 @@ router.get(
   run((req) => service.team(req.principal, id(req.params.teamId))),
 );
 
+// router.post(
+//   "/teams",
+//   run(async (req) => {
+//     const orgId = await resolveTenantOrganizationId(req, req.body.organizationId);
+
+//     const payload = {
+//       ...req.body,
+//       organizationId: orgId,
+//       name: req.body.name,
+//       displayName: req.body.displayName || req.body.name,
+//       approvedDisplayName: req.body.displayName || req.body.name,
+//       capacity: Number(req.body.capacity ?? 5),
+//       targetPoints: Number(req.body.targetPoints ?? 5000),
+//       quarterId: req.body.quarterId ?? null,
+//       programId: req.body.programId ?? null,
+//     };
+
+//     const parsed = schemas.teamCreateSchema.safeParse(payload);
+//     if (!parsed.success) {
+//       throw new ValidationError("Invalid team payload.", {
+//         fieldErrors: parsed.error.flatten().fieldErrors,
+//       });
+//     }
+
+//     return service.createTeam(req.principal, parsed.data);
+//   }, 201),
+// );
 router.post(
   "/teams",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.body.organizationId);
+    // 1. Resolve organization from request, query, header, or principal session
+    let orgId =
+      (typeof req.body?.organizationId === "string" && req.body.organizationId.trim()) ||
+      (typeof req.headers["x-organization-id"] === "string" && req.headers["x-organization-id"].trim()) ||
+      req.principal?.activeOrganizationId ||
+      req.principal?.activeWorkspaceId ||
+      req.principal?.organizationIds?.[0];
 
+    // 2. Database fallback: find caller's active admin membership
+    if (!orgId && req.principal?.uid) {
+      const snap = await db
+        .collection("memberships")
+        .where("userId", "==", req.principal.uid)
+        .where("status", "==", "active")
+        .get();
+
+      if (!snap.empty) {
+        orgId = String(snap.docs[0]!.get("organizationId") || snap.docs[0]!.get("workspaceId"));
+      }
+    }
+
+    if (!orgId) {
+      throw new ValidationError("Organization context is required.");
+    }
+
+    // 3. Inject organizationId into the payload before schema validation
     const payload = {
       ...req.body,
       organizationId: orgId,
@@ -140,7 +191,6 @@ router.post(
     return service.createTeam(req.principal, parsed.data);
   }, 201),
 );
-
 router.patch(
   "/teams/:teamId",
   validateBody(schemas.teamUpdateSchema),
