@@ -955,7 +955,67 @@ export class ParentService {
       updatedAt: iso(doc.get("updatedAt")),
     };
   }
+// in src/parent/service.ts -> listChildren
+async listChildren(principal: Principal | undefined, query: { status?: string }) {
+  if (!principal?.uid) return [];
 
+  const parentUid = principal.uid;
+
+  // 1. Check parentChildLinks
+  const linkDocs = (
+    await this.db
+      .collection("parentChildLinks")
+      .where("parentUid", "==", parentUid)
+      .get()
+  ).docs;
+
+  // 2. Check relationships collection
+  const relDocs = (
+    await this.db
+      .collection("relationships")
+      .where("userId", "==", parentUid)
+      .get()
+  ).docs;
+
+  // 3. Check direct participants guardian field
+  const directDocs = (
+    await this.db
+      .collection("participants")
+      .where("guardianUserId", "==", parentUid)
+      .get()
+  ).docs;
+
+  const participantIds = Array.from(
+    new Set([
+      ...linkDocs.map((d) => d.data().participantId),
+      ...relDocs.map((d) => d.data().participantId),
+      ...directDocs.map((d) => d.id),
+    ]),
+  ).filter(Boolean);
+
+  if (participantIds.length === 0) {
+    return [];
+  }
+
+  // Fetch full participant details
+  const participantSnapshots = await Promise.all(
+    participantIds.map((id) => this.db.collection("participants").doc(id).get()),
+  );
+
+  return participantSnapshots
+    .filter((doc) => doc.exists)
+    .map((doc) => {
+      const data = doc.data() || {};
+      return {
+        id: doc.id,
+        displayName: data.displayName || data.name || "Child",
+        status: data.status || "active",
+        birthDate: data.birthDate || null,
+        activeTeamId: data.activeTeamId || null,
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      };
+    });
+}
   async report(principal: Principal, childId: string) {
     const child = await this.child(principal, childId);
     return {
