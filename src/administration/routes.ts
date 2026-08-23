@@ -79,6 +79,7 @@ export const resolveTenantOrganizationId = async (
 
   if (candidate) return String(candidate);
 
+  // Fallback: Query Firestore for the user's active membership
   if (principal?.uid) {
     const snap = await db
       .collection("memberships")
@@ -86,20 +87,12 @@ export const resolveTenantOrganizationId = async (
       .where("status", "==", "active")
       .get();
 
-    const adminMembership = snap.docs.find((doc) => {
-      const roles = doc.get("roles") ?? [doc.get("role")];
-      return (
-        Array.isArray(roles) &&
-        (roles.includes("admin") || roles.includes("super_admin") || roles.includes("owner"))
-      );
-    });
-
-    if (adminMembership) {
-      return String(adminMembership.get("organizationId") || adminMembership.get("workspaceId"));
-    }
-
     if (!snap.empty) {
-      return String(snap.docs[0]!.get("organizationId") || snap.docs[0]!.get("workspaceId"));
+      const adminDoc = snap.docs.find((d) => {
+        const roles = d.get("roles") ?? [d.get("role")];
+        return Array.isArray(roles) && (roles.includes("admin") || roles.includes("super_admin") || roles.includes("owner"));
+      });
+      return String((adminDoc ?? snap.docs[0])!.get("organizationId") || (adminDoc ?? snap.docs[0])!.get("workspaceId"));
     }
   }
 
@@ -389,18 +382,11 @@ router.post(
 // -------------------------------------------------------------
 // Teams Management
 // -------------------------------------------------------------
-// GET /api/v1/admin/teams
 router.get(
   "/teams",
   run(async (req) => {
     const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
-
-    const queryInput = {
-      ...req.query,
-      organizationId: orgId,
-    };
-
-    const parsedQuery = schemas.teamListQuerySchema.safeParse(queryInput);
+    const parsedQuery = schemas.teamListQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {
       throw new ValidationError("Invalid team list query.", {
         fieldErrors: parsedQuery.error.flatten().fieldErrors,
