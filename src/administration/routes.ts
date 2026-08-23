@@ -389,11 +389,18 @@ router.post(
 // -------------------------------------------------------------
 // Teams Management
 // -------------------------------------------------------------
+// GET /api/v1/admin/teams
 router.get(
   "/teams",
   run(async (req) => {
     const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
-    const parsedQuery = schemas.teamListQuerySchema.safeParse(req.query);
+
+    const queryInput = {
+      ...req.query,
+      organizationId: orgId,
+    };
+
+    const parsedQuery = schemas.teamListQuerySchema.safeParse(queryInput);
     if (!parsedQuery.success) {
       throw new ValidationError("Invalid team list query.", {
         fieldErrors: parsedQuery.error.flatten().fieldErrors,
