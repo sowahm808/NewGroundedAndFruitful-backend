@@ -9,10 +9,12 @@ import { QuarterAdministrationService } from "./quarters.js";
 import bibleAdminRoutes from "../bible/admin-routes.js";
 import { requireCapability } from "../middleware/authorize.js";
 
-const router = Router(),
-  service = new AdministrationService(db, auth),
-  quarters = new QuarterAdministrationService(db);
+const router = Router();
+const service = new AdministrationService(db, auth);
+const quarters = new QuarterAdministrationService(db);
+
 router.use(bibleAdminRoutes);
+
 const run =
   (
     handler: (req: Parameters<RequestHandler>[0]) => Promise<unknown>,
@@ -25,11 +27,26 @@ const run =
       next(error);
     }
   };
+
 const id = (value: unknown) => {
   const parsed = idSchema.safeParse(value);
   if (!parsed.success) throw new ValidationError();
   return parsed.data;
 };
+
+const resolveOrgId = (req: Parameters<RequestHandler>[0], explicitOrgId?: unknown): string => {
+  const orgId =
+    (typeof explicitOrgId === "string" && explicitOrgId.length > 0 && explicitOrgId) ||
+    req.principal?.organizationIds?.[0] ||
+    req.principal?.activeOrganizationId ||
+    (req.principal as { organizationId?: string } | undefined)?.organizationId;
+
+  if (!orgId) {
+    throw new ValidationError("Organization context is required.");
+  }
+  return orgId;
+};
+
 const configuredResources = [
   ["assignments", "assignments"],
   ["character-qualities", "characterQualities"],
@@ -37,7 +54,7 @@ const configuredResources = [
   ["family-activities", "familyActivities"],
   ["books", "books"],
   ["reading-assignments", "readingAssignments"],
-  ["projects", "projects"], 
+  ["projects", "projects"],
   ["surveys", "surveys"],
   ["point-rules", "pointRules"],
 ] as const;
@@ -47,15 +64,13 @@ for (const [path, collection] of configuredResources) {
     `/${path}`,
     run((req) => {
       const query = schemas.resourceListQuerySchema.safeParse(req.query);
-      if (!query.success)
+      if (!query.success) {
         throw new ValidationError("Invalid resource list query.", {
           fieldErrors: query.error.flatten().fieldErrors,
         });
+      }
 
-      const organizationId =
-        query.data.organizationId ??
-        req.principal?.organizationIds?.[0] ??
-        (req.principal as { organizationId?: string } | undefined)?.organizationId;
+      const organizationId = resolveOrgId(req, query.data.organizationId);
 
       return service.listResources(req.principal, collection, {
         ...query.data,
@@ -70,6 +85,7 @@ for (const [path, collection] of configuredResources) {
       service.resource(req.principal, collection, id(req.params.resourceId)),
     ),
   );
+
   router.post(
     `/${path}`,
     validateBody(schemas.resourceCreateSchema),
@@ -78,6 +94,7 @@ for (const [path, collection] of configuredResources) {
       201,
     ),
   );
+
   router.post(
     `/${path}/:resourceId/publish`,
     validateBody(schemas.resourceLifecycleSchema),
@@ -91,6 +108,7 @@ for (const [path, collection] of configuredResources) {
       ),
     ),
   );
+
   router.post(
     `/${path}/:resourceId/archive`,
     validateBody(schemas.resourceLifecycleSchema),
@@ -114,12 +132,17 @@ const query = <T>(
   },
   message: string,
 ): T => {
-  if (!result.success)
+  if (!result.success) {
     throw new ValidationError(message, {
       fieldErrors: result.error?.flatten().fieldErrors,
     });
+  }
   return result.data as T;
 };
+
+// -------------------------------------------------------------
+// Quarters
+// -------------------------------------------------------------
 router.get(
   "/quarters",
   run((req) =>
@@ -132,15 +155,18 @@ router.get(
     ),
   ),
 );
+
 router.get(
   "/quarters/:quarterId",
   run((req) => quarters.get(req.principal, id(req.params.quarterId))),
 );
+
 router.post(
   "/quarters",
   validateBody(schemas.quarterCreateSchema),
   run((req) => quarters.create(req.principal, req.body, req.requestId), 201),
 );
+
 router.patch(
   "/quarters/:quarterId",
   validateBody(schemas.quarterUpdateSchema),
@@ -153,6 +179,7 @@ router.patch(
     ),
   ),
 );
+
 for (const [action, status] of [
   ["activate", "active"],
   ["close", "closed"],
@@ -172,83 +199,94 @@ for (const [action, status] of [
     ),
   );
 }
+
+// -------------------------------------------------------------
+// Users, Memberships & Roles
+// -------------------------------------------------------------
 router.get(
   "/users",
   run((req) => {
-    const query = schemas.userListQuerySchema.safeParse(req.query);
-    if (!query.success)
+    const q = schemas.userListQuerySchema.safeParse(req.query);
+    if (!q.success) {
       throw new ValidationError("Invalid user list query.", {
-        fieldErrors: query.error.flatten().fieldErrors,
+        fieldErrors: q.error.flatten().fieldErrors,
       });
-    return service.users(req.principal, query.data);
+    }
+    return service.users(req.principal, q.data);
   }),
 );
+
 router.get(
   "/memberships",
   run((req) => {
-    const query = schemas.membershipListQuerySchema.safeParse(req.query);
-    if (!query.success)
+    const q = schemas.membershipListQuerySchema.safeParse(req.query);
+    if (!q.success) {
       throw new ValidationError("Invalid membership list query.", {
-        fieldErrors: query.error.flatten().fieldErrors,
+        fieldErrors: q.error.flatten().fieldErrors,
       });
-    return service.listMemberships(req.principal, query.data);
+    }
+    return service.listMemberships(req.principal, q.data);
   }),
 );
+
 router.get(
   "/roles",
   run((req) => {
-    const query = schemas.roleListQuerySchema.safeParse(req.query);
-    if (!query.success)
+    const q = schemas.roleListQuerySchema.safeParse(req.query);
+    if (!q.success) {
       throw new ValidationError("Invalid role list query.", {
-        fieldErrors: query.error.flatten().fieldErrors,
+        fieldErrors: q.error.flatten().fieldErrors,
       });
-    return service.listMemberships(req.principal, query.data);
+    }
+    return service.listMemberships(req.principal, q.data);
   }),
 );
-// Replace lines 162-182 with safe fallback handling:
+
 router.get(
   "/reports",
   run((req) => {
-    const orgId =
-      (typeof req.query.organizationId === "string" && req.query.organizationId) ||
-      req.principal?.organizationIds?.[0];
+    const orgId = resolveOrgId(req, req.query.organizationId);
     return service.resources(req.principal, "reports", id(orgId));
   }),
 );
+
 router.get(
   "/awards",
   run((req) => {
-    const orgId =
-      (typeof req.query.organizationId === "string" && req.query.organizationId) ||
-      req.principal?.organizationIds?.[0];
+    const orgId = resolveOrgId(req, req.query.organizationId);
     return service.resources(req.principal, "awards", id(orgId));
   }),
 );
+
 router.get(
   "/audits",
   run((req) => {
-    const orgId =
-      (typeof req.query.organizationId === "string" && req.query.organizationId) ||
-      req.principal?.organizationIds?.[0];
+    const orgId = resolveOrgId(req, req.query.organizationId);
     return service.resources(req.principal, "auditLogs", id(orgId), true);
   }),
 );
 
+// -------------------------------------------------------------
+// Organizations & Programs
+// -------------------------------------------------------------
 router.post(
   "/organizations",
   validateBody(schemas.organizationCreateSchema),
   run((req) => service.createOrganization(req.principal, req.body), 201),
 );
+
 router.get(
   "/organizations",
   run((req) => service.organizations(req.principal)),
 );
+
 router.get(
   "/organizations/:organizationId",
   run((req) =>
     service.organization(req.principal, id(req.params.organizationId)),
   ),
 );
+
 router.patch(
   "/organizations/:organizationId",
   validateBody(schemas.organizationUpdateSchema),
@@ -260,6 +298,7 @@ router.patch(
     ),
   ),
 );
+
 router.post(
   "/organizations/:organizationId/suspend",
   validateBody(schemas.lifecycleVersionSchema),
@@ -272,6 +311,7 @@ router.post(
     ),
   ),
 );
+
 router.post(
   "/organizations/:organizationId/reactivate",
   validateBody(schemas.lifecycleVersionSchema),
@@ -284,30 +324,28 @@ router.post(
     ),
   ),
 );
+
 router.post(
   "/programs",
   validateBody(schemas.programCreateSchema),
   run((req) => service.createProgram(req.principal, req.body), 201),
 );
-// in src/administration/routes.ts
 
+// -------------------------------------------------------------
+// Teams Management (Auto-injected Tenant Context)
+// -------------------------------------------------------------
 router.get(
   "/teams",
   run((req) => {
-    const query = schemas.teamListQuerySchema.safeParse(req.query);
-    if (!query.success) {
+    const q = schemas.teamListQuerySchema.safeParse(req.query);
+    if (!q.success) {
       throw new ValidationError("Invalid team list query.", {
-        fieldErrors: query.error.flatten().fieldErrors,
+        fieldErrors: q.error.flatten().fieldErrors,
       });
     }
 
-    const orgId = query.data.organizationId ?? req.principal?.organizationIds?.[0];
-    if (!orgId) {
-      throw new ValidationError("Organization context is required.");
-    }
-
-    // Call service.teams or your paginated teams method
-    return service.teams(req.principal, orgId, query.data);
+    const orgId = resolveOrgId(req, q.data.organizationId);
+    return service.teams(req.principal, orgId, q.data);
   }),
 );
 
@@ -315,21 +353,107 @@ router.get(
   "/teams/:teamId",
   run((req) => service.team(req.principal, id(req.params.teamId))),
 );
+
+router.post(
+  "/teams",
+  run(async (req) => {
+    const orgId = resolveOrgId(req, req.body.organizationId);
+
+    const payload = {
+      ...req.body,
+      organizationId: orgId,
+      name: req.body.name,
+      displayName: req.body.displayName || req.body.name,
+      approvedDisplayName: req.body.displayName || req.body.name,
+      capacity: Number(req.body.capacity ?? 5),
+      targetPoints: Number(req.body.targetPoints ?? 5000),
+      quarterId: req.body.quarterId ?? null,
+      programId: req.body.programId ?? null,
+    };
+
+    const parsed = schemas.teamCreateSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new ValidationError("Invalid team payload.", {
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      });
+    }
+
+    return service.createTeam(req.principal, parsed.data);
+  }, 201),
+);
+
+router.patch(
+  "/teams/:teamId",
+  validateBody(schemas.teamUpdateSchema),
+  run((req) =>
+    service.updateTeam(req.principal, id(req.params.teamId), req.body),
+  ),
+);
+
+router.put(
+  "/teams/:teamId/members",
+  validateBody(schemas.teamMemberSchema),
+  run((req) =>
+    service.assignTeamMember(
+      req.principal,
+      id(req.params.teamId),
+      req.body.participantId,
+    ),
+  ),
+);
+
+router.delete(
+  "/teams/:teamId/members/:participantId",
+  run((req) =>
+    service.assignTeamMember(
+      req.principal,
+      id(req.params.teamId),
+      id(req.params.participantId),
+      true,
+    ),
+  ),
+);
+
+router.put(
+  "/teams/:teamId/mentors",
+  validateBody(schemas.teamMentorSchema),
+  run((req) =>
+    service.assignTeamMentor(
+      req.principal,
+      id(req.params.teamId),
+      req.body.userId,
+      req.body.expiresAt,
+    ),
+  ),
+);
+
+router.delete(
+  "/teams/:teamId/mentors/:userId",
+  run((req) =>
+    service.assignTeamMentor(
+      req.principal,
+      id(req.params.teamId),
+      id(req.params.userId),
+      undefined,
+      true,
+    ),
+  ),
+);
+
+// -------------------------------------------------------------
+// Participants
+// -------------------------------------------------------------
 router.post(
   "/parent-onboarding",
   validateBody(schemas.parentOnboardingSchema),
   run((req) => service.onboardParent(req.principal, req.body), 201),
 );
+
 router.post(
   "/participants",
   requireCapability("admin.participants.manage"),
   run(async (req) => {
-    const orgId =
-      (typeof req.body.organizationId === "string" && req.body.organizationId) ||
-      req.principal?.organizationIds?.[0] ||
-      (req.principal as { organizationId?: string } | undefined)?.organizationId ||
-      "";
-
+    const orgId = resolveOrgId(req, req.body.organizationId);
     const guardianUserId =
       (typeof req.body.guardianUserId === "string" && req.body.guardianUserId) ||
       req.principal?.uid ||
@@ -367,6 +491,7 @@ router.get(
     ),
   ),
 );
+
 router.get(
   "/participants/:participantId",
   requireCapability("admin.participants.read"),
@@ -374,6 +499,7 @@ router.get(
     service.participant(req.principal, id(req.params.participantId)),
   ),
 );
+
 router.patch(
   "/participants/:participantId",
   requireCapability("admin.participants.manage"),
@@ -386,6 +512,7 @@ router.patch(
     ),
   ),
 );
+
 router.delete(
   "/participants/:participantId",
   requireCapability("admin.participants.manage"),
@@ -398,92 +525,34 @@ router.delete(
     ),
   ),
 );
-router.put(
-  "/teams/:teamId/mentors",
-  validateBody(schemas.teamMentorSchema),
-  run((req) =>
-    service.assignTeamMentor(
-      req.principal,
-      id(req.params.teamId),
-      req.body.userId,
-      req.body.expiresAt,
-    ),
-  ),
-);
-router.delete(
-  "/teams/:teamId/mentors/:userId",
-  run((req) =>
-    service.assignTeamMentor(
-      req.principal,
-      id(req.params.teamId),
-      id(req.params.userId),
-      undefined,
-      true,
-    ),
-  ),
-);
+
+// -------------------------------------------------------------
+// Relationships & Invitations
+// -------------------------------------------------------------
 router.post(
   "/relationships",
   validateBody(schemas.relationshipSchema),
   run((req) => service.createRelationship(req.principal, req.body), 201),
 );
+
 router.post(
   "/relationships/:relationshipId/activate",
   run((req) =>
     service.activateRelationship(req.principal, id(req.params.relationshipId)),
   ),
 );
-router.post(
-  "/teams",
-  validateBody(schemas.teamCreateSchema),
-  run((req) => service.createTeam(req.principal, req.body), 201),
-);
-router.patch(
-  "/teams/:teamId",
-  validateBody(schemas.teamUpdateSchema),
-  run((req) =>
-    service.updateTeam(req.principal, id(req.params.teamId), req.body),
-  ),
-);
-router.put(
-  "/teams/:teamId/members",
-  validateBody(schemas.teamMemberSchema),
-  run((req) =>
-    service.assignTeamMember(
-      req.principal,
-      id(req.params.teamId),
-      req.body.participantId,
-    ),
-  ),
-);
+
 router.get(
   "/organizations/:organizationId/memberships",
   run((req) =>
     service.memberships(req.principal, id(req.params.organizationId)),
   ),
 );
-router.delete(
-  "/teams/:teamId/members/:participantId",
-  run((req) =>
-    service.assignTeamMember(
-      req.principal,
-      id(req.params.teamId),
-      id(req.params.participantId),
-      true,
-    ),
-  ),
-);
+
 router.post(
   "/invitations",
   run(async (req) => {
-    const orgId =
-      (typeof req.body.organizationId === "string" && req.body.organizationId) ||
-      req.principal?.organizationIds?.[0] ||
-      (req.principal as { organizationId?: string } | undefined)?.organizationId;
-
-    if (!orgId) {
-      throw new ValidationError("Organization context is required.");
-    }
+    const orgId = resolveOrgId(req, req.body.organizationId);
 
     const payload = {
       ...req.body,
@@ -500,12 +569,14 @@ router.post(
     return service.invite(req.principal, parsed.data);
   }, 201),
 );
+
 router.post(
   "/invitations/:invitationId/accept",
   run((req) =>
     service.acceptInvitation(req.principal, id(req.params.invitationId)),
   ),
 );
+
 router.post(
   "/invitations/:invitationId/decision",
   validateBody(schemas.invitationDecisionSchema),
@@ -517,17 +588,20 @@ router.post(
     ),
   ),
 );
+
 router.post(
   "/consents",
   validateBody(schemas.consentCaptureSchema),
   run((req) => service.captureConsent(req.principal, req.body), 201),
 );
+
 router.get(
   "/participants/:participantId/consents",
   run((req) =>
     service.consentHistory(req.principal, id(req.params.participantId)),
   ),
 );
+
 router.delete(
   "/participants/:participantId/consents/:policyKey",
   run((req) =>
@@ -538,6 +612,7 @@ router.delete(
     ),
   ),
 );
+
 router.put(
   "/organizations/:organizationId/users/:userId/memberships",
   validateBody(schemas.roleUpdateSchema),
