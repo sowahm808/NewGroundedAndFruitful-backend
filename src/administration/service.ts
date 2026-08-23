@@ -753,22 +753,28 @@ export class AdministrationService {
   };
 }
   async createTeam(p: Principal | undefined, input: Data) {
-    const oid = String(input.organizationId);
-    const actor = this.admin(p, oid);
-    const ref = this.db.collection("teams").doc();
-    await this.db.runTransaction((tx) => {
-      tx.create(ref, {
-        ...input,
-        status: "active",
-        version: 1,
-        memberCount: 0,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      this.audit(tx, actor.uid, oid, "team.created", { teamId: ref.id });
-      return Promise.resolve();
+  const oid = String(input.organizationId);
+  const actor = this.admin(p, oid);
+  const ref = this.db.collection("teams").doc();
+
+  await this.db.runTransaction((tx) => {
+    tx.create(ref, {
+      ...input,
+      status: "active",
+      version: 1,
+      memberCount: 0,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      createdBy: actor.uid,
+      updatedBy: actor.uid,
     });
-    return { id: ref.id };
-  }
+
+    this.audit(tx, actor.uid, oid, "team.created", { teamId: ref.id });
+    return Promise.resolve();
+  });
+
+  return { id: ref.id, ...input, status: "active", version: 1 };
+}
   async teamOrganization(id: string) {
     const snap = await this.db.doc(`teams/${id}`).get();
     if (!snap.exists) throw new NotFoundError();
