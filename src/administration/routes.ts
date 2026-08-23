@@ -50,9 +50,7 @@ const query = <T>(
   return result.data as T;
 };
 
-/**
- * Resolves the tenant organization context across request parts, auth claims, and database fallbacks.
- */
+/** Resolve only canonical tenant context. Request values must already be validated. */
 export const tenantOrganizationCandidate = (
   req: {
     query?: { organizationId?: unknown; workspaceId?: unknown };
@@ -67,25 +65,15 @@ export const tenantOrganizationCandidate = (
     ? (principal.memberships as Array<Record<string, unknown>>)
     : [];
 
+  const activeMemberships = memberships.filter(
+    (membership) => membership.status === "active",
+  );
   const candidates = [
     explicitValue,
-    req.query?.organizationId,
-    req.query?.workspaceId,
-    req.body?.organizationId,
-    req.body?.workspaceId,
-    req.headers["x-organization-id"],
-    req.headers["x-workspace-id"],
-    principal?.activeOrganizationId ||
-      principal?.activeWorkspaceId ||
-      principal?.workspaceId ||
-      principal?.organizationId,
-    Array.isArray(principal?.organizationIds)
-      ? principal.organizationIds[0]
+    principal?.activeOrganizationId,
+    activeMemberships.length === 1
+      ? activeMemberships[0]?.organizationId
       : undefined,
-    Array.isArray(principal?.workspaceIds)
-      ? principal.workspaceIds[0]
-      : undefined,
-    memberships[0]?.organizationId || memberships[0]?.workspaceId,
   ];
 
   for (const value of candidates) {
@@ -103,7 +91,7 @@ export const resolveTenantOrganizationId = async (
 
   if (candidate) return candidate;
 
-  // Fallback: Query Firestore for the user's active membership
+  // Support older internal principals, but never select among several tenants.
   if (principal?.uid) {
     const snap = await db
       .collection("memberships")
@@ -111,17 +99,8 @@ export const resolveTenantOrganizationId = async (
       .where("status", "==", "active")
       .get();
 
-    if (!snap.empty) {
-      const adminDoc = snap.docs.find((d) => {
-        const roles = d.get("roles") ?? [d.get("role")];
-        return (
-          Array.isArray(roles) &&
-          (roles.includes("admin") ||
-            roles.includes("super_admin") ||
-            roles.includes("owner"))
-        );
-      });
-      const membership = adminDoc ?? snap.docs[0]!;
+    if (snap.size === 1) {
+      const membership = snap.docs[0]!;
       return String(
         membership.get("organizationId") || membership.get("workspaceId"),
       );
@@ -452,13 +431,8 @@ router.get(
 router.post(
   "/teams",
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(
-      req,
-      req.body.organizationId,
-    );
-
     const payload = {
-      organizationId: orgId,
+      organizationId: req.body.organizationId,
       name: req.body.name,
       displayName: req.body.displayName || req.body.name,
       approvedDisplayName: req.body.displayName || req.body.name,
@@ -475,7 +449,15 @@ router.post(
       });
     }
 
-    return service.createTeam(req.principal, parsed.data);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      parsed.data.organizationId,
+    );
+
+    return service.createTeam(req.principal, {
+      ...parsed.data,
+      organizationId: orgId,
+    });
   }, 201),
 );
 

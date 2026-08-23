@@ -19,3 +19,7 @@ export const organizationBootstrapSchema = z
 export const personalWorkspaceBootstrapSchema = z
   .object({ timezone: z.string().trim().min(1).max(80) })
   .strict();
+
+export const legacyOrganizationRepairSchema = z
+  .object({ targetUid: z.string().trim().min(1).max(128).optional() })
+  .strict();

@@ -286,9 +286,9 @@ export class AuthSessionService {
             : resolution.source,
         migrationRequired: resolution.migrationRequired,
       },
-      ...(new Set(activeMemberships.map((item) => item.organizationId)).size ===
-      1
-        ? { activeOrganizationId: activeMemberships[0]!.organizationId }
+      migrationRequired: resolution.migrationRequired,
+      ...(activeMembership
+        ? { activeOrganizationId: activeMembership.organizationId }
         : {}),
     };
     logger.info("session_resolved", {

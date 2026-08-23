@@ -3,18 +3,21 @@ import { Router, type RequestHandler } from "express";
 import {
   OrganizationBootstrapService,
   PersonalWorkspaceBootstrapService,
+  LegacyOrganizationRepairService,
 } from "./service.js";
 import {
   organizationBootstrapSchema,
   personalWorkspaceBootstrapSchema,
+  legacyOrganizationRepairSchema,
 } from "./schemas.js";
 import { requireAuthenticated } from "../auth/authorization.js";
-import { db } from "../config/firebase.js";
+import { auth, db } from "../config/firebase.js";
 import { validateBody } from "../middleware/validate.js";
 
 const router = Router();
 const service = new OrganizationBootstrapService(db);
 const personalWorkspaceService = new PersonalWorkspaceBootstrapService(db);
+const repairService = new LegacyOrganizationRepairService(db, auth);
 
 const run =
   (handler: RequestHandler): RequestHandler =>
@@ -56,6 +59,20 @@ router.post(
     });
 
     res.status(201).json({ data: result });
+  }),
+);
+
+router.post(
+  "/organization/repair",
+  validateBody(legacyOrganizationRepairSchema),
+  run(async (req, res) => {
+    const actor = requireAuthenticated(req.principal);
+    const result = await repairService.repair({
+      actorUid: actor.uid,
+      targetUid: req.body.targetUid ?? actor.uid,
+      requestId: req.requestId,
+    });
+    res.json({ data: result });
   }),
 );
 

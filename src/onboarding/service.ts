@@ -1,11 +1,146 @@
 import { createHash } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
+import type { Auth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import {
   AccountDisabledError,
   OrganizationBootstrapError,
   PersonalWorkspaceBootstrapError,
+  AuthorizationError,
+  ConflictError,
 } from "../shared/errors.js";
+
+export class LegacyOrganizationRepairService {
+  constructor(
+    private readonly db: Firestore,
+    private readonly auth: Auth,
+  ) {}
+
+  async repair(input: {
+    actorUid: string;
+    targetUid: string;
+    requestId: string;
+  }) {
+    const actor = await this.auth.getUser(input.actorUid);
+    const platformRoles = actor.customClaims?.platformRoles;
+    const isSuperAdmin =
+      Array.isArray(platformRoles) && platformRoles.includes("super_admin");
+    if (input.actorUid !== input.targetUid && !isSuperAdmin)
+      throw new AuthorizationError();
+
+    const owned = await this.db
+      .collection("organizations")
+      .where("createdBy", "==", input.targetUid)
+      .get();
+    const candidates = owned.docs.filter(
+      (doc) => doc.get("status") === "active" && doc.get("type") !== "personal",
+    );
+    if (candidates.length !== 1)
+      throw new ConflictError(
+        "A unique owned organization could not be verified.",
+      );
+    const organization = candidates[0]!;
+    const organizationId = organization.id;
+    const membershipId = `${organizationId}_${input.targetUid}`;
+    const membershipRef = this.db.doc(`memberships/${membershipId}`);
+    const workspaceRef = this.db.doc(`workspaces/${organizationId}`);
+    const userRef = this.db.doc(`users/${input.targetUid}`);
+    const markerRef = this.db.doc(
+      `migrationRecords/organization-membership-${input.targetUid}`,
+    );
+
+    const outcome = await this.db.runTransaction(async (tx) => {
+      const [membership, workspace, user, marker] = await Promise.all([
+        tx.get(membershipRef),
+        tx.get(workspaceRef),
+        tx.get(userRef),
+        tx.get(markerRef),
+      ]);
+      if (!user.exists)
+        throw new ConflictError("The owner profile is missing.");
+      if (membership.exists) {
+        const membershipRoles: unknown = membership.get("roles");
+        if (
+          membership.get("userId") !== input.targetUid ||
+          membership.get("organizationId") !== organizationId ||
+          membership.get("status") !== "active" ||
+          !Array.isArray(membershipRoles) ||
+          !membershipRoles.some((role: unknown) => role === "owner")
+        )
+          throw new ConflictError(
+            "The canonical membership conflicts with ownership.",
+          );
+      }
+      const now = FieldValue.serverTimestamp();
+      if (!workspace.exists)
+        tx.create(workspaceRef, {
+          ...organization.data(),
+          organizationId,
+          updatedAt: now,
+          updatedBy: input.actorUid,
+        });
+      if (!membership.exists)
+        tx.create(membershipRef, {
+          userId: input.targetUid,
+          organizationId,
+          workspaceId: organizationId,
+          roles: ["owner", "admin"],
+          workspaceRoles: ["owner", "admin"],
+          personas: ["admin"],
+          status: "active",
+          version: 1,
+          createdAt: now,
+          createdBy: input.actorUid,
+          updatedAt: now,
+          updatedBy: input.actorUid,
+        });
+      tx.update(userRef, {
+        onboardingStatus: "complete",
+        activeOrganizationId: organizationId,
+        activeWorkspaceId: organizationId,
+        updatedAt: now,
+        updatedBy: input.actorUid,
+      });
+      if (!marker.exists) {
+        tx.create(markerRef, {
+          type: "legacy_organization_membership_repair",
+          actorId: input.actorUid,
+          targetUid: input.targetUid,
+          organizationId,
+          membershipId,
+          status: "complete",
+          requestId: input.requestId,
+          createdAt: now,
+        });
+        tx.create(this.db.collection("auditLogs").doc(), {
+          event: "authorization.organization_membership_repaired",
+          actorId: input.actorUid,
+          targetUid: input.targetUid,
+          organizationId,
+          membershipId,
+          requestId: input.requestId,
+          createdAt: now,
+        });
+      }
+      return membership.exists ? "existing" : "repaired";
+    });
+
+    const target = await this.auth.getUser(input.targetUid);
+    const claims = target.customClaims ?? {};
+    const roles = Array.isArray(claims.roles) ? claims.roles : [];
+    await this.auth.setCustomUserClaims(input.targetUid, {
+      ...claims,
+      roles: [...new Set([...roles, "owner", "admin"])],
+    });
+    return {
+      organizationId,
+      workspaceId: organizationId,
+      membershipId,
+      outcome,
+      tokenRefreshRequired: true as const,
+    };
+  }
+}
 
 export interface PersonalWorkspaceBootstrapInput {
   uid: string;
@@ -66,6 +201,7 @@ export interface OrganizationBootstrapResult {
   onboardingStatus: "complete";
   nextStep: "dashboard";
   activeWorkspaceId: string;
+  activeOrganizationId: string;
   tokenRefreshRequired: true;
 }
 
@@ -208,6 +344,7 @@ export class PersonalWorkspaceBootstrapService {
         });
         tx.update(userRef, {
           onboardingStatus: "complete",
+          activeOrganizationId: workspaceId,
           activeWorkspaceId: workspaceId,
           personalWorkspaceBootstrapId: markerRef.id,
           updatedAt: now,
@@ -502,6 +639,7 @@ export class OrganizationBootstrapService {
         });
         tx.update(userRef, {
           onboardingStatus: "complete",
+          activeOrganizationId: workspaceId,
           activeWorkspaceId: workspaceId,
           organizationBootstrapId: markerRef.id,
           updatedAt: now,
@@ -640,6 +778,7 @@ export class OrganizationBootstrapService {
       });
     tx.update(state.userRef, {
       onboardingStatus: "complete",
+      activeOrganizationId: state.workspaceId,
       activeWorkspaceId: state.workspaceId,
       organizationBootstrapId: state.input.uid,
       updatedAt: now,
@@ -673,6 +812,7 @@ export class OrganizationBootstrapService {
       onboardingStatus: "complete",
       nextStep: "dashboard",
       activeWorkspaceId: workspaceId,
+      activeOrganizationId: workspaceId,
       tokenRefreshRequired: true,
     };
   }
