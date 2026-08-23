@@ -4,7 +4,6 @@ import type { Firestore } from "firebase-admin/firestore";
 import { auth, db } from "../config/firebase.js";
 import {
   AccountDisabledError,
-  AppError,
   AuthenticationError,
   AuthorizationError,
 } from "../shared/errors.js";
@@ -270,11 +269,12 @@ export async function authenticate(
     };
     next();
   } catch (error) {
-    next(
-      error instanceof AppError
-        ? error
-        : new AuthenticationError("INVALID_AUTHENTICATION_TOKEN"),
-    );
+    // verifyBearerToken already translates Firebase token failures into a safe
+    // AuthenticationError. Do not relabel failures from Firestore-backed
+    // principal, membership, or elevation resolution as invalid credentials:
+    // the application error boundary must be allowed to map dependency errors
+    // to its retryable 503 contract.
+    next(error);
   }
 }
 
@@ -389,10 +389,9 @@ export async function requireEnabledRegistrationAccount(
     logger.info("registration_intent_policy_passed", context);
     next();
   } catch (error) {
-    next(
-      error instanceof AppError
-        ? error
-        : new AuthenticationError("INVALID_AUTHENTICATION_TOKEN"),
-    );
+    // Account-policy reads happen after token verification. Preserve provider
+    // failures so the application boundary can distinguish an unavailable
+    // dependency from an invalid Firebase identity.
+    next(error);
   }
 }

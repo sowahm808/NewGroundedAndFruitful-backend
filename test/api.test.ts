@@ -337,6 +337,18 @@ describe("HTTP safety contract", () => {
     });
   });
 
+  it("requires an authorization token before entering protected admin routes", async () => {
+    const response = await fetch(`${base}/api/v1/admin/teams`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ organizationId: "org-1", name: "Team One" }),
+    });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_REQUIRED" },
+    });
+  });
+
   it.each([
     "https://groundedandfruitful.netlify.app",
     "https://groundedandfruitful.org",
