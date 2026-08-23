@@ -637,121 +637,220 @@ export class AdministrationService {
     );
     return { id: snap.id, ...snap.data() };
   }
- async roster(
-  p: Principal | undefined,
-  input: {
-    organizationId?: string | undefined;
-    page: number;
-    pageSize: number;
-    search?: string | undefined;
-    status?: string | undefined;
-    teamId?: string | undefined;
-    programId?: string | undefined;
-    sort: "updatedAt" | "-updatedAt";
-  },
-) {
-  const { organizationId: oid } = this.participantActor(
-    p,
-    "admin.participants.read",
-    input.organizationId,
-  );
-
-  let participantQuery = this.db
-    .collection("participants")
-    .where("organizationId", "==", oid);
-
-  if (input.programId)
-    participantQuery = participantQuery.where(
-      "programId",
-      "==",
-      input.programId,
-    );
-  if (input.status)
-    participantQuery = participantQuery.where("status", "==", input.status);
-  if (input.teamId)
-    participantQuery = participantQuery.where(
-      "activeTeamId",
-      "==",
-      input.teamId,
-    );
-
-  const timestamp = (value: unknown) =>
-    typeof value === "object" &&
-    value !== null &&
-    "toMillis" in value &&
-    typeof (value as { toMillis: () => number }).toMillis === "function"
-      ? (value as { toMillis(): number }).toMillis()
-      : value instanceof Date
-        ? value.getTime()
-        : 0;
-
-  const toIsoString = (val: unknown): string => {
-    if (typeof val === "string" && val.length > 0) return val;
-    if (
-      typeof val === "object" &&
-      val !== null &&
-      "toDate" in val &&
-      typeof (val as { toDate: () => Date }).toDate === "function"
-    ) {
-      return (val as { toDate(): Date }).toDate().toISOString();
-    }
-    if (val instanceof Date) return val.toISOString();
-    return new Date().toISOString();
-  };
-
-  const normalizeStatus = (
-    status: unknown,
-  ): "pending" | "active" | "withdrawn" => {
-    if (status === "active" || status === "withdrawn" || status === "pending") {
-      return status;
-    }
-    return "active";
-  };
-
-  const normalizedSearch = input.search?.toLocaleLowerCase();
-
-  const results = (await participantQuery.get()).docs
-    .map((doc) => {
-      const d = doc.data() as Record<string, unknown>;
-      return {
-        id: doc.id,
-        name: String(d.name || d.displayName || d.handle || "Participant"),
-        enrollmentStatus: normalizeStatus(d.enrollmentStatus || d.status),
-        linkedGuardian: typeof d.linkedGuardian === "string" ? d.linkedGuardian : undefined,
-        team: typeof d.team === "string" ? d.team : (typeof d.teamName === "string" ? d.teamName : undefined),
-        currentQuarterStatus: typeof d.currentQuarterStatus === "string" ? d.currentQuarterStatus : undefined,
-        updatedAt: toIsoString(d.updatedAt || d.createdAt),
-        allowedActions: Array.isArray(d.allowedActions) ? d.allowedActions : ["edit", "assign"],
-        rawUpdatedAt: d.updatedAt,
-      };
-    })
-    .filter(
-      (participant) =>
-        !normalizedSearch ||
-        participant.name.toLocaleLowerCase().includes(normalizedSearch),
-    )
-    .sort((a, b) => {
-      const difference = timestamp(a.rawUpdatedAt) - timestamp(b.rawUpdatedAt);
-      return (
-        (input.sort === "-updatedAt" ? -difference : difference) ||
-        a.id.localeCompare(b.id)
-      );
-    });
-
-  const total = results.length;
-  const page = input.page || 1;
-  const pageSize = input.pageSize || 25;
-
-  return {
-    items: results.slice((page - 1) * pageSize, page * pageSize),
-    pagination: {
-      page,
-      pageSize,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  async roster(
+    p: Principal | undefined,
+    input: {
+      organizationId?: string | undefined;
+      page: number;
+      pageSize: number;
+      search?: string | undefined;
+      status?: string | undefined;
+      teamId?: string | undefined;
+      programId?: string | undefined;
+      sort: "updatedAt" | "-updatedAt";
     },
-  };
-}
+  ) {
+    const oid = this.participantActor(
+      p,
+      "admin.participants.read",
+      input.organizationId,
+    ).organizationId;
+
+    let participantQuery = this.db
+      .collection("participants")
+      .where("organizationId", "==", oid);
+
+    if (input.programId)
+      participantQuery = participantQuery.where(
+        "programId",
+        "==",
+        input.programId,
+      );
+    if (input.status)
+      participantQuery = participantQuery.where("status", "==", input.status);
+    if (input.teamId)
+      participantQuery = participantQuery.where(
+        "activeTeamId",
+        "==",
+        input.teamId,
+      );
+
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof (value as { toMillis: () => number }).toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : value instanceof Date
+          ? value.getTime()
+          : 0;
+
+    const toIsoString = (value: unknown): string => {
+      if (typeof value === "string" && value.length > 0) return value;
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        "toDate" in value &&
+        typeof (value as { toDate: () => Date }).toDate === "function"
+      )
+        return (value as { toDate(): Date }).toDate().toISOString();
+      if (value instanceof Date) return value.toISOString();
+      return new Date().toISOString();
+    };
+
+    const normalizeStatus = (
+      status: unknown,
+    ): "pending" | "active" | "withdrawn" => {
+      if (status === "active" || status === "withdrawn" || status === "pending")
+        return status;
+      return "active";
+    };
+
+    const normalizedSearch = input.search?.toLocaleLowerCase();
+    const participants = (await participantQuery.get()).docs
+      .map((doc) => {
+        const data = doc.data() as Data;
+        return {
+          id: doc.id,
+          data,
+          name: String(
+            data.name ||
+              data.approvedDisplayName ||
+              data.displayName ||
+              data.handle ||
+              "Participant",
+          ),
+          enrollmentStatus: normalizeStatus(
+            data.enrollmentStatus || data.status,
+          ),
+          rawUpdatedAt: data.updatedAt,
+        };
+      })
+      .filter(
+        (participant) =>
+          !normalizedSearch ||
+          participant.name.toLocaleLowerCase().includes(normalizedSearch),
+      )
+      .sort((a, b) => {
+        const difference =
+          timestamp(a.rawUpdatedAt) - timestamp(b.rawUpdatedAt);
+        return (
+          (input.sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+
+    const total = participants.length;
+    const pageParticipants = participants.slice(
+      (input.page - 1) * input.pageSize,
+      input.page * input.pageSize,
+    );
+    const participantIds = new Set(pageParticipants.map(({ id }) => id));
+
+    const [quarterSnapshot, teamSnapshot, linkSnapshot] = await Promise.all([
+      this.db
+        .collection("quarters")
+        .where("organizationId", "==", oid)
+        .where("status", "==", "active")
+        .get(),
+      this.db.collection("teams").where("organizationId", "==", oid).get(),
+      this.db
+        .collection("parentChildLinks")
+        .where("organizationId", "==", oid)
+        .where("status", "==", "active")
+        .get(),
+    ]);
+
+    const activeQuarter = quarterSnapshot.docs
+      .map<Data & { id: string }>((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Data),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id))[0];
+    const activeQuarterName = activeQuarter
+      ? textValue(activeQuarter.name)
+      : "";
+    const teamNames = new Map(
+      teamSnapshot.docs.map((doc) => {
+        const data = doc.data() as Data;
+        return [
+          doc.id,
+          textValue(data.approvedDisplayName || data.displayName || data.name),
+        ];
+      }),
+    );
+    const links = linkSnapshot.docs
+      .map((doc) => doc.data() as Data)
+      .filter((link) => participantIds.has(textValue(link.participantId)));
+    const guardianIds = new Set(
+      links
+        .map((link) => textValue(link.parentUid || link.guardianUserId))
+        .filter(Boolean),
+    );
+
+    const [profileSnapshot, userSnapshot] = await Promise.all([
+      this.db
+        .collection("parentProfiles")
+        .where("organizationId", "==", oid)
+        .get(),
+      this.db
+        .collection("users")
+        .where("organizationIds", "array-contains", oid)
+        .get(),
+    ]);
+    const guardianNames = new Map<string, string>();
+    for (const snapshot of [userSnapshot, profileSnapshot]) {
+      for (const doc of snapshot.docs) {
+        const data = doc.data() as Data;
+        const guardianId = textValue(data.userId || data.parentUid) || doc.id;
+        if (!guardianIds.has(guardianId)) continue;
+        const name = textValue(
+          data.approvedDisplayName ||
+            data.displayName ||
+            data.name ||
+            data.email,
+        );
+        if (name) guardianNames.set(guardianId, name);
+      }
+    }
+    const guardianByParticipant = new Map<string, string>();
+    for (const link of links) {
+      const participantId = textValue(link.participantId);
+      const guardianId = textValue(link.parentUid || link.guardianUserId);
+      const guardianName = guardianNames.get(guardianId);
+      if (guardianName && !guardianByParticipant.has(participantId))
+        guardianByParticipant.set(participantId, guardianName);
+    }
+
+    return {
+      items: pageParticipants.map((participant) => {
+        const teamId = textValue(
+          participant.data.activeTeamId || participant.data.teamId,
+        );
+        return {
+          id: participant.id,
+          name: participant.name,
+          enrollmentStatus: participant.enrollmentStatus,
+          linkedGuardian: guardianByParticipant.get(participant.id),
+          team: teamId ? teamNames.get(teamId) : undefined,
+          currentQuarterStatus:
+            participant.enrollmentStatus === "withdrawn" || !teamId
+              ? "Not Enrolled"
+              : activeQuarterName || "Active Quarter: None",
+          updatedAt: toIsoString(
+            participant.data.updatedAt || participant.data.createdAt,
+          ),
+          allowedActions: ["edit", "assign"],
+        };
+      }),
+      pagination: {
+        page: input.page,
+        pageSize: input.pageSize,
+        total,
+        totalPages: Math.ceil(total / input.pageSize),
+      },
+    };
+  }
   async createTeam(p: Principal | undefined, input: Data) {
   const oid = String(input.organizationId);
   const actor = this.admin(p, oid);
