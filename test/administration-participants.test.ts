@@ -165,6 +165,8 @@ describe("Admin Participants authorization and list contract", () => {
       }),
       expect.objectContaining({
         id: "participant-2",
+        linkedGuardian: null,
+        team: null,
         currentQuarterStatus: "Not Enrolled",
         allowedActions: ["edit", "assign"],
       }),
@@ -326,5 +328,23 @@ describe("Admin Participants authorization and list contract", () => {
     expect(
       operation.responses["200"]!.content["application/json"]!.schema.$ref,
     ).toBe("#/components/schemas/ParticipantListResponse");
+
+    const itemSchema = specification.components.schemas.AdminParticipant as {
+      additionalProperties: boolean;
+      required: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(itemSchema.additionalProperties).toBe(false);
+    expect(itemSchema.required).toEqual([
+      "id",
+      "name",
+      "enrollmentStatus",
+      "linkedGuardian",
+      "team",
+      "currentQuarterStatus",
+      "updatedAt",
+      "allowedActions",
+    ]);
+    expect(Object.keys(itemSchema.properties)).toEqual(itemSchema.required);
   });
 });

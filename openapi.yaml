@@ -1369,7 +1369,7 @@ paths:
             schema:
               {
                 type: string,
-                enum: [updatedAt, -updatedAt],
+                enum: [updatedAt, -updatedAt, updatedAt_desc, updatedAt_asc],
                 default: -updatedAt,
               },
           }
@@ -2179,16 +2179,34 @@ components:
 
     AdminParticipant:
       type: object
-      required: [id, organizationId, displayName, status]
+      additionalProperties: false
+      required:
+        [
+          id,
+          name,
+          enrollmentStatus,
+          linkedGuardian,
+          team,
+          currentQuarterStatus,
+          updatedAt,
+          allowedActions,
+        ]
       properties:
         id: { type: string }
-        organizationId: { type: string }
-        programId: { type: string }
-        activeTeamId: { type: string }
-        displayName: { type: string }
-        status: { type: string }
-        version: { type: integer, minimum: 1 }
+        name: { type: string }
+        enrollmentStatus:
+          type: string
+          enum: [pending, active, withdrawn]
+        linkedGuardian: { type: [string, "null"] }
+        team: { type: [string, "null"] }
+        currentQuarterStatus: { type: string }
         updatedAt: { type: string, format: date-time }
+        allowedActions:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [edit, assign]
 
     ParticipantListResponse:
       type: object
