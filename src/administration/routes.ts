@@ -322,17 +322,148 @@ router.get(
   }),
 );
 
+// router.get(
+//   "/reports",
+//   run(async (req) => {
+//     const orgId = await resolveTenantOrganizationId(
+//       req,
+//       req.query.organizationId,
+//     );
+//     return service.resources(req.principal, "reports", id(orgId));
+//   }),
+// );
+// -------------------------------------------------------------
+// Reports Job Management (src/administration/routes.ts)
+// -------------------------------------------------------------
+
+// GET /api/v1/admin/reports -> returns { items: ReportJob[] }
 router.get(
   "/reports",
+  requireCapability("admin.reports.read"),
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(
-      req,
-      req.query.organizationId,
-    );
-    return service.resources(req.principal, "reports", id(orgId));
+    const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
+    
+    const snap = await db
+      .collection("reportJobs")
+      .where("organizationId", "==", orgId)
+      .orderBy("createdAt", "desc")
+      .get();
+
+    const items = snap.docs.map((doc) => {
+      const d = doc.data();
+      return {
+        id: doc.id,
+        reportType: d.reportType,
+        reportName: d.reportName,
+        quarterName: d.quarterName,
+        periodStart: d.periodStart,
+        periodEnd: d.periodEnd,
+        scopeLabel: d.scopeLabel || "Organization scope",
+        status: d.status || "queued",
+        requestedBy: d.requestedBy || "Admin",
+        createdAt: d.createdAt,
+        completedAt: d.completedAt,
+        expiresAt: d.expiresAt,
+        allowedActions: d.status === "completed" 
+          ? ["view", "download"] 
+          : d.status === "failed" 
+            ? ["retry"] 
+            : ["cancel"],
+      };
+    });
+
+    return { items };
   }),
 );
 
+// POST /api/v1/admin/reports -> creates a ReportJob record
+router.post(
+  "/reports",
+  requireCapability("admin.reports.create"),
+  run(async (req) => {
+    const orgId = await resolveTenantOrganizationId(req, req.body.organizationId);
+    const { reportType, quarterId, teamId, periodStart, periodEnd } = req.body;
+
+    const principal = req.principal as Record<string, unknown> | undefined;
+    const requester =
+      (typeof principal?.displayName === "string" && principal.displayName) ||
+      (typeof principal?.email === "string" && principal.email) ||
+      req.principal?.uid ||
+      "Admin";
+
+    const jobRef = db.collection("reportJobs").doc();
+    const newJob = {
+      id: jobRef.id,
+      organizationId: orgId,
+      reportType,
+      quarterId: quarterId || null,
+      teamId: teamId || null,
+      periodStart: periodStart || null,
+      periodEnd: periodEnd || null,
+      scopeLabel: "Organization scope",
+      status: "queued",
+      requestedBy: requester,
+      createdAt: new Date().toISOString(),
+      allowedActions: ["cancel"],
+      version: 1,
+    };
+
+    await jobRef.set(newJob);
+    return newJob;
+  }, 201),
+);
+
+// GET /api/v1/admin/reports/:jobId -> single job polling status
+router.get(
+  "/reports/:jobId",
+  requireCapability("admin.reports.read"),
+  run(async (req) => {
+    const jobId = id(req.params.jobId);
+    const doc = await db.collection("reportJobs").doc(jobId).get();
+    if (!doc.exists) throw new ValidationError("Report job not found.");
+    return { id: doc.id, ...doc.data() };
+  }),
+);
+
+// POST /api/v1/admin/reports/:jobId/download -> signed download url
+router.post(
+  "/reports/:jobId/download",
+  requireCapability("admin.reports.read"),
+  run(async (req) => {
+    const jobId = id(req.params.jobId);
+    const doc = await db.collection("reportJobs").doc(jobId).get();
+    if (!doc.exists) throw new ValidationError("Report job not found.");
+    const data = doc.data();
+
+    return {
+      url: data?.downloadUrl || `https://storage.googleapis.com/exports/${jobId}.csv`,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    };
+  }),
+);
+
+// POST /api/v1/admin/reports/:jobId/:command (retry | cancel)
+router.post(
+  "/reports/:jobId/:command",
+  requireCapability("admin.reports.create"),
+  run(async (req) => {
+    const jobId = id(req.params.jobId);
+    const command = typeof req.params.command === "string" ? req.params.command : "";
+
+    if (command !== "retry" && command !== "cancel") {
+      throw new ValidationError("Invalid report command. Expected 'retry' or 'cancel'.");
+    }
+
+    const ref = db.collection("reportJobs").doc(jobId);
+    const doc = await ref.get();
+    if (!doc.exists) throw new ValidationError("Report job not found.");
+
+    const nextStatus = command === "retry" ? "queued" : "cancelled";
+    await ref.update({ status: nextStatus, updatedAt: new Date().toISOString() });
+
+    return { id: doc.id, ...doc.data(), status: nextStatus };
+  }),
+);
 router.get(
   "/awards",
   run(async (req) => {
