@@ -89,6 +89,12 @@ export const familyActivityQuerySchema = listSchema
   .extend({ childId: idSchema });
 export const familyCompletionCommandSchema = z.object({ childId: idSchema });
 export const reportQuerySchema = z.object({ childId: idSchema });
+export const participationQuerySchema = z
+  .object({
+    childId: idSchema,
+    quarterId: optionalQueryString(idSchema.optional()),
+  })
+  .strict();
 export const idempotencyKeySchema = z
   .string()
   .trim()

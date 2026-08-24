@@ -254,6 +254,41 @@ export class ParentService {
     return this.summary(childId, organizationId, "active");
   }
 
+  async participation(
+    principal: Principal,
+    childId: string,
+    quarterId?: string,
+  ) {
+    const { organizationId } = await this.link(principal, childId);
+    let query = this.db
+      .collection("participationCompletions")
+      .where("participantId", "==", childId);
+    if (quarterId) query = query.where("quarterId", "==", quarterId);
+    const snapshot = await query.get();
+
+    return snapshot.docs
+      .filter((doc) => {
+        const recordOrganizationId = doc.get("organizationId");
+        return (
+          recordOrganizationId === undefined ||
+          recordOrganizationId === organizationId
+        );
+      })
+      .map((doc) => ({
+        id: doc.id,
+        activityId:
+          typeof doc.get("activityId") === "string"
+            ? doc.get("activityId")
+            : null,
+        quarterId:
+          typeof doc.get("quarterId") === "string"
+            ? doc.get("quarterId")
+            : null,
+        week: number(doc.get("week")),
+        completedAt: iso(doc.get("completedAt")),
+      }));
+  }
+
   async setChildCredentials(
     principal: Principal,
     childId: string,

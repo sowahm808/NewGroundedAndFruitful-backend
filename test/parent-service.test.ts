@@ -364,6 +364,95 @@ describe("ParentService children relationship scope", () => {
   });
 });
 
+describe("ParentService participation", () => {
+  it("lists completion records only after verifying the parent-child link", async () => {
+    const linkValues = { status: "active", organizationId: "org-1" };
+    const linkQuery = {
+      where: () => linkQuery,
+      limit: () => linkQuery,
+      get: () =>
+        Promise.resolve({
+          docs: [
+            { get: (field: keyof typeof linkValues) => linkValues[field] },
+          ],
+        }),
+    };
+    const completionValues = {
+      organizationId: "org-1",
+      activityId: "activity-1",
+      quarterId: "quarter-1",
+      week: 3,
+      completedAt: Timestamp.fromDate(new Date("2026-08-20T12:00:00.000Z")),
+    };
+    const otherOrganizationValues = {
+      ...completionValues,
+      organizationId: "org-2",
+    };
+    const completionQuery = {
+      where: () => completionQuery,
+      get: () =>
+        Promise.resolve({
+          docs: [
+            {
+              id: "completion-1",
+              get: (field: keyof typeof completionValues) =>
+                completionValues[field],
+            },
+            {
+              id: "cross-tenant",
+              get: (field: keyof typeof otherOrganizationValues) =>
+                otherOrganizationValues[field],
+            },
+          ],
+        }),
+    };
+    const child = {
+      exists: true,
+      get: (field: string) =>
+        field === "organizationId" ? "org-1" : undefined,
+    };
+    const service = new ParentService({
+      collection: (name: string) =>
+        name === "parentChildLinks" ? linkQuery : completionQuery,
+      doc: () => ({ get: () => Promise.resolve(child) }),
+    } as unknown as Firestore);
+
+    await expect(
+      service.participation(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        "child-1",
+        "quarter-1",
+      ),
+    ).resolves.toEqual([
+      {
+        id: "completion-1",
+        activityId: "activity-1",
+        quarterId: "quarter-1",
+        week: 3,
+        completedAt: "2026-08-20T12:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("returns not found instead of exposing an unlinked child's records", async () => {
+    const query = {
+      where: () => query,
+      limit: () => query,
+      get: () => Promise.resolve({ docs: [] }),
+    };
+    const service = new ParentService({
+      collection: () => query,
+    } as unknown as Firestore);
+
+    await expect(
+      service.participation(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        "child-1",
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
 describe("ParentService child credentials", () => {
   it("stores sanitized credentials and returns structured response data", async () => {
     const update = vi.fn().mockResolvedValue(undefined);
