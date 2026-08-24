@@ -303,6 +303,49 @@ describe("ParentService academic-support requests", () => {
 });
 
 describe("ParentService children relationship scope", () => {
+  it("unions organization membership and cross-workspace guardian links", async () => {
+    const query = {
+      where: () => query,
+      limit: () => query,
+      get: () =>
+        Promise.resolve({
+          docs: [
+            {
+              get: (field: string) =>
+                ({
+                  organizationId: "linked-org",
+                  parentUid: "parent-1",
+                  status: "active",
+                })[field],
+            },
+          ],
+        }),
+    };
+    const service = new ParentService({
+      collection: () => query,
+    } as unknown as Firestore);
+
+    await expect(
+      (
+        service as unknown as {
+          tenantIds(principal: {
+            uid: string;
+            organizationIds: string[];
+            activeWorkspaceId: string;
+          }): Promise<readonly string[]>;
+        }
+      ).tenantIds({
+        uid: "parent-1",
+        activeWorkspaceId: "personal-workspace",
+        organizationIds: ["member-org"],
+      }),
+    ).resolves.toEqual([
+      "personal-workspace",
+      "member-org",
+      "linked-org",
+    ]);
+  });
+
   it("returns 200-compatible empty data when an authorized parent has no links", async () => {
     const query = {
       where: () => query,
