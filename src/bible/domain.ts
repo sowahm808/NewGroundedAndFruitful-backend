@@ -8,6 +8,7 @@ export const choiceSchema = z.object({
 });
 export const questionSchema = z.object({
   id: z.string().min(1),
+  number: z.number().int().positive(),
   position: z.number().int().positive(),
   prompt: z.string().min(1).max(4000),
   choices: z.array(choiceSchema).min(2).max(5),

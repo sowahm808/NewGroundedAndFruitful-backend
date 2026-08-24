@@ -89,10 +89,25 @@ export interface Upload {
  */
 export const serializeImportPreviewActivity = (
   activity: Record<string, unknown>,
-) => ({
-  ...activity,
-  date: activity.date ?? activity.localDate,
-});
+) => {
+  const questions = Array.isArray(activity.questions)
+    ? activity.questions.map((question, index) => {
+        if (!question || typeof question !== "object") return question;
+        const data = question as Record<string, unknown>;
+        return {
+          ...data,
+          // Older imports predate the explicit review-contract field. Their
+          // persisted position is the original ordinal and is safe to expose.
+          number: data.number ?? data.position ?? index + 1,
+        };
+      })
+    : activity.questions;
+  return {
+    ...activity,
+    date: activity.date ?? activity.localDate,
+    ...(questions === undefined ? {} : { questions }),
+  };
+};
 
 export class BibleAdministrationService {
   constructor(
