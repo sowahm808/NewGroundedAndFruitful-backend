@@ -101,11 +101,19 @@ export class ParentService {
   //   return { link, child, organizationId };
   // }
 
-  private tenantIds(principal: Principal): readonly string[] {
+  private tenantIds(
+    principal: Principal,
+    linkedOrganizationIds: readonly unknown[] = [],
+  ): readonly string[] {
     const list = new Set<string>();
     if (principal.activeWorkspaceId) list.add(principal.activeWorkspaceId);
     if (Array.isArray(principal.organizationIds)) {
       principal.organizationIds.forEach((id) => list.add(id));
+    }
+    for (const organizationId of linkedOrganizationIds) {
+      if (typeof organizationId === "string" && organizationId) {
+        list.add(organizationId);
+      }
     }
     return Array.from(list);
   }
@@ -532,10 +540,10 @@ export class ParentService {
           0,
         ),
         familyActivitiesCompleted: activities.docs.filter((x) =>
-          this.tenantIds(principal).includes(x.get("organizationId")),
+          tenantIds.includes(x.get("organizationId")),
         ).length,
         unreadNotifications: notifications.docs.filter((x) =>
-          this.tenantIds(principal).includes(x.get("organizationId")),
+          tenantIds.includes(x.get("organizationId")),
         ).length,
       },
       currentQuarter,
@@ -548,15 +556,14 @@ export class ParentService {
   }
 
   async notifications(principal: Principal, input: ListInput) {
+    const tenantIds = this.tenantIds(principal);
     const snapshot = await this.db
       .collection("notifications")
       .where("recipientUid", "==", principal.uid)
       .limit(200)
       .get();
     const sorted = snapshot.docs
-      .filter((doc) =>
-        this.tenantIds(principal).includes(doc.get("organizationId")),
-      )
+      .filter((doc) => tenantIds.includes(doc.get("organizationId")))
       .map((doc) => ({
         id: doc.id,
         organizationId: String(doc.get("organizationId")),
@@ -603,11 +610,7 @@ export class ParentService {
     ]);
     const activeLinks = new Set(
       linkSnapshot.docs
-        .filter(
-          (link) =>
-            link.get("status") === "active" &&
-            this.tenantIds(principal).includes(link.get("organizationId")),
-        )
+        .filter((link) => link.get("status") === "active")
         .map(
           (link) =>
             `${String(link.get("organizationId"))}:${String(link.get("participantId"))}`,
@@ -650,10 +653,11 @@ export class ParentService {
   }
   async observation(principal: Principal, id: string) {
     const doc = await this.db.doc(`characterObservations/${id}`).get();
+    const tenantIds = this.tenantIds(principal);
     if (
       !doc.exists ||
       doc.get("parentUid") !== principal.uid ||
-      !this.tenantIds(principal).includes(doc.get("organizationId"))
+      !tenantIds.includes(doc.get("organizationId"))
     )
       throw new NotFoundError();
     await this.link(principal, String(doc.get("participantId")));
@@ -724,6 +728,7 @@ export class ParentService {
   }
 
   async qualities(principal: Principal) {
+    const tenantIds = this.tenantIds(principal);
     const snap = await this.db
       .collection("characterQualities")
       .where("status", "==", "active")
@@ -732,7 +737,7 @@ export class ParentService {
       .filter(
         (x) =>
           !x.get("organizationId") ||
-          this.tenantIds(principal).includes(x.get("organizationId")),
+          tenantIds.includes(x.get("organizationId")),
       )
       .map((x) => ({
         id: x.id,
@@ -999,15 +1004,14 @@ export class ParentService {
   }
 
   async supportCategories(principal: Principal) {
+    const tenantIds = this.tenantIds(principal);
     const snap = await this.db
       .collection("supportCategories")
       .where("status", "==", "active")
       .get();
     return {
       data: snap.docs
-        .filter((x) =>
-          this.tenantIds(principal).includes(x.get("organizationId")),
-        )
+        .filter((x) => tenantIds.includes(x.get("organizationId")))
         .map((x) => ({
           id: x.id,
           name: x.get("name"),
@@ -1092,11 +1096,7 @@ export class ParentService {
     ]);
     const activeLinks = new Set(
       linkSnapshot.docs
-        .filter(
-          (link) =>
-            link.get("status") === "active" &&
-            this.tenantIds(principal).includes(link.get("organizationId")),
-        )
+        .filter((link) => link.get("status") === "active")
         .map(
           (link) =>
             `${String(link.get("organizationId"))}:${String(link.get("participantId"))}`,
@@ -1147,10 +1147,11 @@ export class ParentService {
   }
   async supportDetail(principal: Principal, id: string) {
     const doc = await this.db.doc(`supportRequests/${id}`).get();
+    const tenantIds = this.tenantIds(principal);
     if (
       !doc.exists ||
       doc.get("requesterUid") !== principal.uid ||
-      !this.tenantIds(principal).includes(doc.get("organizationId"))
+      !tenantIds.includes(doc.get("organizationId"))
     )
       throw new NotFoundError();
     await this.link(principal, String(doc.get("participantId")));
@@ -1281,7 +1282,6 @@ export class ParentService {
     if (
       !team.exists ||
       !quarter.exists ||
-      !this.tenantIds(principal).includes(team.get("organizationId")) ||
       quarter.get("organizationId") !== team.get("organizationId")
     )
       throw new NotFoundError();

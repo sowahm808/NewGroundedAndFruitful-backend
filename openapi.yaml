@@ -1478,6 +1478,25 @@ paths:
       tags: [Administration]
       operationId: createAdminParticipant
       security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [displayName]
+              properties:
+                displayName: { type: string, minLength: 1, maxLength: 120 }
+                programId: { type: string }
+                birthDate: { type: string, format: date }
+                guardianUserId: { type: string }
+                guardianEmail: { type: string, format: email }
+                teamId: { type: string }
+                activeTeamId: { type: string, deprecated: true }
+                status:
+                  type: string
+                  enum: [pending, active, withdrawn]
       responses:
         "201": { description: Participant created }
         "401": { $ref: "#/components/responses/Unauthorized" }
