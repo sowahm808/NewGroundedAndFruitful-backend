@@ -365,7 +365,8 @@ describe("HTTP safety contract", () => {
         headers: {
           origin,
           "access-control-request-method": "GET",
-          "access-control-request-headers": "authorization,content-type",
+          "access-control-request-headers":
+            "authorization,content-type,if-match",
         },
       });
       expect(response.status).toBe(204);
@@ -373,6 +374,9 @@ describe("HTTP safety contract", () => {
       expect(response.headers.get("vary")).toContain("Origin");
       expect(response.headers.get("access-control-allow-headers")).toContain(
         "Authorization",
+      );
+      expect(response.headers.get("access-control-allow-headers")).toContain(
+        "If-Match",
       );
       expect(response.headers.get("access-control-allow-methods")).toContain(
         "PUT",
