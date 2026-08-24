@@ -2,14 +2,13 @@ import { Router, type RequestHandler } from "express";
 import { auth, db } from "../config/firebase.js";
 import { validateBody } from "../middleware/validate.js";
 import { idSchema } from "../shared/validation.js";
-import { ValidationError,NotFoundError} from "../shared/errors.js";
+import { ValidationError, NotFoundError } from "../shared/errors.js";
 import { AdministrationService } from "./service.js";
 import * as schemas from "./schemas.js";
 import { QuarterAdministrationService } from "./quarters.js";
 import bibleAdminRoutes from "../bible/admin-routes.js";
 import { requireCapability } from "../middleware/authorize.js";
 import { createHash } from "node:crypto";
-import { FieldValue } from "firebase-admin/firestore";
 
 const router = Router();
 const service = new AdministrationService(db, auth);
@@ -683,15 +682,12 @@ router.post(
 router.post(
   "/participants/:participantId/invite-guardian",
   requireCapability("admin.participants.manage"),
+  validateBody(schemas.guardianInvitationSchema),
   run(async (req) => {
     const orgId = await resolveTenantOrganizationId(req, req.body?.organizationId);
     const participantId = id(req.params.participantId);
-    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const email = String(req.body.email).trim().toLowerCase();
     const relationship = typeof req.body?.relationship === "string" ? req.body.relationship : "parent";
-
-    if (!email || !email.includes("@")) {
-      throw new ValidationError("A valid guardian email address is required.");
-    }
 
     const participantRef = db.collection("participants").doc(participantId);
     const participantDoc = await participantRef.get();
@@ -706,11 +702,11 @@ router.post(
     const orgName = (orgDoc.exists && orgData && (orgData.name || orgData.displayName)) || "Your Organization";
 
     // 2. Query user snapshot with safe null check
-    const existingUserSnap = await db
-      .collection("users")
-      .where("email", "==", email)
-      .limit(1)
-      .get();
+    const [canonicalUser, legacyUser] = await Promise.all([
+      db.collection("users").where("emailNormalized", "==", email).limit(1).get(),
+      db.collection("users").where("email", "==", email).limit(1).get(),
+    ]);
+    const existingUserSnap = canonicalUser.empty ? legacyUser : canonicalUser;
 
     const parentUid: string | null = !existingUserSnap.empty && existingUserSnap.docs[0]
       ? existingUserSnap.docs[0].id
@@ -722,8 +718,7 @@ router.post(
     const linkRef = db.collection("parentChildLinks").doc(linkId);
 
     const now = new Date().toISOString();
-    await linkRef.set(
-      {
+    const linkData = {
         id: linkId,
         organizationId: orgId,
         participantId,
@@ -735,19 +730,24 @@ router.post(
         updatedAt: now,
         createdAt: now,
         version: 1,
-      },
-      { merge: true },
-    );
+      };
+
+    // Keep the relationship and participant projection consistent. A stable
+    // pending id also makes repeated invitations an upsert rather than creating
+    // duplicate relationships.
+    const batch = db.batch();
+    batch.set(linkRef, linkData, { merge: true });
 
     // 4. Update participant record
-    await participantRef.update({
+    batch.update(participantRef, {
       ...(parentUid ? { guardianUserId: parentUid } : {}),
       guardianEmail: email,
       updatedAt: now,
     });
 
     // 5. Enqueue invitation email
-    await db.collection("mailQueue").add({
+    const mailRef = db.collection("mailQueue").doc();
+    batch.create(mailRef, {
       to: email,
       template: "guardian_invitation",
       data: {
@@ -761,7 +761,9 @@ router.post(
         )}&orgId=${encodeURIComponent(orgId)}`,
       },
       createdAt: now,
+      status: "queued",
     });
+    await batch.commit();
 
     return {
       success: true,
@@ -781,15 +783,14 @@ router.post(
       req.body.organizationId,
     );
     const guardianUserId =
-      (typeof req.body.guardianUserId === "string" &&
-        req.body.guardianUserId) ||
-      req.principal?.uid ||
-      "";
+      typeof req.body.guardianUserId === "string"
+        ? req.body.guardianUserId
+        : undefined;
 
     const payload = {
       ...req.body,
       organizationId: orgId,
-      guardianUserId,
+      ...(guardianUserId ? { guardianUserId } : {}),
       programId: req.body.programId || "default-program",
       birthDate: req.body.birthDate || "2015-01-01",
     };
@@ -801,7 +802,43 @@ router.post(
       });
     }
 
-    return service.createParticipant(req.principal, parsed.data);
+    const created = await service.createParticipant(req.principal, parsed.data);
+    if (parsed.data.guardianEmail) {
+      const email = parsed.data.guardianEmail;
+      const now = new Date().toISOString();
+      const [participant, organization, existing] = await Promise.all([
+        db.doc(`participants/${created.id}`).get(),
+        db.doc(`organizations/${orgId}`).get(),
+        db.collection("users").where("email", "==", email).limit(1).get(),
+      ]);
+      const guardianUserId = existing.docs[0]?.id;
+      const hash = createHash("sha256").update(email).digest("hex").slice(0, 12);
+      const linkId = `${guardianUserId || `pending_${hash}`}_${created.id}`;
+      const batch = db.batch();
+      batch.set(db.doc(`parentChildLinks/${linkId}`), {
+        id: linkId, organizationId: orgId, participantId: created.id,
+        parentUid: guardianUserId ?? null, guardianUserId: guardianUserId ?? null,
+        guardianEmail: email, relationship: "parent",
+        status: guardianUserId ? "active" : "pending_acceptance",
+        createdAt: now, updatedAt: now,
+      });
+      batch.update(participant.ref, {
+        guardianEmail: email,
+        ...(guardianUserId ? { guardianUserId } : {}),
+        updatedAt: now,
+      });
+      batch.create(db.collection("mailQueue").doc(), {
+        to: email, template: "guardian_invitation", status: "queued",
+        data: {
+          organizationName: organization.get("name") || organization.get("displayName") || "Your Organization",
+          participantName: participant.get("approvedDisplayName") || participant.get("displayName") || "Your Child",
+          joinUrl: `https://groundedandfruitful.netlify.app/parent-onboarding?email=${encodeURIComponent(email)}&orgId=${encodeURIComponent(orgId)}`,
+        },
+        createdAt: now,
+      });
+      await batch.commit();
+    }
+    return created;
   }, 201),
 );
 

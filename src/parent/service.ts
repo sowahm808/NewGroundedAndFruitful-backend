@@ -190,15 +190,14 @@ async children(principal: Principal, input: ListInput) {
         (item) =>
           (!input.status || item.status === input.status) &&
           (!search ||
-            String(item.approvedDisplayName)
+            item.approvedDisplayName
               .toLocaleLowerCase()
               .includes(search)),
       )
       .sort(
         (a, b) =>
-          String(a.approvedDisplayName).localeCompare(
-            String(b.approvedDisplayName),
-          ) || a.id.localeCompare(b.id),
+          a.approvedDisplayName.localeCompare(b.approvedDisplayName) ||
+          a.id.localeCompare(b.id),
       );
 
     const cursorIndex = input.cursor
@@ -238,10 +237,8 @@ async children(principal: Principal, input: ListInput) {
         : linkStatus === "active"
           ? "active"
           : "inactive";
-    const teamId =
-      typeof child.get("teamId") === "string"
-        ? (child.get("teamId") as string)
-        : null;
+    const rawTeamId = child.get("activeTeamId") ?? child.get("teamId");
+    const teamId = typeof rawTeamId === "string" ? rawTeamId : null;
     const quarter = await this.currentQuarter(organizationId);
     const team = teamId ? await this.db.doc(`teams/${teamId}`).get() : null;
     const teamStats =
@@ -297,18 +294,12 @@ async children(principal: Principal, input: ListInput) {
     const calculatedAt = new Date().toISOString();
     return {
       id: child.id,
-      approvedDisplayName:
-        typeof child.get("approvedDisplayName") === "string"
-          ? child.get("approvedDisplayName")
-          : "",
+      approvedDisplayName: this.displayName(child, `Participant (${child.id.slice(0, 6)})`),
       status,
       team: team?.exists
         ? {
             id: team.id,
-            displayName:
-              typeof team.get("approvedDisplayName") === "string"
-                ? team.get("approvedDisplayName")
-                : "",
+            displayName: this.displayName(team, "Growth Team"),
           }
         : null,
       quarter: quarter ? { id: quarter.id, name: quarter.name } : null,
@@ -343,6 +334,14 @@ async children(principal: Principal, input: ListInput) {
         ? `${quarter.id}:week:${String(quarter.weekNumber)}`
         : null,
     };
+  }
+
+  private displayName(document: DocumentSnapshot, fallback: string): string {
+    for (const field of ["approvedDisplayName", "displayName", "name"]) {
+      const value = document.get(field);
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return fallback;
   }
 
   private async currentQuarter(organizationId: string) {
@@ -1050,7 +1049,7 @@ async children(principal: Principal, input: ListInput) {
     };
   }
 // in src/parent/service.ts -> listChildren
-async listChildren(principal: Principal | undefined, query: { status?: string }) {
+async listChildren(principal: Principal | undefined, _query: { status?: string }) {
   if (!principal?.uid) return [];
 
   const parentUid = principal.uid;
@@ -1081,11 +1080,11 @@ async listChildren(principal: Principal | undefined, query: { status?: string })
 
   const participantIds = Array.from(
     new Set([
-      ...linkDocs.map((d) => d.data().participantId),
-      ...relDocs.map((d) => d.data().participantId),
+      ...linkDocs.map((d) => d.get("participantId") as unknown),
+      ...relDocs.map((d) => d.get("participantId") as unknown),
       ...directDocs.map((d) => d.id),
     ]),
-  ).filter(Boolean);
+  ).filter((id): id is string => typeof id === "string" && id.length > 0);
 
   if (participantIds.length === 0) {
     return [];
@@ -1099,14 +1098,22 @@ async listChildren(principal: Principal | undefined, query: { status?: string })
   return participantSnapshots
     .filter((doc) => doc.exists)
     .map((doc) => {
-      const data = doc.data() || {};
+      const data = doc.data() ?? {};
+      const updatedAt = data.updatedAt;
+      const updatedAtIso =
+        typeof updatedAt === "object" &&
+        updatedAt !== null &&
+        "toDate" in updatedAt &&
+        typeof updatedAt.toDate === "function"
+          ? (updatedAt as { toDate(): Date }).toDate().toISOString()
+          : new Date().toISOString();
       return {
         id: doc.id,
         displayName: data.displayName || data.name || "Child",
         status: data.status || "active",
         birthDate: data.birthDate || null,
         activeTeamId: data.activeTeamId || null,
-        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        updatedAt: updatedAtIso,
       };
     });
 }

@@ -184,9 +184,21 @@ export const participantCreateSchema = z.object({
   handle: z.string().trim().min(2).max(40).optional(),
   birthDate: z.string().optional().default("2015-01-01"),
   guardianUserId: idSchema.optional(),
+  guardianEmail: z.string().trim().toLowerCase().email().optional(),
   activeTeamId: idSchema.optional(),
   status: z.enum(["pending", "active", "withdrawn"]).default("active"),
+}).refine((value) => Boolean(value.guardianUserId || value.guardianEmail), {
+  message: "A guardian user or guardian email is required.",
+  path: ["guardianEmail"],
 });
+
+export const guardianInvitationSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email(),
+    relationship: z.string().trim().min(1).max(40).default("parent"),
+    organizationId: idSchema.optional(),
+  })
+  .strict();
 
 export const participantUpdateSchema = z
   .object({
