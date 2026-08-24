@@ -441,6 +441,29 @@ paths:
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  /auth/child-login:
+    post:
+      tags: [Auth]
+      operationId: loginChildParticipant
+      description: Resolves a family or organization code and exchanges a participant handle and PIN for a child-persona token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [familyCode, handle, pin]
+              properties:
+                familyCode: { type: string, minLength: 1, maxLength: 128 }
+                handle: { type: string, minLength: 1, maxLength: 80 }
+                pin: { type: string, pattern: "^[0-9]{4,6}$" }
+      responses:
+        "200": { description: Child session token and participant summary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
   /parent/dashboard:
     get:
       tags: [Parent]

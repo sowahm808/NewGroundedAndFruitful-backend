@@ -8,8 +8,13 @@ import { AuthSessionController } from "../controllers/session.js";
 import { ChildCredentialRepository } from "../repositories/child-credentials.js";
 import { UserRepository } from "../repositories/users.js";
 import { MembershipRepository } from "../repositories/memberships.js";
-import { childLoginSchema } from "../schemas/child-login.js";
+import {
+  childLoginSchema,
+  participantChildLoginSchema,
+} from "../schemas/child-login.js";
 import { ChildLoginService } from "../services/child-login.js";
+import { ParticipantChildLoginRepository } from "../repositories/participant-child-login.js";
+import { ParticipantChildLoginService } from "../services/participant-child-login.js";
 import { AuthSessionService } from "../services/session.js";
 import { LogoutService } from "../services/logout.js";
 import {
@@ -48,6 +53,10 @@ const controller = new ChildLoginController(
     new AuditRepository(db),
     auth,
   ),
+);
+const participantChildLogin = new ParticipantChildLoginService(
+  new ParticipantChildLoginRepository(db),
+  auth,
 );
 const workspaces = new WorkspaceService(db);
 const registrationIntents = new RegistrationIntentService(db);
@@ -164,6 +173,16 @@ router.post(
   validateBody(childLoginSchema),
   childCredentialRateLimit(db, 15 * 60_000, 10),
   (req, res, next) => void controller.login(req, res).catch(next),
+);
+router.post(
+  "/child-login",
+  validateBody(participantChildLoginSchema),
+  childCredentialRateLimit(db, 15 * 60_000, 10),
+  (req, res, next) =>
+    void participantChildLogin
+      .login(req.body)
+      .then((data) => res.set("Cache-Control", "no-store").json(data))
+      .catch(next),
 );
 
 export default router;

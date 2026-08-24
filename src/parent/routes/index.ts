@@ -75,6 +75,13 @@ router.get("/children", async (req, res, next) => {
     next(e);
   }
 });
+router.get("/family-code", async (req, res, next) => {
+  try {
+    res.json(envelope(await service.familyCode(principal(req))));
+  } catch (e) {
+    next(e);
+  }
+});
 router.get("/children/:childId", async (req, res, next) => {
   try {
     res.json(

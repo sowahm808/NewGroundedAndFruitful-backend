@@ -259,12 +259,31 @@ export class ParentService {
     const now = new Date().toISOString();
     await child.ref.update({
       handle,
+      pin: input.pin.trim(),
       pinSalt: salt,
       pinHash,
+      approvedDisplayName:
+        child.get("approvedDisplayName") || child.get("displayName"),
       credentialsUpdatedAt: now,
       updatedAt: now,
     });
     return { success: true, handle };
+  }
+
+  async familyCode(principal: Principal) {
+    const user = await this.db.doc(`users/${principal.uid}`).get();
+    const existing =
+      typeof user.get("familyCode") === "string"
+        ? String(user.get("familyCode"))
+        : "";
+    const familyCode =
+      existing || randomBytes(5).toString("hex").toLocaleUpperCase("en-US");
+    if (!existing)
+      await user.ref.set(
+        { familyCode, updatedAt: new Date().toISOString() },
+        { merge: true },
+      );
+    return { familyCode };
   }
 
   private async summary(
