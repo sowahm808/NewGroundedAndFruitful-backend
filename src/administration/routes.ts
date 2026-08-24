@@ -243,7 +243,7 @@ router.patch(
 );
 
 for (const [action, status] of [
-  ["activate", "active"],
+  ["activate", "open"],
   ["close", "closed"],
   ["archive", "archived"],
 ] as const) {

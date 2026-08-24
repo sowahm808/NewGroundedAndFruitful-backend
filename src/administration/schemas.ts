@@ -338,12 +338,7 @@ export const awardIssueSchema = z
 // -------------------------------------------------------------
 // Quarter Schemas (Required by quarters.ts & tests)
 // -------------------------------------------------------------
-export const quarterStatuses = [
-  "draft",
-  "active",
-  "closed",
-  "archived",
-] as const;
+export const quarterStatuses = ["draft", "open", "closed", "archived"] as const;
 
 export const quarterSorts = [
   "updated_desc",
