@@ -539,7 +539,7 @@ paths:
           schema: { type: string }
         - name: quarterId
           in: query
-          required: true
+          description: Defaults to the organization's active quarter when omitted.
           schema: { type: string }
       responses:
         "200":
@@ -1438,7 +1438,12 @@ paths:
 
   /admin/participants/{participantId}/invite-guardian:
     parameters:
-      - { name: participantId, in: path, required: true, schema: { type: string } }
+      - {
+          name: participantId,
+          in: path,
+          required: true,
+          schema: { type: string },
+        }
     post:
       tags: [Administration]
       operationId: inviteParticipantGuardian

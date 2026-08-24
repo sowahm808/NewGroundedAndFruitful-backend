@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  characterQuerySchema,
   characterSelectionSchema,
   childQuerySchema,
   observationSchema,
@@ -76,6 +77,18 @@ describe("parent API validation", () => {
         quarterId: "q1",
         qualityIds: ["a", "a", "c", "d", "e"],
       }).success,
+    ).toBe(false);
+  });
+  it("allows character selection queries to use the active quarter", () => {
+    expect(characterQuerySchema.parse({ childId: "c1" })).toEqual({
+      childId: "c1",
+    });
+    expect(
+      characterQuerySchema.parse({ childId: "c1", quarterId: "" }),
+    ).toEqual({ childId: "c1", quarterId: undefined });
+    expect(
+      characterQuerySchema.safeParse({ childId: "c1", quarterId: "bad id!" })
+        .success,
     ).toBe(false);
   });
   it("enforces constructive observation and support text limits", () => {
