@@ -53,11 +53,43 @@ const fingerprint = (value: unknown) =>
 export class ParentService {
   constructor(private readonly db: Firestore) {}
 
-  // private tenantIds(principal: Principal): readonly string[] {
-  //   return principal.activeWorkspaceId
-  //     ? [principal.activeWorkspaceId]
-  //     : principal.organizationIds;
+  
+// private tenantIds(principal: Principal): readonly string[] {
+//     const list = new Set<string>();
+//     if (principal.activeWorkspaceId) list.add(principal.activeWorkspaceId);
+//     if (Array.isArray(principal.organizationIds)) {
+//       principal.organizationIds.forEach((id) => list.add(id));
+//     }
+//     return Array.from(list);
+//   }
+  // private async link(
+  //   principal: Principal,
+  //   childId: string,
+  //   requireActive = true,
+  // ) {
+  //   const snapshots = await this.db
+  //     .collection("parentChildLinks")
+  //     .where("parentUid", "==", principal.uid)
+  //     .where("participantId", "==", childId)
+  //     .limit(2)
+  //     .get();
+  //   const link = snapshots.docs.find(
+  //     (doc) => !requireActive || doc.get("status") === "active",
+  //   );
+  //   if (!link) throw new NotFoundError();
+  //   const organizationId = link.get("organizationId");
+  //   if (
+  //     typeof organizationId !== "string" ||
+  //     !this.tenantIds(principal).includes(organizationId)
+  //   )
+  //     throw new AuthorizationError();
+  //   const child = await this.db.doc(`participants/${childId}`).get();
+  //   if (!child.exists) throw new NotFoundError();
+  //   if (child.get("organizationId") !== organizationId)
+  //     throw new AuthorizationError();
+  //   return { link, child, organizationId };
   // }
+ 
 private tenantIds(principal: Principal): readonly string[] {
     const list = new Set<string>();
     if (principal.activeWorkspaceId) list.add(principal.activeWorkspaceId);
@@ -66,6 +98,7 @@ private tenantIds(principal: Principal): readonly string[] {
     }
     return Array.from(list);
   }
+
   private async link(
     principal: Principal,
     childId: string,
@@ -75,92 +108,28 @@ private tenantIds(principal: Principal): readonly string[] {
       .collection("parentChildLinks")
       .where("parentUid", "==", principal.uid)
       .where("participantId", "==", childId)
-      .limit(2)
+      .limit(5)
       .get();
+
     const link = snapshots.docs.find(
       (doc) => !requireActive || doc.get("status") === "active",
     );
     if (!link) throw new NotFoundError();
+
     const organizationId = link.get("organizationId");
-    if (
-      typeof organizationId !== "string" ||
-      !this.tenantIds(principal).includes(organizationId)
-    )
+    if (typeof organizationId !== "string") {
       throw new AuthorizationError();
+    }
+
     const child = await this.db.doc(`participants/${childId}`).get();
     if (!child.exists) throw new NotFoundError();
-    if (child.get("organizationId") !== organizationId)
+    if (child.get("organizationId") !== organizationId) {
       throw new AuthorizationError();
+    }
+
     return { link, child, organizationId };
   }
-
-  // async children(principal: Principal, input: ListInput) {
-  //   const links = await this.db
-  //     .collection("parentChildLinks")
-  //     .where("parentUid", "==", principal.uid)
-  //     .limit(200)
-  //     .get();
-  //   const authorized = links.docs.filter(
-  //     (doc) =>
-  //       doc.get("status") === "active" &&
-  //       this.tenantIds(principal).includes(doc.get("organizationId")) &&
-  //       typeof doc.get("participantId") === "string" &&
-  //       typeof doc.get("organizationId") === "string",
-  //   );
-  //   const summaries = await Promise.all(
-  //     authorized.map(async (link) => {
-  //       const participantId = link.get("participantId");
-  //       const organizationId = link.get("organizationId");
-  //       if (
-  //         typeof participantId !== "string" ||
-  //         typeof organizationId !== "string"
-  //       )
-  //         throw new NotFoundError();
-  //       const participant = await this.db
-  //         .doc(`participants/${participantId}`)
-  //         .get();
-  //       if (
-  //         !participant.exists ||
-  //         participant.get("organizationId") !== organizationId ||
-  //         participant.get("status") !== "active"
-  //       )
-  //         return null;
-  //       return this.summary(participantId, organizationId, link.get("status"));
-  //     }),
-  //   );
-  //   const search = input.search?.toLocaleLowerCase();
-  //   const sorted = summaries
-  //     .filter((item): item is NonNullable<typeof item> => item !== null)
-  //     .filter(
-  //       (item) =>
-  //         (!input.status || item.status === input.status) &&
-  //         (!search ||
-  //           String(item.approvedDisplayName)
-  //             .toLocaleLowerCase()
-  //             .includes(search)),
-  //     )
-  //     .sort(
-  //       (a, b) =>
-  //         String(a.approvedDisplayName).localeCompare(
-  //           String(b.approvedDisplayName),
-  //         ) || a.id.localeCompare(b.id),
-  //     );
-  //   const cursorIndex = input.cursor
-  //     ? sorted.findIndex((item) => item.id === input.cursor)
-  //     : -1;
-  //   if (input.cursor && cursorIndex < 0) throw new NotFoundError();
-  //   const start = cursorIndex + 1;
-  //   const data = sorted.slice(start, start + input.limit);
-  //   return {
-  //     data,
-  //     meta: {
-  //       nextCursor:
-  //         start + input.limit < sorted.length
-  //           ? (data.at(-1)?.id ?? null)
-  //           : null,
-  //     },
-  //   };
-  // }
+  
 async children(principal: Principal, input: ListInput) {
     // 1. Fetch links by parent UID
     const [linksSnap, relSnap, directSnap] = await Promise.all([
@@ -701,20 +670,51 @@ async children(principal: Principal, input: ListInput) {
       meta: { nextCursor: null },
     };
   }
-  async selection(principal: Principal, childId: string, quarterId: string) {
-    await this.link(principal, childId);
+  // async selection(principal: Principal, childId: string, quarterId: string) {
+  //   await this.link(principal, childId);
+  //   const doc = await this.db
+  //     .doc(`characterSelections/${quarterId}_${childId}`)
+  //     .get();
+  //   return doc.exists
+  //     ? {
+  //         childId,
+  //         quarterId,
+  //         qualityIds: doc.get("qualityIds") ?? [],
+  //         version: number(doc.get("version")),
+  //         updatedAt: iso(doc.get("updatedAt")),
+  //       }
+  //     : { childId, quarterId, qualityIds: [], version: 0, updatedAt: null };
+  // }
+
+  async selection(principal: Principal, childId: string, quarterId?: string) {
+    const { organizationId } = await this.link(principal, childId);
+
+    // If quarterId is not provided, resolve active quarter automatically
+    let activeQuarterId = quarterId;
+    if (!activeQuarterId) {
+      const q = await this.currentQuarter(organizationId);
+      activeQuarterId = q?.id || "default_quarter";
+    }
+
     const doc = await this.db
-      .doc(`characterSelections/${quarterId}_${childId}`)
+      .doc(`characterSelections/${activeQuarterId}_${childId}`)
       .get();
+
     return doc.exists
       ? {
           childId,
-          quarterId,
+          quarterId: activeQuarterId,
           qualityIds: doc.get("qualityIds") ?? [],
           version: number(doc.get("version")),
           updatedAt: iso(doc.get("updatedAt")),
         }
-      : { childId, quarterId, qualityIds: [], version: 0, updatedAt: null };
+      : {
+          childId,
+          quarterId: activeQuarterId,
+          qualityIds: [],
+          version: 0,
+          updatedAt: null,
+        };
   }
   async setSelection(
     principal: Principal,
