@@ -15,6 +15,7 @@ import {
   observationSchema,
   observationQuerySchema,
   notificationQuerySchema,
+  participationQuerySchema,
   reportQuerySchema,
   supportListQuerySchema,
   supportRequestSchema,
@@ -89,6 +90,22 @@ router.get("/children/:childId", async (req, res, next) => {
         await service.child(
           principal(req),
           parse(idSchema, req.params.childId),
+        ),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/participation", async (req, res, next) => {
+  try {
+    const input = parse(participationQuerySchema, req.query);
+    res.json(
+      envelope(
+        await service.participation(
+          principal(req),
+          input.childId,
+          input.quarterId,
         ),
       ),
     );

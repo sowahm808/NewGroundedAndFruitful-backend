@@ -91,6 +91,7 @@ describe("HTTP safety contract", () => {
       "dashboard",
       "notifications",
       "children",
+      "participation?childId=child-1",
       "observations",
       "academic-support/configuration",
       "academic-support/requests?cursor=&status=&search=&childId=",

@@ -528,6 +528,26 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /parent/participation:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      description: Lists participation completions for a child linked to the authenticated parent.
+      parameters:
+        - name: childId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: quarterId
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: Relationship-scoped participation completions }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+
   /parent/observations:
     get:
       tags: [Parent]
