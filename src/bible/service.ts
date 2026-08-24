@@ -84,6 +84,15 @@ export interface Upload {
 }
 
 /**
+ * Bible content may be prepared while a quarter is being configured or is
+ * live. `active` is retained for quarters written by the legacy lifecycle;
+ * the administration API now exposes and persists the live state as `open`.
+ */
+export const quarterAllowsBibleImports = (status: unknown) =>
+  status == null ||
+  (typeof status === "string" && ["draft", "open", "active"].includes(status));
+
+/**
  * Keep the persisted local-date name while satisfying the admin review
  * contract, which calls the same value `date`.
  */
@@ -270,7 +279,7 @@ export class BibleAdministrationService {
     if (quarter.get("organizationId") !== metadata.organizationId)
       throw new AuthorizationError();
     const quarterStatus = quarter.get("status");
-    if (quarterStatus && !["draft", "active"].includes(String(quarterStatus)))
+    if (!quarterAllowsBibleImports(quarterStatus))
       throw error(
         409,
         "BIBLE_QUARTER_LIFECYCLE_CONFLICT",

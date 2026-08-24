@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { serializeImportPreviewActivity } from "../src/bible/service.js";
+import {
+  quarterAllowsBibleImports,
+  serializeImportPreviewActivity,
+} from "../src/bible/service.js";
 
 describe("Bible import review contract", () => {
+  it("allows imports for canonical open quarters and legacy active quarters", () => {
+    expect(quarterAllowsBibleImports("draft")).toBe(true);
+    expect(quarterAllowsBibleImports("open")).toBe(true);
+    expect(quarterAllowsBibleImports("active")).toBe(true);
+    expect(quarterAllowsBibleImports(undefined)).toBe(true);
+    expect(quarterAllowsBibleImports("closed")).toBe(false);
+    expect(quarterAllowsBibleImports("archived")).toBe(false);
+  });
+
   it("exposes the persisted local date as the required review date", () => {
     const activity = serializeImportPreviewActivity({
       id: "item-1",
