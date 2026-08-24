@@ -2230,7 +2230,7 @@ components:
 
     QuarterStatus:
       type: string
-      enum: [draft, active, closed, archived]
+      enum: [draft, open, closed, archived]
 
     QuarterAllowedAction:
       type: string

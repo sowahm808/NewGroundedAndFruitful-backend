@@ -20,7 +20,8 @@ import type {
   quarterUpdateSchema,
 } from "./schemas.js";
 
-type Status = "draft" | "active" | "closed" | "archived";
+type Status = "draft" | "open" | "closed" | "archived";
+type StoredStatus = Status | "active";
 type ListInput = z.infer<typeof quarterListQuerySchema>;
 type CreateInput = z.infer<typeof quarterCreateSchema>;
 type UpdateInput = z.infer<typeof quarterUpdateSchema>;
@@ -105,7 +106,7 @@ export class QuarterAdministrationService {
     switch (status) {
       case "draft":
         return ["view", "edit", "activate"] as const;
-      case "active":
+      case "open":
         return ["view", "close"] as const;
       case "closed":
         return ["view", "archive"] as const;
@@ -128,7 +129,11 @@ export class QuarterAdministrationService {
     doc: DocumentSnapshot | QueryDocumentSnapshot,
     workspace: WorkspaceProjection,
   ) {
-    const status = String(doc.get("status")) as Status;
+    // `active` was briefly written by the administration API even though the
+    // established quarter lifecycle calls the live state `open`. Normalize
+    // those records at the boundary so old activations remain usable.
+    const storedStatus = String(doc.get("status")) as StoredStatus;
+    const status: Status = storedStatus === "active" ? "open" : storedStatus;
     return {
       id: doc.id,
       name: String(doc.get("name")),
@@ -191,7 +196,9 @@ export class QuarterAdministrationService {
       const organizationId = String(doc.get("organizationId"));
       return (
         this.canAccess(actor, organizationId) &&
-        (!input.status || doc.get("status") === input.status) &&
+        (!input.status ||
+          doc.get("status") === input.status ||
+          (input.status === "open" && doc.get("status") === "active")) &&
         (!input.search ||
           String(doc.get("name"))
             .toLocaleLowerCase("en-US")
@@ -422,25 +429,29 @@ export class QuarterAdministrationService {
         );
       const from = String(current.get("status"));
       const expected =
-        to === "active" ? "draft" : to === "closed" ? "active" : "closed";
-      if (from !== expected)
+        to === "open"
+          ? ["draft"]
+          : to === "closed"
+            ? ["open", "active"]
+            : ["closed"];
+      if (!expected.includes(from))
         throw quarterError(
           409,
           "QUARTER_INVALID_TRANSITION",
           `A quarter cannot transition from ${from} to ${to}.`,
         );
       const organizationId = String(current.get("organizationId"));
-      if (to === "active") {
+      if (to === "open") {
         const active = await tx.get(
           this.db
             .collection("quarters")
-            .where("organizationId", "==", organizationId)
-            .where("status", "==", "active"),
+            .where("organizationId", "==", organizationId),
         );
         if (
           active.docs.some(
             (doc) =>
               doc.id !== quarterId &&
+              ["open", "active"].includes(String(doc.get("status"))) &&
               overlaps(
                 String(current.get("startDate")),
                 String(current.get("endDate")),
@@ -462,7 +473,7 @@ export class QuarterAdministrationService {
         version: version + 1,
       });
       this.audit(tx, {
-        event: `quarter.${to === "active" ? "activated" : to}`,
+        event: `quarter.${to === "open" ? "activated" : to}`,
         actorId: actor.uid,
         targetId: quarterId,
         organizationId,

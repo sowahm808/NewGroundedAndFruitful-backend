@@ -1,5 +1,5 @@
 // Generated from openapi.yaml by npm run openapi:types. Do not edit.
-export type QuarterStatus = "draft" | "active" | "closed" | "archived";
+export type QuarterStatus = "draft" | "open" | "closed" | "archived";
 export type QuarterAllowedAction = "view" | "edit" | "activate" | "close" | "archive";
 
 export interface QuarterWorkspace {

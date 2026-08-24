@@ -47,7 +47,7 @@ describe("quarter administration validation", () => {
       quarterListQuerySchema.parse({
         page: "2",
         pageSize: "100",
-        status: "active",
+        status: "open",
         sort: "start_date_asc",
         search: "  Fall  ",
       }),
@@ -59,7 +59,7 @@ describe("quarter administration validation", () => {
       "start_date_asc",
     );
     expect(() => quarterListQuerySchema.parse({ pageSize: 101 })).toThrow();
-    expect(() => quarterListQuerySchema.parse({ status: "open" })).toThrow();
+    expect(() => quarterListQuerySchema.parse({ status: "active" })).toThrow();
   });
 
   it("accepts canonical or compatibility date fields and real calendar dates", () => {
@@ -251,6 +251,19 @@ describe("quarter tenant projections", () => {
     ]);
   });
 
+  it("normalizes quarters activated with the legacy status", async () => {
+    const result = await service([quarter("q-1", "org-1", "active")]).list(
+      principal(["admin"], ["org-1"]),
+      quarterListQuerySchema.parse({ status: "open" }),
+    );
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        status: "open",
+        allowedActions: ["view", "close"],
+      }),
+    ]);
+  });
+
   it("does not leak cross-tenant quarters or workspace names", async () => {
     const result = await service([
       quarter("q-1", "org-1"),
@@ -296,7 +309,7 @@ describe("published quarter contract", () => {
       expect(paths[`/admin/quarters/{quarterId}/${action}`].post).toBeTruthy();
     expect(specification.components.schemas.QuarterStatus.enum).toEqual([
       "draft",
-      "active",
+      "open",
       "closed",
       "archived",
     ]);
