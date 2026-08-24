@@ -22,7 +22,7 @@ export const cors: RequestHandler = (req, res, next) => {
     );
     res.setHeader(
       "access-control-allow-methods",
-      "GET,POST,PATCH,DELETE,OPTIONS",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     );
   }
   if (req.method === "OPTIONS") return res.sendStatus(204);
