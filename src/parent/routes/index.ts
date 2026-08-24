@@ -99,10 +99,12 @@ router.get("/children/:childId", async (req, res, next) => {
 router.post("/children/:childId/credentials", async (req, res, next) => {
   try {
     res.json(
-      await service.setChildCredentials(
-        principal(req),
-        parse(idSchema, req.params.childId),
-        parse(childCredentialsSchema, req.body),
+      envelope(
+        await service.setChildCredentials(
+          principal(req),
+          parse(idSchema, req.params.childId),
+          parse(childCredentialsSchema, req.body),
+        ),
       ),
     );
   } catch (e) {
