@@ -1,6 +1,23 @@
 # Authentication
 
-Adults use Firebase Authentication. Child sign-in uses anonymous `POST /api/v1/auth/child-token` with family code, handle, and PIN. The PIN is stored as an Argon2id hash plus server-held pepper; missing and invalid accounts take the same slow verification path. The route uses generic failures, privacy-hashed network/family/account throttling, temporary account lock state, suspicious-attempt auditing, and mints only a Firebase custom token for an enabled Firebase user with one active child membership. Synthetic credentials are never returned. The client immediately exchanges the custom token and calls `GET /api/v1/auth/session`. Activation, disablement, refresh-token revocation, and verified consent remain parent/admin-controlled.
+Adults use Firebase Authentication. Provisioned child-credential sign-in uses
+anonymous `POST /api/v1/auth/child-token` with an 8–24 character family code, a
+2–24 character handle, and a six-digit PIN string. The property name must be
+`pin` (not `password`), and the value must remain a string so leading zeroes are
+preserved. Structurally invalid requests return `422 VALIDATION_ERROR`; invalid
+credentials return the generic authentication failure. The PIN is stored as an
+Argon2id hash plus server-held pepper; missing and invalid accounts take the same
+slow verification path. The route uses generic failures, privacy-hashed
+network/family/account throttling, temporary account lock state,
+suspicious-attempt auditing, and mints only a Firebase custom token for an
+enabled Firebase user with one active child membership. Synthetic credentials
+are never returned. The client immediately exchanges the custom token and calls
+`GET /api/v1/auth/session`. Activation, disablement, refresh-token revocation,
+and verified consent remain parent/admin-controlled.
+
+Parent-managed participant credentials are a separate compatibility contract:
+they accept a 4–6 digit PIN at `POST /api/v1/auth/child-login`. Clients must not
+send those credentials to `/auth/child-token`.
 
 ## Session bootstrap and roles
 

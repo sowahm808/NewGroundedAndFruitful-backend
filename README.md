@@ -39,6 +39,13 @@ Content-Type: application/json
 
 The response is `{ "data": { "customToken": "..." } }`. The web client must exchange that custom token with Firebase Auth using `signInWithCustomToken`, then send the resulting Firebase ID token as `Authorization: Bearer <idToken>` to `GET /api/v1/auth/session` and protected API routes.
 
+`/auth/child-token` accepts only the provisioned child-credential format shown
+above: `familyCode` is 8–24 characters, `handle` is 2–24 characters, and `pin`
+is a **six-digit string** (including any leading zero). Do not send the PIN as a
+JSON number or under a `password` property; either produces a `422
+VALIDATION_ERROR`. The parent-managed participant credential flow, which uses a
+4–6 digit PIN, signs in through `POST /api/v1/auth/child-login` instead.
+
 ## Firestore collections
 
 `users`, `participants`, `childCredentials`, `parentChildLinks`, `teams`, `teamMembers`, `pointRules`, `pointLedger`, `participantQuarterStats`, `teamQuarterStats`, `teamWeeklyStats`, and `auditLogs`. Browser rules default deny and forbid client writes to all authoritative collections.
