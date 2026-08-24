@@ -73,7 +73,7 @@ export const supportRequestSchema = z.object({
 
 export const characterQuerySchema = z.object({
   childId: idSchema,
-  quarterId: idSchema,
+  quarterId: optionalQueryString(idSchema.optional()),
 });
 export const characterPatchSchema = characterSelectionSchema.extend({
   expectedVersion: z.number().int().min(0),
