@@ -831,8 +831,11 @@ export class AdministrationService {
           id: participant.id,
           name: participant.name,
           enrollmentStatus: participant.enrollmentStatus,
-          linkedGuardian: guardianByParticipant.get(participant.id),
-          team: teamId ? teamNames.get(teamId) : undefined,
+          // Keep absent relationships explicit in the JSON response. Express drops
+          // undefined properties, which made otherwise valid roster rows fail
+          // clients that validate every field in the published response contract.
+          linkedGuardian: guardianByParticipant.get(participant.id) ?? null,
+          team: (teamId ? teamNames.get(teamId) : undefined) ?? null,
           currentQuarterStatus:
             participant.enrollmentStatus === "withdrawn" || !teamId
               ? "Not Enrolled"

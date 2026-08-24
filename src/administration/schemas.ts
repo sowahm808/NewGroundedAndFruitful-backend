@@ -163,24 +163,12 @@ export const participantListQuerySchema = z
         "-updatedAt",
         "updatedAt_desc",
         "updatedAt_asc",
-        "createdAt",
-        "-createdAt",
-        "createdAt_desc",
-        "createdAt_asc",
-        "name",
-        "-name",
-        "name_desc",
-        "name_asc",
       ])
       .default("-updatedAt")
       .transform((val): "-updatedAt" | "updatedAt" => {
         switch (val) {
           case "updatedAt":
           case "updatedAt_asc":
-          case "createdAt":
-          case "createdAt_asc":
-          case "name":
-          case "name_asc":
             return "updatedAt";
           default:
             return "-updatedAt";
