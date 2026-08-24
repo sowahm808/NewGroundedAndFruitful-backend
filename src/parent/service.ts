@@ -101,16 +101,27 @@ export class ParentService {
   //   return { link, child, organizationId };
   // }
 
-  private tenantIds(
-    principal: Principal,
-    linkedOrganizationIds: readonly unknown[] = [],
-  ): readonly string[] {
+  private async tenantIds(principal: Principal): Promise<readonly string[]> {
     const list = new Set<string>();
     if (principal.activeWorkspaceId) list.add(principal.activeWorkspaceId);
     if (Array.isArray(principal.organizationIds)) {
       principal.organizationIds.forEach((id) => list.add(id));
     }
-    for (const organizationId of linkedOrganizationIds) {
+
+    // A guardian does not need an organization membership to view a child
+    // that an administrator linked to them. In particular, a personal parent
+    // workspace must not hide links belonging to an organization workspace.
+    const links = await this.db
+      .collection("parentChildLinks")
+      .where("parentUid", "==", principal.uid)
+      .get();
+    for (const link of links.docs) {
+      if (
+        link.get("parentUid") !== principal.uid ||
+        link.get("status") !== "active"
+      )
+        continue;
+      const organizationId: unknown = link.get("organizationId");
       if (typeof organizationId === "string" && organizationId) {
         list.add(organizationId);
       }
@@ -491,7 +502,7 @@ export class ParentService {
   async dashboard(principal: Principal) {
     const children = await this.children(principal, { limit: 50 });
     const user = await this.db.doc(`users/${principal.uid}`).get();
-    const tenantIds = this.tenantIds(principal);
+    const tenantIds = await this.tenantIds(principal);
     const organizationId = tenantIds[0];
     const currentQuarter = organizationId
       ? await this.currentQuarter(organizationId)
@@ -556,7 +567,7 @@ export class ParentService {
   }
 
   async notifications(principal: Principal, input: ListInput) {
-    const tenantIds = this.tenantIds(principal);
+    const tenantIds = await this.tenantIds(principal);
     const snapshot = await this.db
       .collection("notifications")
       .where("recipientUid", "==", principal.uid)
@@ -653,7 +664,7 @@ export class ParentService {
   }
   async observation(principal: Principal, id: string) {
     const doc = await this.db.doc(`characterObservations/${id}`).get();
-    const tenantIds = this.tenantIds(principal);
+    const tenantIds = await this.tenantIds(principal);
     if (
       !doc.exists ||
       doc.get("parentUid") !== principal.uid ||
@@ -728,7 +739,7 @@ export class ParentService {
   }
 
   async qualities(principal: Principal) {
-    const tenantIds = this.tenantIds(principal);
+    const tenantIds = await this.tenantIds(principal);
     const snap = await this.db
       .collection("characterQualities")
       .where("status", "==", "active")
@@ -1004,7 +1015,7 @@ export class ParentService {
   }
 
   async supportCategories(principal: Principal) {
-    const tenantIds = this.tenantIds(principal);
+    const tenantIds = await this.tenantIds(principal);
     const snap = await this.db
       .collection("supportCategories")
       .where("status", "==", "active")
@@ -1147,7 +1158,7 @@ export class ParentService {
   }
   async supportDetail(principal: Principal, id: string) {
     const doc = await this.db.doc(`supportRequests/${id}`).get();
-    const tenantIds = this.tenantIds(principal);
+    const tenantIds = await this.tenantIds(principal);
     if (
       !doc.exists ||
       doc.get("requesterUid") !== principal.uid ||
