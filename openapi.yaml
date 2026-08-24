@@ -561,6 +561,52 @@ paths:
           }
         "422": { $ref: "#/components/responses/Validation" }
 
+  /parent/character/qualities:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      responses:
+        "200": { description: Active character qualities or standard defaults }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /parent/character/selection:
+    get:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - name: childId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Active-quarter character selection }
+        "422": { $ref: "#/components/responses/Validation" }
+    post:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      description: Saves exactly three qualities with optional optimistic locking.
+      responses:
+        "200": { description: Updated character selection }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /parent/children/{childId}/credentials:
+    post:
+      tags: [Parent]
+      security: [{ firebaseBearer: [] }]
+      parameters:
+        - name: childId
+          in: path
+          required: true
+          schema: { type: string }
+      description: Sets a sanitized child handle and a salted SHA-256 hash of a 4-to-6 digit PIN.
+      responses:
+        "200": { description: Child credentials updated }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+
   /parent/family/activities:
     get:
       tags: [Parent]

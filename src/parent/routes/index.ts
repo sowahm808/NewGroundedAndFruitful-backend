@@ -6,6 +6,7 @@ import {
   characterPatchSchema,
   characterQuerySchema,
   characterSelectionSchema,
+  childCredentialsSchema,
   childQuerySchema,
   familyActivityQuerySchema,
   familyCompletionCommandSchema,
@@ -88,6 +89,19 @@ router.get("/children/:childId", async (req, res, next) => {
     next(e);
   }
 });
+router.post("/children/:childId/credentials", async (req, res, next) => {
+  try {
+    res.json(
+      await service.setChildCredentials(
+        principal(req),
+        parse(idSchema, req.params.childId),
+        parse(childCredentialsSchema, req.body),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
 router.get("/observations", async (req, res, next) => {
   try {
     res.json(
@@ -139,6 +153,28 @@ router.get("/character", async (req, res, next) => {
     res.json(
       envelope(
         await service.selection(principal(req), input.childId, input.quarterId),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/character/selection", async (req, res, next) => {
+  try {
+    const input = parse(characterQuerySchema, req.query);
+    res.json(
+      await service.selection(principal(req), input.childId, input.quarterId),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+router.post("/character/selection", async (req, res, next) => {
+  try {
+    res.json(
+      await service.setSelection(
+        principal(req),
+        parse(characterPatchSchema, req.body),
       ),
     );
   } catch (e) {

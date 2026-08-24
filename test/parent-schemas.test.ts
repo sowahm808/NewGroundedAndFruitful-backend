@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   characterQuerySchema,
   characterSelectionSchema,
+  childCredentialsSchema,
   childQuerySchema,
   observationSchema,
   observationQuerySchema,
@@ -63,19 +64,19 @@ describe("parent API validation", () => {
       supportListQuerySchema.safeParse({ status: "pending" }).success,
     ).toBe(false);
   });
-  it("requires exactly five distinct configured quality IDs", () => {
+  it("requires exactly three distinct configured quality IDs", () => {
     expect(
       characterSelectionSchema.safeParse({
         childId: "c1",
         quarterId: "q1",
-        qualityIds: ["a", "b", "c", "d", "e"],
+        qualityIds: ["a", "b", "c"],
       }).success,
     ).toBe(true);
     expect(
       characterSelectionSchema.safeParse({
         childId: "c1",
         quarterId: "q1",
-        qualityIds: ["a", "a", "c", "d", "e"],
+        qualityIds: ["a", "a", "c"],
       }).success,
     ).toBe(false);
   });
@@ -90,6 +91,20 @@ describe("parent API validation", () => {
       characterQuerySchema.safeParse({ childId: "c1", quarterId: "bad id!" })
         .success,
     ).toBe(false);
+  });
+  it("accepts only four-to-six digit child PINs", () => {
+    expect(
+      childCredentialsSchema.parse({ handle: " James Lee ", pin: "1234" }),
+    ).toEqual({ handle: "James Lee", pin: "1234" });
+    expect(childCredentialsSchema.safeParse({ pin: "123456" }).success).toBe(
+      true,
+    );
+    expect(childCredentialsSchema.safeParse({ pin: "123" }).success).toBe(
+      false,
+    );
+    expect(childCredentialsSchema.safeParse({ pin: "12a4" }).success).toBe(
+      false,
+    );
   });
   it("enforces constructive observation and support text limits", () => {
     expect(
