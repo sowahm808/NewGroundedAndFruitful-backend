@@ -8,6 +8,8 @@ The production boundary now uses server-resolved child context and the organizat
 
 For launch, self-review is permitted: an uploader with an active tenant membership and both review and commit capabilities may commit a clean import. This avoids silently blocking the only administrator. Authorization and `allowedActions` are always derived by the server; blocking parser errors remove `commit`.
 
+Imports are accepted for `draft` and `open` quarters. The legacy stored status `active` is treated as `open` for compatibility; closed and archived quarters reject new imports.
+
 ## Endpoint inventory
 
 | Method and path                                               | operationId                              |
