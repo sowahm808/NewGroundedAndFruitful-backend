@@ -374,6 +374,9 @@ describe("HTTP safety contract", () => {
       expect(response.headers.get("access-control-allow-headers")).toContain(
         "Authorization",
       );
+      expect(response.headers.get("access-control-allow-methods")).toContain(
+        "PUT",
+      );
     },
   );
 
