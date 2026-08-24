@@ -2,12 +2,14 @@ import { Router, type RequestHandler } from "express";
 import { auth, db } from "../config/firebase.js";
 import { validateBody } from "../middleware/validate.js";
 import { idSchema } from "../shared/validation.js";
-import { ValidationError } from "../shared/errors.js";
+import { ValidationError,NotFoundError} from "../shared/errors.js";
 import { AdministrationService } from "./service.js";
 import * as schemas from "./schemas.js";
 import { QuarterAdministrationService } from "./quarters.js";
 import bibleAdminRoutes from "../bible/admin-routes.js";
 import { requireCapability } from "../middleware/authorize.js";
+import { createHash } from "node:crypto";
+import { FieldValue } from "firebase-admin/firestore";
 
 const router = Router();
 const service = new AdministrationService(db, auth);
@@ -676,6 +678,99 @@ router.post(
   validateBody(schemas.parentOnboardingSchema),
   run((req) => service.onboardParent(req.principal, req.body), 201),
 );
+
+// POST /api/v1/admin/participants/:participantId/invite-guardian
+router.post(
+  "/participants/:participantId/invite-guardian",
+  requireCapability("admin.participants.manage"),
+  run(async (req) => {
+    const orgId = await resolveTenantOrganizationId(req, req.body?.organizationId);
+    const participantId = id(req.params.participantId);
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const relationship = typeof req.body?.relationship === "string" ? req.body.relationship : "parent";
+
+    if (!email || !email.includes("@")) {
+      throw new ValidationError("A valid guardian email address is required.");
+    }
+
+    const participantRef = db.collection("participants").doc(participantId);
+    const participantDoc = await participantRef.get();
+
+    if (!participantDoc.exists || participantDoc.get("organizationId") !== orgId) {
+      throw new NotFoundError("Participant not found in current organization.");
+    }
+
+    // 1. Resolve organization name
+    const orgDoc = await db.collection("organizations").doc(orgId).get();
+    const orgData = orgDoc.data();
+    const orgName = (orgDoc.exists && orgData && (orgData.name || orgData.displayName)) || "Your Organization";
+
+    // 2. Query user snapshot with safe null check
+    const existingUserSnap = await db
+      .collection("users")
+      .where("email", "==", email)
+      .limit(1)
+      .get();
+
+    const parentUid: string | null = !existingUserSnap.empty && existingUserSnap.docs[0]
+      ? existingUserSnap.docs[0].id
+      : null;
+
+    // 3. Create or update parentChildLinks
+    const emailHash = createHash("sha256").update(email).digest("hex").slice(0, 12);
+    const linkId = `${parentUid || `pending_${emailHash}`}_${participantId}`;
+    const linkRef = db.collection("parentChildLinks").doc(linkId);
+
+    const now = new Date().toISOString();
+    await linkRef.set(
+      {
+        id: linkId,
+        organizationId: orgId,
+        participantId,
+        parentUid: parentUid || null,
+        guardianUserId: parentUid || null,
+        guardianEmail: email,
+        relationship,
+        status: parentUid ? "active" : "pending_acceptance",
+        updatedAt: now,
+        createdAt: now,
+        version: 1,
+      },
+      { merge: true },
+    );
+
+    // 4. Update participant record
+    await participantRef.update({
+      ...(parentUid ? { guardianUserId: parentUid } : {}),
+      guardianEmail: email,
+      updatedAt: now,
+    });
+
+    // 5. Enqueue invitation email
+    await db.collection("mailQueue").add({
+      to: email,
+      template: "guardian_invitation",
+      data: {
+        organizationName: orgName,
+        participantName:
+          participantDoc.get("displayName") ||
+          participantDoc.get("approvedDisplayName") ||
+          "Your Child",
+        joinUrl: `https://groundedandfruitful.netlify.app/parent-onboarding?email=${encodeURIComponent(
+          email,
+        )}&orgId=${encodeURIComponent(orgId)}`,
+      },
+      createdAt: now,
+    });
+
+    return {
+      success: true,
+      status: parentUid ? "linked" : "invitation_sent",
+      guardianEmail: email,
+    };
+  }),
+);
+
 
 router.post(
   "/participants",
