@@ -398,6 +398,7 @@ export function parseBibleDocxPair(
         warnings.push(`Long editorial text requires review on ${localDate}.`);
       questions.push({
         id: `q${j + 1}`,
+        number: Number(displayNumber),
         position: j + 1,
         prompt: q.prompt,
         choices: q.choices.map(({ id, label, text }) => ({ id, label, text })),
