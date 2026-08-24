@@ -710,6 +710,7 @@ router.post(
   }, 201),
 );
 
+
 router.get(
   "/participants",
   requireCapability("admin.participants.read"),
