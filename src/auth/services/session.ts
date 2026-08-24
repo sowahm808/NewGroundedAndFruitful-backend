@@ -58,6 +58,15 @@ export class AuthSessionService {
       email: authUser.email ?? decodedToken.email ?? null,
       displayName: this.displayName(authUser, decodedToken),
     });
+    const sessionDb = (this.users as unknown as { firestore?: Firestore })
+      .firestore;
+    if (sessionDb) {
+      await this.reconcileGuardianInvitations(
+        sessionDb,
+        decodedToken.uid,
+        authUser.email ?? decodedToken.email,
+      );
+    }
     const storedMemberships = await this.memberships.listForUser(
       decodedToken.uid,
     );
@@ -92,8 +101,6 @@ export class AuthSessionService {
         activeMemberships.map((m) => m.workspaceId ?? m.organizationId),
       ),
     ];
-    const sessionDb = (this.users as unknown as { firestore?: Firestore })
-      .firestore;
     const workspaceDocuments = sessionDb
       ? await Promise.all(
           workspaceIds.map(async (id) => {
@@ -405,6 +412,40 @@ export class AuthSessionService {
         !isExpired(invitation.get("expiresAt"))
       );
     });
+  }
+
+  private async reconcileGuardianInvitations(
+    db: Firestore,
+    uid: string,
+    email: string | undefined,
+  ): Promise<void> {
+    const normalizedEmail = email?.trim().toLowerCase();
+    if (!normalizedEmail) return;
+    const pending = await db
+      .collection("parentChildLinks")
+      .where("guardianEmail", "==", normalizedEmail)
+      .where("status", "==", "pending_acceptance")
+      .get();
+    if (pending.empty) return;
+    const batch = db.batch();
+    for (const link of pending.docs) {
+      const participantId = link.get("participantId");
+      batch.update(link.ref, {
+        parentUid: uid,
+        guardianUserId: uid,
+        status: "active",
+        acceptedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      if (typeof participantId === "string" && participantId) {
+        batch.update(db.doc(`participants/${participantId}`), {
+          guardianUserId: uid,
+          guardianEmail: normalizedEmail,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+    await batch.commit();
   }
 
   private async getAuthUser(uid: string): Promise<UserRecord> {

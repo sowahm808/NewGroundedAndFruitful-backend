@@ -581,21 +581,23 @@ export class AdministrationService {
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      tx.create(
-        this.db.doc(
-          `parentChildLinks/${String(input.guardianUserId)}_${ref.id}`,
-        ),
-        {
-          parentUid: input.guardianUserId,
-          participantId: ref.id,
-          organizationId: oid,
-          status: "active",
-          effectiveAt: FieldValue.serverTimestamp(),
-          expiresAt: null,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-      );
+      if (textValue(input.guardianUserId))
+        tx.create(
+          this.db.doc(
+            `parentChildLinks/${String(input.guardianUserId)}_${ref.id}`,
+          ),
+          {
+            parentUid: input.guardianUserId,
+            guardianUserId: input.guardianUserId,
+            participantId: ref.id,
+            organizationId: oid,
+            status: "active",
+            effectiveAt: FieldValue.serverTimestamp(),
+            expiresAt: null,
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+        );
       this.audit(tx, actor.uid, oid, "participant.created", {
         participantId: ref.id,
       });
@@ -783,11 +785,7 @@ export class AdministrationService {
         .where("status", "==", "active")
         .get(),
       this.db.collection("teams").where("organizationId", "==", oid).get(),
-      this.db
-        .collection("parentChildLinks")
-        .where("organizationId", "==", oid)
-        .where("status", "==", "active")
-        .get(),
+      this.db.collection("parentChildLinks").where("organizationId", "==", oid).get(),
     ]);
 
     const activeQuarter = quarterSnapshot.docs
@@ -810,7 +808,11 @@ export class AdministrationService {
     );
     const links = linkSnapshot.docs
       .map((doc) => doc.data() as Data)
-      .filter((link) => participantIds.has(textValue(link.participantId)));
+      .filter(
+        (link) =>
+          participantIds.has(textValue(link.participantId)) &&
+          ["active", "pending_acceptance", "pending"].includes(textValue(link.status)),
+      );
     const guardianIds = new Set(
       links
         .map((link) => textValue(link.parentUid || link.guardianUserId))
@@ -842,13 +844,32 @@ export class AdministrationService {
         if (name) guardianNames.set(guardianId, name);
       }
     }
+    // A guardian can be linked before organization membership metadata is
+    // written. Resolve canonical user documents by uid as the authoritative
+    // fallback instead of relying solely on an array-contains query.
+    await Promise.all(
+      [...guardianIds].map(async (guardianId) => {
+        if (guardianNames.has(guardianId)) return;
+        const user = await this.db.doc(`users/${guardianId}`).get();
+        if (!user.exists) return;
+        const name = textValue(
+          user.get("approvedDisplayName") ||
+            user.get("displayName") ||
+            user.get("name") ||
+            user.get("email"),
+        );
+        if (name) guardianNames.set(guardianId, name);
+      }),
+    );
     const guardianByParticipant = new Map<string, string>();
     for (const link of links) {
       const participantId = textValue(link.participantId);
       const guardianId = textValue(link.parentUid || link.guardianUserId);
       const guardianName = guardianNames.get(guardianId);
-      if (guardianName && !guardianByParticipant.has(participantId))
-        guardianByParticipant.set(participantId, guardianName);
+      const guardianEmail = textValue(link.guardianEmail);
+      const label = guardianName || (guardianEmail ? `Invited (${guardianEmail})` : "");
+      if (label && !guardianByParticipant.has(participantId))
+        guardianByParticipant.set(participantId, label);
     }
 
     return {
@@ -863,7 +884,11 @@ export class AdministrationService {
           // Keep absent relationships explicit in the JSON response. Express drops
           // undefined properties, which made otherwise valid roster rows fail
           // clients that validate every field in the published response contract.
-          linkedGuardian: guardianByParticipant.get(participant.id) ?? null,
+          linkedGuardian:
+            guardianByParticipant.get(participant.id) ??
+            (textValue(participant.data.guardianEmail)
+              ? `Invited (${textValue(participant.data.guardianEmail)})`
+              : null),
           team: (teamId ? teamNames.get(teamId) : undefined) ?? null,
           currentQuarterStatus:
             participant.enrollmentStatus === "withdrawn" || !teamId

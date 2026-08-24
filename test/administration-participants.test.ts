@@ -284,7 +284,12 @@ describe("Admin Participants authorization and list contract", () => {
         middlewareCount: route?.stack.length,
       }));
     expect(routes).toEqual([
-      { path: "/participants", method: "post", middlewareCount: 3 },
+      {
+        path: "/participants/:participantId/invite-guardian",
+        method: "post",
+        middlewareCount: 3,
+      },
+      { path: "/participants", method: "post", middlewareCount: 2 },
       { path: "/participants", method: "get", middlewareCount: 2 },
       {
         path: "/participants/:participantId",
@@ -295,11 +300,6 @@ describe("Admin Participants authorization and list contract", () => {
         path: "/participants/:participantId",
         method: "patch",
         middlewareCount: 3,
-      },
-      {
-        path: "/participants/:participantId",
-        method: "delete",
-        middlewareCount: 2,
       },
     ]);
   });
