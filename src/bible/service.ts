@@ -82,6 +82,18 @@ export interface Upload {
   mime: string;
   buffer: Buffer;
 }
+
+/**
+ * Keep the persisted local-date name while satisfying the admin review
+ * contract, which calls the same value `date`.
+ */
+export const serializeImportPreviewActivity = (
+  activity: Record<string, unknown>,
+) => ({
+  ...activity,
+  date: activity.date ?? activity.localDate,
+});
+
 export class BibleAdministrationService {
   constructor(
     private readonly db: Firestore,
@@ -511,7 +523,9 @@ export class BibleAdministrationService {
       },
       sourceChecksums: d.get("sourceChecksums"),
       parserVersion: d.get("parserVersion"),
-      activities: preview.docs.map((item) => item.data()),
+      activities: preview.docs.map((item) =>
+        serializeImportPreviewActivity(item.data()),
+      ),
       preview: { limit: 25, hasMore: preview.size === 25 },
       warnings: d.get("warnings") ?? [],
       errors: d.get("errors") ?? [],
