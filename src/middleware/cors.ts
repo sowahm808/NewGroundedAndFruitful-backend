@@ -18,7 +18,7 @@ export const cors: RequestHandler = (req, res, next) => {
     res.setHeader("access-control-allow-credentials", "true");
     res.setHeader(
       "access-control-allow-headers",
-      "Authorization, Content-Type, Idempotency-Key, X-Request-Id",
+      "Authorization, Content-Type, Idempotency-Key, If-Match, X-Request-Id",
     );
     res.setHeader(
       "access-control-allow-methods",
