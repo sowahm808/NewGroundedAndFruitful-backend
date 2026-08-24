@@ -114,7 +114,10 @@ export const resolveTenantOrganizationId = async (
 // Configured Generic Resources Loop
 // -------------------------------------------------------------
 const configuredResources = [
-  ["assignments", "assignments"],
+  // Program assignments are created by ConfigurationService in the canonical
+  // contentAssignments collection. Reading the unused `assignments`
+  // collection made the administration screen permanently appear empty.
+  ["assignments", "contentAssignments"],
   ["character-qualities", "characterQualities"],
   ["character-cycles", "characterCycles"],
   ["family-activities", "familyActivities"],
