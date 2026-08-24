@@ -172,7 +172,7 @@ describe("ParentService notifications", () => {
     });
   });
 
-  it("uses only the selected active workspace when a parent belongs to multiple tenants", async () => {
+  it("uses the union of the selected workspace and organization links", async () => {
     const notification = (id: string, organizationId: string) => ({
       id,
       get: (field: string) =>
@@ -208,7 +208,7 @@ describe("ParentService notifications", () => {
       },
       { limit: 20 },
     );
-    expect(result.data.map((item) => item.id)).toEqual(["selected"]);
+    expect(result.data.map((item) => item.id)).toEqual(["hidden", "selected"]);
   });
 });
 

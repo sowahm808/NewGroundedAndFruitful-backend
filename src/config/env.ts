@@ -45,6 +45,8 @@ export const firebaseEnvSchema = z
     MEMBERSHIP_ENFORCEMENT_MODE: optionalWithDefault(
       z.enum(["compatibility", "strict"]).default("compatibility"),
     ),
+    RESEND_API_KEY: z.string().trim().min(1).optional(),
+    MAIL_FROM: z.string().trim().min(1).optional(),
     CHILD_CREDENTIAL_MIGRATION_MODE: optionalWithDefault(
       z.enum(["compatibility", "strict"]).default("compatibility"),
     ),

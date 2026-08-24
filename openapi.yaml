@@ -1436,6 +1436,29 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /admin/participants/{participantId}/invite-guardian:
+    parameters:
+      - { name: participantId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Administration]
+      operationId: inviteParticipantGuardian
+      security: [{ firebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                relationship: { type: string, default: parent }
+      responses:
+        "200": { description: Guardian linked or invitation queued }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
   /admin/quarters/{quarterId}:
     parameters:
       - { $ref: "#/components/parameters/QuarterId" }
