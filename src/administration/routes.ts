@@ -160,9 +160,24 @@ for (const [path, collection] of configuredResources) {
 
   router.post(
     `/${path}`,
-    validateBody(schemas.resourceCreateSchema),
     run(
-      (req) => service.createResource(req.principal, collection, req.body),
+      async (req) => {
+        const organizationId = await resolveTenantOrganizationId(
+          req,
+          req.body.organizationId,
+        );
+        const parsed = schemas.resourceCreateSchema.safeParse({
+          ...req.body,
+          organizationId,
+        });
+        if (!parsed.success) {
+          throw new ValidationError("Invalid resource payload.", {
+            fieldErrors: parsed.error.flatten().fieldErrors,
+          });
+        }
+
+        return service.createResource(req.principal, collection, parsed.data);
+      },
       201,
     ),
   );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { tenantOrganizationCandidate } from "../src/administration/routes.js";
+import { resourceCreateSchema } from "../src/administration/schemas.js";
 
 describe("administration organization context", () => {
   it("does not accept a client-controlled workspace alias", () => {
@@ -54,5 +55,30 @@ describe("administration organization context", () => {
     expect(tenantOrganizationCandidate(request, "organization-explicit")).toBe(
       "organization-explicit",
     );
+  });
+
+  it("allows resource creates to receive organization context from the session", () => {
+    const request = {
+      query: {},
+      body: {
+        organizationId: undefined,
+        name: "Week one",
+        data: { week: 1 },
+      },
+      headers: {},
+      principal: {
+        activeOrganizationId: "org-1",
+        memberships: [{ organizationId: "org-1", status: "active" }],
+      },
+    };
+
+    const organizationId = tenantOrganizationCandidate(request);
+    expect(
+      resourceCreateSchema.parse({ ...request.body, organizationId }),
+    ).toEqual({
+      organizationId: "org-1",
+      name: "Week one",
+      data: { week: 1 },
+    });
   });
 });
