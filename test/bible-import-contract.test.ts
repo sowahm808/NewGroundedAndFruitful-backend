@@ -7,6 +7,19 @@ describe("Bible import review contract", () => {
       id: "item-1",
       localDate: "2026-07-01",
       title: "Watchman",
+      questions: [
+        {
+          id: "q1",
+          position: 1,
+          prompt: "First question?",
+          correctChoiceId: "b",
+          choices: [
+            { id: "a", label: "a", text: "First" },
+            { id: "b", label: "b", text: "Second" },
+          ],
+        },
+        { id: "q2", number: 7, position: 2, prompt: "Second question?" },
+      ],
     });
 
     expect(activity).toMatchObject({
@@ -14,6 +27,17 @@ describe("Bible import review contract", () => {
       date: "2026-07-01",
       localDate: "2026-07-01",
       title: "Watchman",
+      questions: [
+        expect.objectContaining({
+          id: "q1",
+          number: 1,
+          choices: [
+            expect.objectContaining({ id: "a", isCorrect: false }),
+            expect.objectContaining({ id: "b", isCorrect: true }),
+          ],
+        }),
+        expect.objectContaining({ id: "q2", number: 7 }),
+      ],
     });
   });
 

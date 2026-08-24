@@ -72,10 +72,15 @@ describe("Bible DOCX importer", () => {
       title: "Watchman",
     });
     expect(parsed.items[0]?.questions).toHaveLength(2);
+    expect(parsed.items[0]?.questions.map((q) => q.number)).toEqual([1, 2]);
     expect(parsed.items[0]?.questions[1]?.choices).toHaveLength(5);
     expect(parsed.items[0]?.questions.map((q) => q.correctChoiceId)).toEqual([
       "b",
       "e",
+    ]);
+    expect(parsed.items[0]?.questions[0]?.choices).toEqual([
+      expect.objectContaining({ id: "a", isCorrect: false }),
+      expect.objectContaining({ id: "b", isCorrect: true }),
     ]);
     expect(parsed.checksums.quiz).toMatch(/^[a-f0-9]{64}$/);
   });

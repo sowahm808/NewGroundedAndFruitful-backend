@@ -89,10 +89,40 @@ export interface Upload {
  */
 export const serializeImportPreviewActivity = (
   activity: Record<string, unknown>,
-) => ({
-  ...activity,
-  date: activity.date ?? activity.localDate,
-});
+) => {
+  const questions = Array.isArray(activity.questions)
+    ? activity.questions.map((question: unknown, index) => {
+        if (!question || typeof question !== "object") return question;
+        const data = question as Record<string, unknown>;
+        const choices = Array.isArray(data.choices)
+          ? data.choices.map((choice: unknown) => {
+              if (!choice || typeof choice !== "object") return choice;
+              const choiceData = choice as Record<string, unknown>;
+              return {
+                ...choiceData,
+                // Legacy imports only persisted correctChoiceId on the
+                // question, while the review contract requires this flag.
+                isCorrect:
+                  choiceData.isCorrect ??
+                  choiceData.id === data.correctChoiceId,
+              };
+            })
+          : data.choices;
+        return {
+          ...data,
+          // Older imports predate the explicit review-contract field. Their
+          // persisted position is the original ordinal and is safe to expose.
+          number: data.number ?? data.position ?? index + 1,
+          ...(choices === undefined ? {} : { choices }),
+        };
+      })
+    : activity.questions;
+  return {
+    ...activity,
+    date: activity.date ?? activity.localDate,
+    ...(questions === undefined ? {} : { questions }),
+  };
+};
 
 export class BibleAdministrationService {
   constructor(
