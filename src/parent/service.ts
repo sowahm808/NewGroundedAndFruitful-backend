@@ -53,12 +53,19 @@ const fingerprint = (value: unknown) =>
 export class ParentService {
   constructor(private readonly db: Firestore) {}
 
-  private tenantIds(principal: Principal): readonly string[] {
-    return principal.activeWorkspaceId
-      ? [principal.activeWorkspaceId]
-      : principal.organizationIds;
+  // private tenantIds(principal: Principal): readonly string[] {
+  //   return principal.activeWorkspaceId
+  //     ? [principal.activeWorkspaceId]
+  //     : principal.organizationIds;
+  // }
+private tenantIds(principal: Principal): readonly string[] {
+    const list = new Set<string>();
+    if (principal.activeWorkspaceId) list.add(principal.activeWorkspaceId);
+    if (Array.isArray(principal.organizationIds)) {
+      principal.organizationIds.forEach((id) => list.add(id));
+    }
+    return Array.from(list);
   }
-
   private async link(
     principal: Principal,
     childId: string,
@@ -87,40 +94,126 @@ export class ParentService {
     return { link, child, organizationId };
   }
 
-  async children(principal: Principal, input: ListInput) {
-    const links = await this.db
-      .collection("parentChildLinks")
-      .where("parentUid", "==", principal.uid)
-      .limit(200)
-      .get();
-    const authorized = links.docs.filter(
-      (doc) =>
-        doc.get("status") === "active" &&
-        this.tenantIds(principal).includes(doc.get("organizationId")) &&
-        typeof doc.get("participantId") === "string" &&
-        typeof doc.get("organizationId") === "string",
-    );
+  // async children(principal: Principal, input: ListInput) {
+  //   const links = await this.db
+  //     .collection("parentChildLinks")
+  //     .where("parentUid", "==", principal.uid)
+  //     .limit(200)
+  //     .get();
+  //   const authorized = links.docs.filter(
+  //     (doc) =>
+  //       doc.get("status") === "active" &&
+  //       this.tenantIds(principal).includes(doc.get("organizationId")) &&
+  //       typeof doc.get("participantId") === "string" &&
+  //       typeof doc.get("organizationId") === "string",
+  //   );
+  //   const summaries = await Promise.all(
+  //     authorized.map(async (link) => {
+  //       const participantId = link.get("participantId");
+  //       const organizationId = link.get("organizationId");
+  //       if (
+  //         typeof participantId !== "string" ||
+  //         typeof organizationId !== "string"
+  //       )
+  //         throw new NotFoundError();
+  //       const participant = await this.db
+  //         .doc(`participants/${participantId}`)
+  //         .get();
+  //       if (
+  //         !participant.exists ||
+  //         participant.get("organizationId") !== organizationId ||
+  //         participant.get("status") !== "active"
+  //       )
+  //         return null;
+  //       return this.summary(participantId, organizationId, link.get("status"));
+  //     }),
+  //   );
+  //   const search = input.search?.toLocaleLowerCase();
+  //   const sorted = summaries
+  //     .filter((item): item is NonNullable<typeof item> => item !== null)
+  //     .filter(
+  //       (item) =>
+  //         (!input.status || item.status === input.status) &&
+  //         (!search ||
+  //           String(item.approvedDisplayName)
+  //             .toLocaleLowerCase()
+  //             .includes(search)),
+  //     )
+  //     .sort(
+  //       (a, b) =>
+  //         String(a.approvedDisplayName).localeCompare(
+  //           String(b.approvedDisplayName),
+  //         ) || a.id.localeCompare(b.id),
+  //     );
+  //   const cursorIndex = input.cursor
+  //     ? sorted.findIndex((item) => item.id === input.cursor)
+  //     : -1;
+  //   if (input.cursor && cursorIndex < 0) throw new NotFoundError();
+  //   const start = cursorIndex + 1;
+  //   const data = sorted.slice(start, start + input.limit);
+  //   return {
+  //     data,
+  //     meta: {
+  //       nextCursor:
+  //         start + input.limit < sorted.length
+  //           ? (data.at(-1)?.id ?? null)
+  //           : null,
+  //     },
+  //   };
+  // }
+async children(principal: Principal, input: ListInput) {
+    // 1. Fetch links by parent UID
+    const [linksSnap, relSnap, directSnap] = await Promise.all([
+      this.db
+        .collection("parentChildLinks")
+        .where("parentUid", "==", principal.uid)
+        .where("status", "==", "active")
+        .limit(200)
+        .get(),
+      this.db
+        .collection("relationships")
+        .where("userId", "==", principal.uid)
+        .where("status", "==", "active")
+        .limit(200)
+        .get(),
+      this.db
+        .collection("participants")
+        .where("guardianUserId", "==", principal.uid)
+        .where("status", "==", "active")
+        .limit(200)
+        .get(),
+    ]);
+
+    // Extract all unique participant IDs and their respective organization IDs
+    const targets = new Map<string, string>();
+
+    linksSnap.docs.forEach((doc) => {
+      const pId = doc.get("participantId");
+      const orgId = doc.get("organizationId");
+      if (pId && orgId) targets.set(pId, orgId);
+    });
+
+    relSnap.docs.forEach((doc) => {
+      const pId = doc.get("participantId");
+      const orgId = doc.get("organizationId");
+      if (pId && orgId && !targets.has(pId)) targets.set(pId, orgId);
+    });
+
+    directSnap.docs.forEach((doc) => {
+      const orgId = doc.get("organizationId");
+      if (orgId && !targets.has(doc.id)) targets.set(doc.id, orgId);
+    });
+
     const summaries = await Promise.all(
-      authorized.map(async (link) => {
-        const participantId = link.get("participantId");
-        const organizationId = link.get("organizationId");
-        if (
-          typeof participantId !== "string" ||
-          typeof organizationId !== "string"
-        )
-          throw new NotFoundError();
-        const participant = await this.db
-          .doc(`participants/${participantId}`)
-          .get();
-        if (
-          !participant.exists ||
-          participant.get("organizationId") !== organizationId ||
-          participant.get("status") !== "active"
-        )
+      Array.from(targets.entries()).map(async ([participantId, organizationId]) => {
+        const participant = await this.db.doc(`participants/${participantId}`).get();
+        if (!participant.exists || participant.get("status") !== "active") {
           return null;
-        return this.summary(participantId, organizationId, link.get("status"));
+        }
+        return this.summary(participantId, organizationId, "active");
       }),
     );
+
     const search = input.search?.toLocaleLowerCase();
     const sorted = summaries
       .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -138,12 +231,14 @@ export class ParentService {
             String(b.approvedDisplayName),
           ) || a.id.localeCompare(b.id),
       );
+
     const cursorIndex = input.cursor
       ? sorted.findIndex((item) => item.id === input.cursor)
       : -1;
     if (input.cursor && cursorIndex < 0) throw new NotFoundError();
     const start = cursorIndex + 1;
     const data = sorted.slice(start, start + input.limit);
+
     return {
       data,
       meta: {
@@ -154,7 +249,6 @@ export class ParentService {
       },
     };
   }
-
   async child(principal: Principal, childId: string) {
     const { organizationId } = await this.link(principal, childId);
     return this.summary(childId, organizationId, "active");
