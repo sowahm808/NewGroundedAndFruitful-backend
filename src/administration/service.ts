@@ -30,7 +30,11 @@ export class AdministrationService {
     return requireAuthenticated(p);
   }
   private admin(p: Principal | undefined, organizationId: string) {
-    return requireOrganizationRole(p, organizationId, ["owner", "admin", "super_admin"]);
+    return requireOrganizationRole(p, organizationId, [
+      "owner",
+      "admin",
+      "super_admin",
+    ]);
   }
   private superAdmin(p: Principal | undefined, organizationId: string) {
     return requireOrganizationRole(p, organizationId, ["super_admin"]);
@@ -70,66 +74,91 @@ export class AdministrationService {
       .get();
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }
- async listResources(
-  p: Principal | undefined,
-  collection: string,
-  query: {
-    organizationId?: string | undefined;
-    page: number;
-    pageSize: number;
-    sort: "updatedAt" | "-updatedAt";
-  },
-) {
-  const { page, pageSize, sort } = query;
-  const organizationId =
-    query.organizationId ??
-    p?.organizationIds?.[0] ??
-    (p as { organizationId?: string } | undefined)?.organizationId;
-
-  let resourceQuery: FirebaseFirestore.Query = this.db.collection(collection);
-
-  if (organizationId) {
-    this.admin(p, organizationId);
-    resourceQuery = resourceQuery.where(
-      "organizationId",
-      "==",
-      organizationId,
-    );
-  } else {
-    requirePlatformSuperAdmin(p);
-  }
-
-  const timestamp = (value: unknown) =>
-    typeof value === "object" &&
-    value !== null &&
-    "toMillis" in value &&
-    typeof (value as { toMillis: () => number }).toMillis === "function"
-      ? (value as { toMillis(): number }).toMillis()
-      : 0;
-
-  const results: Array<Data & { id: string }> = (
-    await resourceQuery.get()
-  ).docs
-    .map<Data & { id: string }>((doc) => ({ id: doc.id, ...(doc.data() as Data) }))
-    .sort((a, b) => {
-      const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
-      return (
-        (sort === "-updatedAt" ? -difference : difference) ||
-        a.id.localeCompare(b.id)
-      );
-    });
-
-  const total = results.length;
-  return {
-    items: results.slice((page - 1) * pageSize, page * pageSize),
-    pagination: {
-      page,
-      pageSize,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  async listResources(
+    p: Principal | undefined,
+    collection: string,
+    query: {
+      organizationId?: string | undefined;
+      page: number;
+      pageSize: number;
+      status?: string | undefined;
+      quarterId?: string | undefined;
+      search?: string | undefined;
+      sort: "updatedAt" | "-updatedAt";
     },
-  };
-}
+  ) {
+    const { page, pageSize, status, quarterId, search, sort } = query;
+    const organizationId =
+      query.organizationId ??
+      p?.organizationIds?.[0] ??
+      (p as { organizationId?: string } | undefined)?.organizationId;
+
+    let resourceQuery: FirebaseFirestore.Query = this.db.collection(collection);
+
+    if (organizationId) {
+      this.admin(p, organizationId);
+      resourceQuery = resourceQuery.where(
+        "organizationId",
+        "==",
+        organizationId,
+      );
+    } else {
+      requirePlatformSuperAdmin(p);
+    }
+
+    const timestamp = (value: unknown) =>
+      typeof value === "object" &&
+      value !== null &&
+      "toMillis" in value &&
+      typeof (value as { toMillis: () => number }).toMillis === "function"
+        ? (value as { toMillis(): number }).toMillis()
+        : 0;
+
+    const results: Array<Data & { id: string }> = (
+      await resourceQuery.get()
+    ).docs
+      .map<Data & { id: string }>((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Data),
+      }))
+      .filter(
+        (resource) =>
+          !status || status === "all" || resource.status === status,
+      )
+      .filter((resource) => !quarterId || resource.quarterId === quarterId)
+      .filter((resource) => {
+        if (!search) return true;
+        const needle = search.toLocaleLowerCase();
+        return [
+          resource.name,
+          resource.title,
+          resource.contentType,
+          resource.contentId,
+        ].some(
+          (value) =>
+            typeof value === "string" &&
+            value.toLocaleLowerCase().includes(needle),
+        );
+      })
+      .sort((a, b) => {
+        const difference = timestamp(a.updatedAt) - timestamp(b.updatedAt);
+        return (
+          (sort === "-updatedAt" ? -difference : difference) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+
+    const total = results.length;
+    return {
+      items: results.slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    };
+  }
   async resource(
     p: Principal | undefined,
     collection: string,
@@ -855,28 +884,28 @@ export class AdministrationService {
     };
   }
   async createTeam(p: Principal | undefined, input: Data) {
-  const oid = String(input.organizationId);
-  const actor = this.admin(p, oid);
-  const ref = this.db.collection("teams").doc();
+    const oid = String(input.organizationId);
+    const actor = this.admin(p, oid);
+    const ref = this.db.collection("teams").doc();
 
-  await this.db.runTransaction((tx) => {
-    tx.create(ref, {
-      ...input,
-      status: "active",
-      version: 1,
-      memberCount: 0,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-      createdBy: actor.uid,
-      updatedBy: actor.uid,
+    await this.db.runTransaction((tx) => {
+      tx.create(ref, {
+        ...input,
+        status: "active",
+        version: 1,
+        memberCount: 0,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdBy: actor.uid,
+        updatedBy: actor.uid,
+      });
+
+      this.audit(tx, actor.uid, oid, "team.created", { teamId: ref.id });
+      return Promise.resolve();
     });
 
-    this.audit(tx, actor.uid, oid, "team.created", { teamId: ref.id });
-    return Promise.resolve();
-  });
-
-  return { id: ref.id, ...input, status: "active", version: 1 };
-}
+    return { id: ref.id, ...input, status: "active", version: 1 };
+  }
   async teamOrganization(id: string) {
     const snap = await this.db.doc(`teams/${id}`).get();
     if (!snap.exists) throw new NotFoundError();
