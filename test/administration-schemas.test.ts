@@ -23,7 +23,7 @@ describe("administration request contracts", () => {
     ).toBe(false);
   });
 
-  it("requires a guardian and a valid birth date when creating participants", () => {
+  it("allows a guardian to be invited after participant creation", () => {
     expect(
       participantCreateSchema.safeParse({
         organizationId: "org-1",
@@ -31,7 +31,7 @@ describe("administration request contracts", () => {
         displayName: "Child",
         birthDate: "2020-01-01",
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       participantCreateSchema.safeParse({
         organizationId: "org-1",

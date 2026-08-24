@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { describe, expect, it, vi } from "vitest";
 import administrationRouter from "../src/administration/routes.js";
-import { participantListQuerySchema } from "../src/administration/schemas.js";
+import {
+  participantCreateSchema,
+  participantListQuerySchema,
+} from "../src/administration/schemas.js";
 import { AdministrationService } from "../src/administration/service.js";
 import type { Principal } from "../src/auth/authorization.js";
 import { AuthorizationError } from "../src/shared/errors.js";
@@ -269,6 +272,18 @@ describe("Admin Participants authorization and list contract", () => {
       { unsupported: "value" },
     ])
       expect(participantListQuerySchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("allows enrollment without a guardian and accepts the frontend teamId", () => {
+    expect(
+      participantCreateSchema.parse({
+        displayName: "Ada Participant",
+        teamId: "team-1",
+      }),
+    ).toMatchObject({
+      displayName: "Ada Participant",
+      teamId: "team-1",
+    });
   });
 
   it("mounts read and manage capability middleware on every participant route", () => {

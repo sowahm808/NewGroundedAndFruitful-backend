@@ -161,26 +161,23 @@ for (const [path, collection] of configuredResources) {
 
   router.post(
     `/${path}`,
-    run(
-      async (req) => {
-        const organizationId = await resolveTenantOrganizationId(
-          req,
-          req.body.organizationId,
-        );
-        const parsed = schemas.resourceCreateSchema.safeParse({
-          ...req.body,
-          organizationId,
+    run(async (req) => {
+      const organizationId = await resolveTenantOrganizationId(
+        req,
+        req.body.organizationId,
+      );
+      const parsed = schemas.resourceCreateSchema.safeParse({
+        ...req.body,
+        organizationId,
+      });
+      if (!parsed.success) {
+        throw new ValidationError("Invalid resource payload.", {
+          fieldErrors: parsed.error.flatten().fieldErrors,
         });
-        if (!parsed.success) {
-          throw new ValidationError("Invalid resource payload.", {
-            fieldErrors: parsed.error.flatten().fieldErrors,
-          });
-        }
+      }
 
-        return service.createResource(req.principal, collection, parsed.data);
-      },
-      201,
-    ),
+      return service.createResource(req.principal, collection, parsed.data);
+    }, 201),
   );
 
   router.post(
@@ -342,8 +339,11 @@ router.get(
   "/reports",
   requireCapability("admin.reports.read"),
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.query.organizationId);
-    
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.query.organizationId,
+    );
+
     const snap = await db
       .collection("reportJobs")
       .where("organizationId", "==", orgId)
@@ -365,11 +365,12 @@ router.get(
         createdAt: d.createdAt,
         completedAt: d.completedAt,
         expiresAt: d.expiresAt,
-        allowedActions: d.status === "completed" 
-          ? ["view", "download"] 
-          : d.status === "failed" 
-            ? ["retry"] 
-            : ["cancel"],
+        allowedActions:
+          d.status === "completed"
+            ? ["view", "download"]
+            : d.status === "failed"
+              ? ["retry"]
+              : ["cancel"],
       };
     });
 
@@ -382,7 +383,10 @@ router.post(
   "/reports",
   requireCapability("admin.reports.create"),
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.body.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.body.organizationId,
+    );
     const { reportType, quarterId, teamId, periodStart, periodEnd } = req.body;
 
     const principal = req.principal as Record<string, unknown> | undefined;
@@ -437,7 +441,9 @@ router.post(
     const data = doc.data();
 
     return {
-      url: data?.downloadUrl || `https://storage.googleapis.com/exports/${jobId}.csv`,
+      url:
+        data?.downloadUrl ||
+        `https://storage.googleapis.com/exports/${jobId}.csv`,
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     };
   }),
@@ -449,10 +455,13 @@ router.post(
   requireCapability("admin.reports.create"),
   run(async (req) => {
     const jobId = id(req.params.jobId);
-    const command = typeof req.params.command === "string" ? req.params.command : "";
+    const command =
+      typeof req.params.command === "string" ? req.params.command : "";
 
     if (command !== "retry" && command !== "cancel") {
-      throw new ValidationError("Invalid report command. Expected 'retry' or 'cancel'.");
+      throw new ValidationError(
+        "Invalid report command. Expected 'retry' or 'cancel'.",
+      );
     }
 
     const ref = db.collection("reportJobs").doc(jobId);
@@ -460,7 +469,10 @@ router.post(
     if (!doc.exists) throw new ValidationError("Report job not found.");
 
     const nextStatus = command === "retry" ? "queued" : "cancelled";
-    await ref.update({ status: nextStatus, updatedAt: new Date().toISOString() });
+    await ref.update({
+      status: nextStatus,
+      updatedAt: new Date().toISOString(),
+    });
 
     return { id: doc.id, ...doc.data(), status: nextStatus };
   }),
@@ -684,53 +696,72 @@ router.post(
   requireCapability("admin.participants.manage"),
   validateBody(schemas.guardianInvitationSchema),
   run(async (req) => {
-    const orgId = await resolveTenantOrganizationId(req, req.body?.organizationId);
+    const orgId = await resolveTenantOrganizationId(
+      req,
+      req.body?.organizationId,
+    );
     const participantId = id(req.params.participantId);
     const email = String(req.body.email).trim().toLowerCase();
-    const relationship = typeof req.body?.relationship === "string" ? req.body.relationship : "parent";
+    const relationship =
+      typeof req.body?.relationship === "string"
+        ? req.body.relationship
+        : "parent";
 
     const participantRef = db.collection("participants").doc(participantId);
     const participantDoc = await participantRef.get();
 
-    if (!participantDoc.exists || participantDoc.get("organizationId") !== orgId) {
+    if (
+      !participantDoc.exists ||
+      participantDoc.get("organizationId") !== orgId
+    ) {
       throw new NotFoundError("Participant not found in current organization.");
     }
 
     // 1. Resolve organization name
     const orgDoc = await db.collection("organizations").doc(orgId).get();
     const orgData = orgDoc.data();
-    const orgName = (orgDoc.exists && orgData && (orgData.name || orgData.displayName)) || "Your Organization";
+    const orgName =
+      (orgDoc.exists && orgData && (orgData.name || orgData.displayName)) ||
+      "Your Organization";
 
     // 2. Query user snapshot with safe null check
     const [canonicalUser, legacyUser] = await Promise.all([
-      db.collection("users").where("emailNormalized", "==", email).limit(1).get(),
+      db
+        .collection("users")
+        .where("emailNormalized", "==", email)
+        .limit(1)
+        .get(),
       db.collection("users").where("email", "==", email).limit(1).get(),
     ]);
     const existingUserSnap = canonicalUser.empty ? legacyUser : canonicalUser;
 
-    const parentUid: string | null = !existingUserSnap.empty && existingUserSnap.docs[0]
-      ? existingUserSnap.docs[0].id
-      : null;
+    const parentUid: string | null =
+      !existingUserSnap.empty && existingUserSnap.docs[0]
+        ? existingUserSnap.docs[0].id
+        : null;
 
     // 3. Create or update parentChildLinks
-    const emailHash = createHash("sha256").update(email).digest("hex").slice(0, 12);
+    const emailHash = createHash("sha256")
+      .update(email)
+      .digest("hex")
+      .slice(0, 12);
     const linkId = `${parentUid || `pending_${emailHash}`}_${participantId}`;
     const linkRef = db.collection("parentChildLinks").doc(linkId);
 
     const now = new Date().toISOString();
     const linkData = {
-        id: linkId,
-        organizationId: orgId,
-        participantId,
-        parentUid: parentUid || null,
-        guardianUserId: parentUid || null,
-        guardianEmail: email,
-        relationship,
-        status: parentUid ? "active" : "pending_acceptance",
-        updatedAt: now,
-        createdAt: now,
-        version: 1,
-      };
+      id: linkId,
+      organizationId: orgId,
+      participantId,
+      parentUid: parentUid || null,
+      guardianUserId: parentUid || null,
+      guardianEmail: email,
+      relationship,
+      status: parentUid ? "active" : "pending_acceptance",
+      updatedAt: now,
+      createdAt: now,
+      version: 1,
+    };
 
     // Keep the relationship and participant projection consistent. A stable
     // pending id also makes repeated invitations an upsert rather than creating
@@ -750,6 +781,12 @@ router.post(
     batch.create(mailRef, {
       to: email,
       template: "guardian_invitation",
+      organizationName: orgName,
+      participantName:
+        participantDoc.get("approvedDisplayName") ||
+        participantDoc.get("displayName") ||
+        "Your Child",
+      joinUrl: `https://groundedandfruitful.netlify.app/parent-onboarding?email=${encodeURIComponent(email)}&orgId=${encodeURIComponent(orgId)}`,
       data: {
         organizationName: orgName,
         participantName:
@@ -773,7 +810,6 @@ router.post(
   }),
 );
 
-
 router.post(
   "/participants",
   requireCapability("admin.participants.manage"),
@@ -790,6 +826,9 @@ router.post(
     const payload = {
       ...req.body,
       organizationId: orgId,
+      ...(req.body.teamId && !req.body.activeTeamId
+        ? { activeTeamId: req.body.teamId }
+        : {}),
       ...(guardianUserId ? { guardianUserId } : {}),
       programId: req.body.programId || "default-program",
       birthDate: req.body.birthDate || "2015-01-01",
@@ -806,21 +845,36 @@ router.post(
     if (parsed.data.guardianEmail) {
       const email = parsed.data.guardianEmail;
       const now = new Date().toISOString();
-      const [participant, organization, existing] = await Promise.all([
-        db.doc(`participants/${created.id}`).get(),
-        db.doc(`organizations/${orgId}`).get(),
-        db.collection("users").where("email", "==", email).limit(1).get(),
-      ]);
+      const [participant, organization, canonicalUser, legacyUser] =
+        await Promise.all([
+          db.doc(`participants/${created.id}`).get(),
+          db.doc(`organizations/${orgId}`).get(),
+          db
+            .collection("users")
+            .where("emailNormalized", "==", email)
+            .limit(1)
+            .get(),
+          db.collection("users").where("email", "==", email).limit(1).get(),
+        ]);
+      const existing = canonicalUser.empty ? legacyUser : canonicalUser;
       const guardianUserId = existing.docs[0]?.id;
-      const hash = createHash("sha256").update(email).digest("hex").slice(0, 12);
+      const hash = createHash("sha256")
+        .update(email)
+        .digest("hex")
+        .slice(0, 12);
       const linkId = `${guardianUserId || `pending_${hash}`}_${created.id}`;
       const batch = db.batch();
       batch.set(db.doc(`parentChildLinks/${linkId}`), {
-        id: linkId, organizationId: orgId, participantId: created.id,
-        parentUid: guardianUserId ?? null, guardianUserId: guardianUserId ?? null,
-        guardianEmail: email, relationship: "parent",
+        id: linkId,
+        organizationId: orgId,
+        participantId: created.id,
+        parentUid: guardianUserId ?? null,
+        guardianUserId: guardianUserId ?? null,
+        guardianEmail: email,
+        relationship: "parent",
         status: guardianUserId ? "active" : "pending_acceptance",
-        createdAt: now, updatedAt: now,
+        createdAt: now,
+        updatedAt: now,
       });
       batch.update(participant.ref, {
         guardianEmail: email,
@@ -828,10 +882,27 @@ router.post(
         updatedAt: now,
       });
       batch.create(db.collection("mailQueue").doc(), {
-        to: email, template: "guardian_invitation", status: "queued",
+        to: email,
+        template: "guardian_invitation",
+        status: "queued",
+        organizationName:
+          organization.get("name") ||
+          organization.get("displayName") ||
+          "Your Organization",
+        participantName:
+          participant.get("approvedDisplayName") ||
+          participant.get("displayName") ||
+          "Your Child",
+        joinUrl: `https://groundedandfruitful.netlify.app/parent-onboarding?email=${encodeURIComponent(email)}&orgId=${encodeURIComponent(orgId)}`,
         data: {
-          organizationName: organization.get("name") || organization.get("displayName") || "Your Organization",
-          participantName: participant.get("approvedDisplayName") || participant.get("displayName") || "Your Child",
+          organizationName:
+            organization.get("name") ||
+            organization.get("displayName") ||
+            "Your Organization",
+          participantName:
+            participant.get("approvedDisplayName") ||
+            participant.get("displayName") ||
+            "Your Child",
           joinUrl: `https://groundedandfruitful.netlify.app/parent-onboarding?email=${encodeURIComponent(email)}&orgId=${encodeURIComponent(orgId)}`,
         },
         createdAt: now,
@@ -841,7 +912,6 @@ router.post(
     return created;
   }, 201),
 );
-
 
 router.get(
   "/participants",

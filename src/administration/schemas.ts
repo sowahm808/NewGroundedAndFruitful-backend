@@ -158,12 +158,7 @@ export const participantListQuerySchema = z
     teamId: idSchema.optional(),
     programId: idSchema.optional(),
     sort: z
-      .enum([
-        "updatedAt",
-        "-updatedAt",
-        "updatedAt_desc",
-        "updatedAt_asc",
-      ])
+      .enum(["updatedAt", "-updatedAt", "updatedAt_desc", "updatedAt_asc"])
       .default("-updatedAt")
       .transform((val): "-updatedAt" | "updatedAt" => {
         switch (val) {
@@ -185,11 +180,9 @@ export const participantCreateSchema = z.object({
   birthDate: z.string().optional().default("2015-01-01"),
   guardianUserId: idSchema.optional(),
   guardianEmail: z.string().trim().toLowerCase().email().optional(),
+  teamId: idSchema.optional(),
   activeTeamId: idSchema.optional(),
   status: z.enum(["pending", "active", "withdrawn"]).default("active"),
-}).refine((value) => Boolean(value.guardianUserId || value.guardianEmail), {
-  message: "A guardian user or guardian email is required.",
-  path: ["guardianEmail"],
 });
 
 export const guardianInvitationSchema = z

@@ -427,25 +427,33 @@ export class AuthSessionService {
       .where("status", "==", "pending_acceptance")
       .get();
     if (pending.empty) return;
-    const batch = db.batch();
-    for (const link of pending.docs) {
-      const participantId = link.get("participantId");
-      batch.update(link.ref, {
-        parentUid: uid,
-        guardianUserId: uid,
-        status: "active",
-        acceptedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-      if (typeof participantId === "string" && participantId) {
-        batch.update(db.doc(`participants/${participantId}`), {
+    // Each relationship consumes two writes. Chunking keeps reconciliation
+    // below Firestore's 500-operation batch limit for heavily shared inboxes.
+    for (let offset = 0; offset < pending.docs.length; offset += 250) {
+      const batch = db.batch();
+      for (const link of pending.docs.slice(offset, offset + 250)) {
+        const participantId = link.get("participantId");
+        batch.update(link.ref, {
+          parentUid: uid,
           guardianUserId: uid,
-          guardianEmail: normalizedEmail,
+          status: "active",
+          acceptedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
+        if (typeof participantId === "string" && participantId) {
+          batch.set(
+            db.doc(`participants/${participantId}`),
+            {
+              guardianUserId: uid,
+              guardianEmail: normalizedEmail,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true },
+          );
+        }
       }
+      await batch.commit();
     }
-    await batch.commit();
   }
 
   private async getAuthUser(uid: string): Promise<UserRecord> {
