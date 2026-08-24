@@ -1,6 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { Timestamp } from "firebase-admin/firestore";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ParentService } from "../src/parent/service.js";
 
 const observation = (id: string, organizationId: string, createdAt: string) => {
@@ -318,5 +318,75 @@ describe("ParentService children relationship scope", () => {
         { limit: 20 },
       ),
     ).resolves.toEqual({ data: [], meta: { nextCursor: null } });
+  });
+});
+
+describe("ParentService child credentials", () => {
+  it("stores sanitized credentials and returns structured response data", async () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    const linkValues = {
+      status: "active",
+      organizationId: "org-1",
+    };
+    const childValues = {
+      organizationId: "org-1",
+      approvedDisplayName: "Áda Child",
+    };
+    const linkQuery = {
+      where: () => linkQuery,
+      limit: () => linkQuery,
+      get: () =>
+        Promise.resolve({
+          docs: [
+            {
+              get: (field: keyof typeof linkValues) => linkValues[field],
+            },
+          ],
+        }),
+    };
+    const child = {
+      id: "child-1",
+      exists: true,
+      get: (field: keyof typeof childValues) => childValues[field],
+      ref: { update },
+    };
+    const service = new ParentService({
+      collection: () => linkQuery,
+      doc: () => ({ get: () => Promise.resolve(child) }),
+    } as unknown as Firestore);
+
+    const result = await service.setChildCredentials(
+      { uid: "parent-1", organizationIds: ["org-1"] },
+      "child-1",
+      { pin: "1234" },
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      participantId: "child-1",
+      handle: "adachild",
+      updatedAt: expect.any(String),
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        handle: "adachild",
+        pin: "1234",
+        pinSalt: expect.stringMatching(/^[a-f0-9]{32}$/),
+        pinHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        credentialsUpdatedAt: result.updatedAt,
+        updatedAt: result.updatedAt,
+      }),
+    );
+  });
+
+  it("rejects an invalid PIN even when called outside the HTTP schema", async () => {
+    const service = new ParentService({} as Firestore);
+    await expect(
+      service.setChildCredentials(
+        { uid: "parent-1", organizationIds: ["org-1"] },
+        "child-1",
+        { pin: "12ab" },
+      ),
+    ).rejects.toMatchObject({ status: 422 });
   });
 });

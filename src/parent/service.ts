@@ -11,6 +11,7 @@ import {
   BusinessRuleError,
   ConflictError,
   NotFoundError,
+  ValidationError,
 } from "../shared/errors.js";
 
 type Principal = {
@@ -239,6 +240,10 @@ export class ParentService {
     childId: string,
     input: { handle?: string | undefined; pin: string },
   ) {
+    const pin = input.pin.trim();
+    if (!/^\d{4,6}$/.test(pin)) {
+      throw new ValidationError("The PIN must contain 4 to 6 digits.");
+    }
     const { child } = await this.link(principal, childId);
     const sourceHandle =
       input.handle?.trim() || this.displayName(child, childId);
@@ -253,13 +258,13 @@ export class ParentService {
         "The child handle must contain letters or numbers.",
       );
     const salt = randomBytes(16).toString("hex");
-    const pinHash = createHash("sha256")
-      .update(`${salt}:${input.pin}`)
-      .digest("hex");
+    const pinHash = createHash("sha256").update(`${salt}:${pin}`).digest("hex");
     const now = new Date().toISOString();
     await child.ref.update({
       handle,
-      pin: input.pin.trim(),
+      // Kept temporarily for compatibility with the participant login
+      // validator while all credentials migrate to salted hashes.
+      pin,
       pinSalt: salt,
       pinHash,
       approvedDisplayName:
@@ -267,7 +272,12 @@ export class ParentService {
       credentialsUpdatedAt: now,
       updatedAt: now,
     });
-    return { success: true, handle };
+    return {
+      success: true,
+      participantId: child.id,
+      handle,
+      updatedAt: now,
+    };
   }
 
   async familyCode(principal: Principal) {

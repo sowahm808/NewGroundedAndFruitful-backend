@@ -625,7 +625,24 @@ paths:
           schema: { type: string }
       description: Sets a sanitized child handle and a salted SHA-256 hash of a 4-to-6 digit PIN.
       responses:
-        "200": { description: Child credentials updated }
+        "200":
+          description: Child credentials updated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required: [success, participantId, handle, updatedAt]
+                    properties:
+                      success: { type: boolean, const: true }
+                      participantId: { type: string }
+                      handle: { type: string }
+                      updatedAt: { type: string, format: date-time }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "422": { $ref: "#/components/responses/Validation" }
