@@ -78,6 +78,10 @@ describe("Bible DOCX importer", () => {
       "b",
       "e",
     ]);
+    expect(parsed.items[0]?.questions[0]?.choices).toEqual([
+      expect.objectContaining({ id: "a", isCorrect: false }),
+      expect.objectContaining({ id: "b", isCorrect: true }),
+    ]);
     expect(parsed.checksums.quiz).toMatch(/^[a-f0-9]{64}$/);
   });
   it("blocks missing, multiple, mismatched and out-of-quarter answers", () => {

@@ -401,7 +401,12 @@ export function parseBibleDocxPair(
         number: Number(displayNumber),
         position: j + 1,
         prompt: q.prompt,
-        choices: q.choices.map(({ id, label, text }) => ({ id, label, text })),
+        choices: q.choices.map(({ id, label, text }) => ({
+          id,
+          label,
+          text,
+          isCorrect: id === correct,
+        })),
         correctChoiceId: correct,
         originalText: q.originalText,
         version: 1,
