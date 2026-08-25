@@ -81,9 +81,17 @@ export const characterQuerySchema = z.object({
   childId: idSchema,
   quarterId: optionalQueryString(idSchema.optional()),
 });
-export const characterPatchSchema = characterSelectionSchema.extend({
-  expectedVersion: z.number().int().min(0).optional(),
-});
+export const characterPatchSchema = z
+  .object({
+    childId: idSchema,
+    quarterId: idSchema.optional(),
+    qualityIds: z
+      .array(idSchema)
+      .length(3)
+      .refine((ids) => new Set(ids).size === 3, "Qualities must be unique"),
+    expectedVersion: z.number().int().min(0).optional(),
+  })
+  .strict();
 export const familyActivityQuerySchema = listSchema
   .pick({ limit: true, cursor: true, search: true })
   .extend({ childId: idSchema });

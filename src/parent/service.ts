@@ -789,6 +789,7 @@ export class ParentService {
         id: x.id,
         name: x.get("name"),
         description: x.get("description") ?? null,
+        category: x.get("category") ?? null,
       }))
       .sort(
         (a, b) =>
@@ -803,6 +804,7 @@ export class ParentService {
               id: name.toLocaleLowerCase("en-US").replace(/[^a-z0-9]/g, "-"),
               name,
               description: null,
+              category: null,
             })),
     };
   }
@@ -825,8 +827,8 @@ export class ParentService {
   async selection(principal: Principal, childId: string, quarterId?: string) {
     const { organizationId } = await this.link(principal, childId);
 
-    // If quarterId is not provided, resolve active quarter automatically
     let activeQuarterId = quarterId;
+    let quarterName = "";
     if (!activeQuarterId) {
       const q = await this.currentQuarter(organizationId);
       if (!q)
@@ -835,6 +837,13 @@ export class ParentService {
           "There is no active character quarter.",
         );
       activeQuarterId = q.id;
+      quarterName = q.name;
+    } else {
+      const quarter = await this.db.doc(`quarters/${activeQuarterId}`).get();
+      if (!quarter.exists || quarter.get("organizationId") !== organizationId)
+        throw new NotFoundError();
+      quarterName =
+        typeof quarter.get("name") === "string" ? quarter.get("name") : "";
     }
 
     const doc = await this.db
@@ -845,14 +854,16 @@ export class ParentService {
       ? {
           childId,
           quarterId: activeQuarterId,
-          qualityIds: doc.get("qualityIds") ?? [],
+          quarterName,
+          selectedQualities: doc.get("qualityIds") ?? [],
           version: number(doc.get("version")),
           updatedAt: iso(doc.get("updatedAt")),
         }
       : {
           childId,
           quarterId: activeQuarterId,
-          qualityIds: [],
+          quarterName,
+          selectedQualities: [],
           version: 0,
           updatedAt: null,
         };
@@ -861,13 +872,22 @@ export class ParentService {
     principal: Principal,
     input: {
       childId: string;
-      quarterId: string;
+      quarterId?: string | undefined;
       qualityIds: string[];
       expectedVersion?: number | undefined;
     },
   ) {
     const linked = await this.link(principal, input.childId);
-    const quarter = await this.db.doc(`quarters/${input.quarterId}`).get();
+    const activeQuarter = input.quarterId
+      ? null
+      : await this.currentQuarter(linked.organizationId);
+    const quarterId = input.quarterId ?? activeQuarter?.id;
+    if (!quarterId)
+      throw new BusinessRuleError(
+        "QUARTER_NOT_OPEN",
+        "There is no active character quarter.",
+      );
+    const quarter = await this.db.doc(`quarters/${quarterId}`).get();
     if (
       !quarter.exists ||
       quarter.get("organizationId") !== linked.organizationId ||
@@ -913,7 +933,7 @@ export class ParentService {
       );
     await this.db.runTransaction(async (tx) => {
       const ref = this.db.doc(
-        `characterSelections/${input.quarterId}_${input.childId}`,
+        `characterSelections/${quarterId}_${input.childId}`,
       );
       const old = await tx.get(ref);
       const currentVersion = old.exists ? number(old.get("version")) : 0;
@@ -926,7 +946,7 @@ export class ParentService {
         ref,
         {
           participantId: input.childId,
-          quarterId: input.quarterId,
+          quarterId,
           organizationId: linked.organizationId,
           qualityIds: input.qualityIds,
           selectedBy: principal.uid,
@@ -946,7 +966,7 @@ export class ParentService {
         createdAt: FieldValue.serverTimestamp(),
       });
     });
-    return this.selection(principal, input.childId, input.quarterId);
+    return this.selection(principal, input.childId, quarterId);
   }
 
   async familyActivities(

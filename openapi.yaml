@@ -593,8 +593,18 @@ paths:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
       description: Updates a selection using expectedVersion optimistic concurrency. Cannot modify child submissions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CharacterSelectionCommand" }
       responses:
-        "200": { description: Updated selection }
+        "200":
+          description: Updated selection
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/CharacterSelectionResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409":
@@ -609,7 +619,12 @@ paths:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
       responses:
-        "200": { description: Active character qualities or standard defaults }
+        "200":
+          description: Active character qualities or standard defaults
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/CharacterQualitiesResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -622,15 +637,34 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: quarterId
+          in: query
+          description: Defaults to the organization's active quarter when omitted.
+          schema: { type: string }
       responses:
-        "200": { description: Active-quarter character selection }
+        "200":
+          description: Active-quarter character selection
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/CharacterSelectionResponse" }
         "422": { $ref: "#/components/responses/Validation" }
     post:
       tags: [Parent]
       security: [{ firebaseBearer: [] }]
       description: Saves exactly three qualities with optional optimistic locking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CharacterSelectionCommand" }
       responses:
-        "200": { description: Updated character selection }
+        "200":
+          description: Updated character selection
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/CharacterSelectionResponse" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Validation" }
 
@@ -2178,6 +2212,62 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    CharacterQuality:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        category: { type: [string, "null"] }
+
+    CharacterSelection:
+      type: object
+      additionalProperties: false
+      required:
+        [childId, quarterId, quarterName, selectedQualities, version, updatedAt]
+      properties:
+        childId: { type: string }
+        quarterId: { type: string }
+        quarterName: { type: string }
+        selectedQualities:
+          type: array
+          items: { type: string }
+        version: { type: integer, minimum: 0 }
+        updatedAt: { type: [string, "null"], format: date-time }
+
+    CharacterSelectionCommand:
+      type: object
+      additionalProperties: false
+      required: [childId, qualityIds]
+      properties:
+        childId: { type: string }
+        quarterId: { type: string }
+        qualityIds:
+          type: array
+          minItems: 3
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string }
+        expectedVersion: { type: integer, minimum: 0 }
+
+    CharacterSelectionResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/CharacterSelection" }
+
+    CharacterQualitiesResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/CharacterQuality" }
+
     ReportAction:
       type: object
       additionalProperties: false
