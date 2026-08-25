@@ -189,7 +189,9 @@ router.get("/character/selection", async (req, res, next) => {
   try {
     const input = parse(characterQuerySchema, req.query);
     res.json(
-      await service.selection(principal(req), input.childId, input.quarterId),
+      envelope(
+        await service.selection(principal(req), input.childId, input.quarterId),
+      ),
     );
   } catch (e) {
     next(e);
@@ -198,9 +200,11 @@ router.get("/character/selection", async (req, res, next) => {
 router.post("/character/selection", async (req, res, next) => {
   try {
     res.json(
-      await service.setSelection(
-        principal(req),
-        parse(characterPatchSchema, req.body),
+      envelope(
+        await service.setSelection(
+          principal(req),
+          parse(characterPatchSchema, req.body),
+        ),
       ),
     );
   } catch (e) {

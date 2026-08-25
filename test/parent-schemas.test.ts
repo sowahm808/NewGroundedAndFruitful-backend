@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   characterQuerySchema,
+  characterPatchSchema,
   characterSelectionSchema,
   childCredentialsSchema,
   childQuerySchema,
@@ -90,6 +91,25 @@ describe("parent API validation", () => {
     expect(
       characterQuerySchema.safeParse({ childId: "c1", quarterId: "bad id!" })
         .success,
+    ).toBe(false);
+  });
+  it("allows character selection commands to use the active quarter", () => {
+    expect(
+      characterPatchSchema.parse({
+        childId: "c1",
+        qualityIds: ["a", "b", "c"],
+        expectedVersion: 0,
+      }),
+    ).toEqual({
+      childId: "c1",
+      qualityIds: ["a", "b", "c"],
+      expectedVersion: 0,
+    });
+    expect(
+      characterPatchSchema.safeParse({
+        childId: "c1",
+        qualityIds: ["a", "a", "c"],
+      }).success,
     ).toBe(false);
   });
   it("accepts only four-to-six digit child PINs", () => {
