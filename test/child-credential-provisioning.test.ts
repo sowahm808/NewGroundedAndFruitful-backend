@@ -23,14 +23,20 @@ describe("child credential primitives", () => {
     expect(generateFamilyCode()).toMatch(/^[a-z0-9_-]{8,24}$/);
     expect(generatePin()).toMatch(/^\d{6}$/);
   });
-  it("accepts only the provisioned six-digit PIN format at login", () => {
-    const base = { familyCode: "familycode", handle: "sprout" };
-    expect(childLoginSchema.safeParse({ ...base, pin: "123456" }).success).toBe(
-      true,
-    );
-    expect(childLoginSchema.safeParse({ ...base, pin: "12345" }).success).toBe(
+  it("accepts workspace codes and four-to-six digit PINs at login", () => {
+    const base = {
+      familyCode: "personal-0846ff3425782ab7e88542cf",
+      handle: "sprout",
+    };
+    for (const pin of ["1234", "12345", "123456"]) {
+      expect(childLoginSchema.safeParse({ ...base, pin }).success).toBe(true);
+    }
+    expect(childLoginSchema.safeParse({ ...base, pin: "123" }).success).toBe(
       false,
     );
+    expect(
+      childLoginSchema.safeParse({ ...base, pin: "1234567" }).success,
+    ).toBe(false);
     expect(childLoginSchema.safeParse({ ...base, pin: "12345a" }).success).toBe(
       false,
     );

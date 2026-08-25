@@ -8,9 +8,9 @@ export const childLoginSchema = z
       .pipe(
         z
           .string()
-          .min(8)
-          .max(24)
-          .regex(/^[a-z0-9_-]+$/),
+          .min(3)
+          .max(128)
+          .regex(/^[a-z0-9._-]+$/),
       ),
     handle: z
       .string()
@@ -19,10 +19,10 @@ export const childLoginSchema = z
         z
           .string()
           .min(2)
-          .max(24)
+          .max(80)
           .regex(/^[a-z0-9][a-z0-9._-]*$/),
       ),
-    pin: z.string().regex(/^\d{6}$/),
+    pin: z.string().regex(/^\d{4,6}$/),
   })
   .strict();
 export type ChildLogin = z.infer<typeof childLoginSchema>;
