@@ -92,6 +92,32 @@ export const quarterAllowsBibleImports = (status: unknown) =>
   status == null ||
   (typeof status === "string" && ["draft", "open", "active"].includes(status));
 
+/** Canonical quarters are `open`; `active` remains supported for legacy data. */
+export const quarterAllowsBiblePublishing = (status: unknown) =>
+  typeof status === "string" && ["open", "active"].includes(status);
+
+export const bibleImportQuarterMetadata = (
+  importData: Record<string, unknown>,
+  quarterData: Record<string, unknown>,
+) => {
+  const embeddedQuarter =
+    importData.quarter && typeof importData.quarter === "object"
+      ? (importData.quarter as Record<string, unknown>)
+      : {};
+  const quarterId = importData.quarterId ?? embeddedQuarter.id;
+  return {
+    quarterId: typeof quarterId === "string" ? quarterId : undefined,
+    quarterName:
+      importData.quarterName ??
+      embeddedQuarter.name ??
+      quarterData.name ??
+      quarterData.title ??
+      "",
+    startDate: importData.startDate ?? quarterData.startDate,
+    endDate: importData.endDate ?? quarterData.endDate,
+  };
+};
+
 /**
  * Keep the persisted local-date name while satisfying the admin review
  * contract, which calls the same value `date`.
@@ -389,6 +415,9 @@ export class BibleAdministrationService {
         tx.create(ref, {
           organizationId: metadata.organizationId,
           quarterId: metadata.quarterId,
+          quarterName: quarter.get("name") ?? quarter.get("title") ?? "",
+          startDate,
+          endDate,
           title: metadata.title,
           status: "needs_review",
           timezone: String(org.get("timezone") ?? "UTC"),
@@ -843,17 +872,35 @@ export class BibleAdministrationService {
           "BIBLE_IMPORT_ALREADY_COMMITTED",
           "Import content already exists.",
         );
+      const importData = latest.data()!;
+      const initialQuarterMetadata = bibleImportQuarterMetadata(importData, {});
+      if (!initialQuarterMetadata.quarterId)
+        throw error(
+          409,
+          "BIBLE_CONTENT_INVALID_STATE",
+          "The import must be assigned to a quarter before commit.",
+        );
+      const quarter = await tx.get(
+        this.db.doc(`quarters/${initialQuarterMetadata.quarterId}`),
+      );
+      if (!quarter.exists)
+        throw error(404, "BIBLE_QUARTER_NOT_FOUND", "Quarter not found.");
+      const quarterMetadata = bibleImportQuarterMetadata(
+        importData,
+        quarter.data()!,
+      );
       tx.create(content, {
-        organizationId: old.get("organizationId"),
-        quarterId: old.get("quarterId"),
-        title: old.get("title"),
+        organizationId: latest.get("organizationId"),
+        ...quarterMetadata,
+        title: latest.get("title"),
+        activityCount: latest.get("activityCount") ?? items.length,
         description: "",
-        timezone: old.get("timezone") ?? "UTC",
+        timezone: latest.get("timezone") ?? "UTC",
         sourceFiles: {
-          quiz: old.get("quizFile"),
-          answerKey: old.get("answerKeyFile"),
+          quiz: latest.get("quizFile"),
+          answerKey: latest.get("answerKeyFile"),
         },
-        sourceChecksums: old.get("sourceChecksums"),
+        sourceChecksums: latest.get("sourceChecksums"),
         importId: id,
         importCommitIdempotencyKey: input.idempotencyKey,
         version: 1,
@@ -871,8 +918,8 @@ export class BibleAdministrationService {
           ...activity,
           questions: item.questions,
           contentSetId: content.id,
-          organizationId: old.get("organizationId"),
-          quarterId: old.get("quarterId"),
+          organizationId: latest.get("organizationId"),
+          quarterId: quarterMetadata.quarterId,
           responseType: "multiple_choice",
           status: "draft",
           version: 1,
@@ -1161,7 +1208,10 @@ export class BibleAdministrationService {
       const q = await tx.get(
         this.db.doc(`quarters/${String(d.get("quarterId"))}`),
       );
-      if (target === "published" && (!q.exists || q.get("status") !== "active"))
+      if (
+        target === "published" &&
+        (!q.exists || !quarterAllowsBiblePublishing(q.get("status")))
+      )
         throw error(
           409,
           "BIBLE_CONTENT_INVALID_STATE",

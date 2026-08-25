@@ -1,10 +1,56 @@
 import { describe, expect, it } from "vitest";
 import {
+  bibleImportQuarterMetadata,
   quarterAllowsBibleImports,
+  quarterAllowsBiblePublishing,
   serializeImportPreviewActivity,
 } from "../src/bible/service.js";
 
 describe("Bible import review contract", () => {
+  it("propagates embedded quarter linkage and falls back to authoritative quarter dates", () => {
+    expect(
+      bibleImportQuarterMetadata(
+        { quarter: { id: "quarter-1", name: "Summer" } },
+        {
+          name: "Changed name",
+          startDate: "2026-07-01",
+          endDate: "2026-09-30",
+        },
+      ),
+    ).toEqual({
+      quarterId: "quarter-1",
+      quarterName: "Summer",
+      startDate: "2026-07-01",
+      endDate: "2026-09-30",
+    });
+  });
+
+  it("prefers denormalized import quarter metadata", () => {
+    expect(
+      bibleImportQuarterMetadata(
+        {
+          quarterId: "quarter-2",
+          quarterName: "Fall",
+          startDate: "2026-10-01",
+          endDate: "2026-12-31",
+        },
+        { name: "Other", startDate: "ignored", endDate: "ignored" },
+      ),
+    ).toEqual({
+      quarterId: "quarter-2",
+      quarterName: "Fall",
+      startDate: "2026-10-01",
+      endDate: "2026-12-31",
+    });
+  });
+
+  it("publishes into canonical open and legacy active quarters", () => {
+    expect(quarterAllowsBiblePublishing("open")).toBe(true);
+    expect(quarterAllowsBiblePublishing("active")).toBe(true);
+    expect(quarterAllowsBiblePublishing("draft")).toBe(false);
+    expect(quarterAllowsBiblePublishing("closed")).toBe(false);
+  });
+
   it("allows imports for canonical open quarters and legacy active quarters", () => {
     expect(quarterAllowsBibleImports("draft")).toBe(true);
     expect(quarterAllowsBibleImports("open")).toBe(true);
