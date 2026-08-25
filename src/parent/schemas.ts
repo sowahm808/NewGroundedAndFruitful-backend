@@ -24,52 +24,71 @@ export const listSchema = z.object({
   ),
   search: optionalQueryString(z.string().trim().min(1).max(80).optional()),
 });
+
 export const childQuerySchema = listSchema.pick({
   limit: true,
   cursor: true,
   status: true,
   search: true,
 });
+
 export const notificationQuerySchema = listSchema.pick({
   limit: true,
   cursor: true,
 });
+
 export const observationQuerySchema = listSchema.omit({ status: true }).extend({
   childId: optionalQueryString(idSchema.optional()),
   status: optionalQueryString(
     z.enum(["pending", "approved", "rejected"]).optional(),
   ),
 });
+
 export const supportListQuerySchema = listSchema.omit({ status: true }).extend({
   childId: optionalQueryString(idSchema.optional()),
   status: optionalQueryString(
     z.enum(["open", "in_progress", "resolved", "closed"]).optional(),
   ),
 });
+
 export const observationSchema = z.object({
   childId: idSchema,
   qualityId: idSchema.optional(),
   description: z.string().trim().min(20).max(2000),
   observedAt: z.string().datetime(),
 });
+
+// Quarter is made optional so the backend defaults to the workspace's active open quarter
 export const characterSelectionSchema = z.object({
   childId: idSchema,
-  quarterId: idSchema,
+  quarterId: optionalQueryString(idSchema.optional()),
   qualityIds: z
     .array(idSchema)
-    .length(3)
+    .length(3, "Must select exactly 3 qualities")
     .refine((ids) => new Set(ids).size === 3, "Qualities must be unique"),
 });
+
+export const characterPatchSchema = characterSelectionSchema.extend({
+  expectedVersion: z.number().int().min(0).optional(),
+});
+
+export const characterQuerySchema = z.object({
+  childId: idSchema,
+  quarterId: optionalQueryString(idSchema.optional()),
+});
+
 export const childCredentialsSchema = z
   .object({
     handle: z.string().trim().max(80).optional(),
-    pin: z.string().regex(/^\d{4,6}$/),
+    pin: z.string().regex(/^\d{4,6}$/, "PIN must be between 4 and 6 numeric digits"),
   })
   .strict();
+
 export const familyCompletionSchema = z.object({
   childId: idSchema,
   activityId: idSchema,
 });
+
 export const supportRequestSchema = z.object({
   childId: idSchema,
   categoryId: idSchema,
@@ -77,24 +96,21 @@ export const supportRequestSchema = z.object({
   description: z.string().trim().min(20).max(2000),
 });
 
-export const characterQuerySchema = z.object({
-  childId: idSchema,
-  quarterId: optionalQueryString(idSchema.optional()),
-});
-export const characterPatchSchema = characterSelectionSchema.extend({
-  expectedVersion: z.number().int().min(0).optional(),
-});
 export const familyActivityQuerySchema = listSchema
   .pick({ limit: true, cursor: true, search: true })
   .extend({ childId: idSchema });
+
 export const familyCompletionCommandSchema = z.object({ childId: idSchema });
+
 export const reportQuerySchema = z.object({ childId: idSchema });
+
 export const participationQuerySchema = z
   .object({
     childId: idSchema,
     quarterId: optionalQueryString(idSchema.optional()),
   })
   .strict();
+
 export const idempotencyKeySchema = z
   .string()
   .trim()
