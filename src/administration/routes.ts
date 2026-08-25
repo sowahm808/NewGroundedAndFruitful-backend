@@ -558,6 +558,27 @@ router.post(
   ),
 );
 
+router.put(
+  "/organizations/:organizationId/users/:userId/memberships",
+  validateBody(schemas.roleUpdateSchema),
+  run(async (req) => {
+    const orgId =
+      req.params.organizationId === "current"
+        ? await resolveTenantOrganizationId(req)
+        : id(req.params.organizationId);
+
+    return service.setMembership(
+      req.principal,
+      orgId,
+      id(req.params.userId),
+      req.body.role,
+      req.body.status,
+      req.body.version,
+      req.body.expiresAt,
+    );
+  }),
+);
+
 router.post(
   "/programs",
   validateBody(schemas.programCreateSchema),
